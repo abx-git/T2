@@ -1,0 +1,165 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "hierarchical-task-manager.export.v1",
+  "title": "Hierarchical Task Manager — Exportdokument v1",
+  "description": "JSON-Format für vollständigen Board-Export (scope \"board\") oder Teilbaum (scope \"subtree\"), wie von `src/lib/task-tree-json.ts` gelesen und geschrieben. Hinweis: Der Parser akzeptiert zusätzlich ältere Minimalformen (z. B. nur `{ \"roots\": [...] }` ohne `format`/`version`); diese sind hier nicht als gültig gegen das Schema prüfbar abgebildet.",
+  "oneOf": [
+    { "$ref": "#/definitions/BoardSnapshotV1" },
+    { "$ref": "#/definitions/SubtreeSnapshotV1" }
+  ],
+  "definitions": {
+    "TaskStatus": {
+      "type": "string",
+      "enum": ["todo", "in-progress", "done"],
+      "description": "Nur Legacy-Import: wird in Tags überführt, wenn kein `tags`-Array gesetzt ist."
+    },
+    "IsoDateTimeString": {
+      "type": "string",
+      "description": "Datum/Zeit als ISO-8601-String (z. B. von `Date.prototype.toISOString()`), wie in den Exporten verwendet."
+    },
+    "TaskNodeJson": {
+      "type": "object",
+      "description": "Ein Aufgabenknoten im JSON-Export; Kinder rekursiv gleicher Struktur.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Eindeutige Knoten-ID (z. B. UUID)."
+        },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Freie Schlagworte; das Tag „Erledigt“ (Groß-/Kleinschreibung egal) steuert den Erledigt-Filter."
+        },
+        "status": { "$ref": "#/definitions/TaskStatus" },
+        "dueDate": {
+          "description": "Fälligkeitsdatum oder null.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/IsoDateTimeString" }]
+        },
+        "reminderDate": {
+          "description": "Erinnerungsdatum oder null.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/IsoDateTimeString" }]
+        },
+        "effort": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Aufwand in Stunden (nicht-negative Zahl)."
+        },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/TaskNodeJson" }
+        }
+      },
+      "required": ["id", "title", "description", "dueDate", "reminderDate", "effort", "children"],
+      "additionalProperties": false
+    },
+    "CardFieldVisibility": {
+      "type": "object",
+      "description": "Sichtbarkeit von Kartenfeldern (außer Titel) in Liste und Detail; rein UI. Fehlende Schlüssel werden beim Laden mit true belegt.",
+      "properties": {
+        "description": { "type": "boolean" },
+        "tags": { "type": "boolean" },
+        "effort": { "type": "boolean" },
+        "dueDate": { "type": "boolean" },
+        "reminderDate": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "ColumnTitleOverrides": {
+      "type": "object",
+      "description": "Optionale Spaltenüberschriften: Schlüssel = Spaltenindex als Dezimalstring (\"0\", \"1\", …), Wert = Anzeigetext.",
+      "additionalProperties": { "type": "string" }
+    },
+    "BoardSnapshotV1": {
+      "type": "object",
+      "description": "Gesamter Arbeitsstand: Wurzelkarten, Drill-Pfad, Spaltennamen und Einstellungen.",
+      "properties": {
+        "format": {
+          "type": "string",
+          "const": "hierarchical-task-manager",
+          "description": "Muss exakt diesem Wert entsprechen (`EXPORT_FORMAT` in task-tree-json.ts)."
+        },
+        "version": {
+          "type": "integer",
+          "const": 1,
+          "description": "Schema-/Exportversion (`EXPORT_VERSION`)."
+        },
+        "exportedAt": {
+          "type": "string",
+          "description": "Zeitpunkt des Exports (typisch ISO-8601, z. B. von `toISOString()`)."
+        },
+        "scope": {
+          "type": "string",
+          "const": "board"
+        },
+        "roots": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/TaskNodeJson" },
+          "description": "Liste der Wurzelknoten (Hauptebene)."
+        },
+        "pathIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Drill-Pfad: IDs von der Wurzel bis zum zuletzt aufgeklappten Knoten; Reihenfolge = Spalten 1…n."
+        },
+        "columnTitleOverrides": { "$ref": "#/definitions/ColumnTitleOverrides" },
+        "showFullTree": {
+          "type": "boolean",
+          "description": "Optional / deprecated: wird beim Export immer `false` gesetzt und beim Laden ignoriert."
+        },
+        "cardFieldVisibility": {
+          "$ref": "#/definitions/CardFieldVisibility",
+          "description": "Optional; bei fehlendem Objekt gelten alle Felder als sichtbar."
+        },
+        "hideCompletedTasks": {
+          "type": "boolean",
+          "description": "Optional: Karten mit Tag „Erledigt“ in der Spaltenansicht ausblenden; nur Anzeige."
+        },
+        "effortOnTasksEnabled": {
+          "type": "boolean",
+          "description": "Optional: Stunden an Aufgaben erlauben (Standard true). Bei `false` werden keine Aufwände bearbeitet oder angezeigt."
+        }
+      },
+      "required": ["format", "version", "exportedAt", "scope", "roots", "pathIds", "columnTitleOverrides"],
+      "additionalProperties": false
+    },
+    "SubtreeSnapshotV1": {
+      "type": "object",
+      "description": "Export eines Teilbaums unter einem Knoten.",
+      "properties": {
+        "format": {
+          "type": "string",
+          "const": "hierarchical-task-manager"
+        },
+        "version": {
+          "type": "integer",
+          "const": 1
+        },
+        "exportedAt": {
+          "type": "string",
+          "description": "Zeitpunkt des Exports (typisch ISO-8601)."
+        },
+        "scope": {
+          "type": "string",
+          "const": "subtree"
+        },
+        "root": {
+          "$ref": "#/definitions/TaskNodeJson",
+          "description": "Wurzel des exportierten Teilbaums."
+        },
+        "sourceNodeId": {
+          "type": "string",
+          "description": "Optional: ID des Quellknotens zum Zeitpunkt des Exports."
+        },
+        "sourceNodeTitle": {
+          "type": "string",
+          "description": "Optional: Titel des Quellknotens (Metadaten)."
+        }
+      },
+      "required": ["format", "version", "exportedAt", "scope", "root"],
+      "additionalProperties": false
+    }
+  }
+}

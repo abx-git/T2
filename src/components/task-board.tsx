@@ -48,6 +48,7 @@ import {
   getCurrentBranchNodeIds,
   listParentForColumn,
   parseColumnGapId,
+  subtreeNodeIdsForNodeId,
   type TreeDragOverKind,
 } from "@/lib/tree-utils";
 import { useTaskTreeStore } from "@/store/task-tree-store";
@@ -143,6 +144,46 @@ export function TaskBoard() {
   const setHideCompletedTasks = useTaskTreeStore((s) => s.setHideCompletedTasks);
 
   const branchNodeIds = useMemo(() => getCurrentBranchNodeIds(roots, pathIds), [roots, pathIds]);
+
+  const HOVER_SUBTREE_CLEAR_MS = 90;
+  const [hoverSubtreeRootId, setHoverSubtreeRootId] = useState<string | null>(null);
+  const hoverClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelHoverSubtreeClear = useCallback(() => {
+    if (hoverClearTimerRef.current != null) {
+      clearTimeout(hoverClearTimerRef.current);
+      hoverClearTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleHoverSubtreeClear = useCallback(() => {
+    cancelHoverSubtreeClear();
+    hoverClearTimerRef.current = setTimeout(() => {
+      hoverClearTimerRef.current = null;
+      setHoverSubtreeRootId(null);
+    }, HOVER_SUBTREE_CLEAR_MS);
+  }, [cancelHoverSubtreeClear]);
+
+  const handleHoverSubtreeEnter = useCallback(
+    (nodeId: string) => {
+      cancelHoverSubtreeClear();
+      setHoverSubtreeRootId(nodeId);
+    },
+    [cancelHoverSubtreeClear],
+  );
+
+  const handleHoverSubtreeLeave = useCallback(() => {
+    scheduleHoverSubtreeClear();
+  }, [scheduleHoverSubtreeClear]);
+
+  useEffect(() => {
+    return () => cancelHoverSubtreeClear();
+  }, [cancelHoverSubtreeClear]);
+
+  const hoverSubtreeIds = useMemo(
+    () => subtreeNodeIdsForNodeId(roots, hoverSubtreeRootId),
+    [roots, hoverSubtreeRootId],
+  );
 
   const [dropPreview, setDropPreview] = useState<BoardDropPreview | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -318,6 +359,8 @@ export function TaskBoard() {
   };
 
   const onDragStart = (e: DragStartEvent) => {
+    cancelHoverSubtreeClear();
+    setHoverSubtreeRootId(null);
     setActiveDragId(String(e.active.id));
     setDropPreview(null);
   };
@@ -389,7 +432,9 @@ export function TaskBoard() {
   return (
     <div className="flex h-screen min-h-0 flex-col">
       <LiveBackupSync onActiveFileNameChange={setLiveBackupFileName} onPersistDirtyChange={onPersistDirtyChange} />
-      <header className="shrink-0 border-b border-slate-200/80 bg-white/90 px-6 py-4 backdrop-blur">
+      {/* Header + Board in einer Spalte: Board kann den Header nicht überdecken (kein z-Index gegen Toolbar). */}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <header className="shrink-0 border-b border-slate-200/80 bg-white px-6 py-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0 flex-1">
             <h1 className="text-lg font-semibold text-slate-900">Hierarchischer Task-Manager</h1>
@@ -538,7 +583,7 @@ export function TaskBoard() {
         </div>
       </header>
 
-      <DndContext
+        <DndContext
         id="task-board-dnd-aria"
         sensors={sensors}
         autoScroll={false}
@@ -562,6 +607,9 @@ export function TaskBoard() {
                   rows={rows}
                   pathIds={pathIds}
                   branchNodeIds={branchNodeIds}
+                  hoverSubtreeIds={hoverSubtreeIds}
+                  onHoverSubtreeEnter={handleHoverSubtreeEnter}
+                  onHoverSubtreeLeave={handleHoverSubtreeLeave}
                   onAddCard={handleAddInColumn}
                   roots={roots}
                   onAddChildCard={(parentId) => {
@@ -583,7 +631,8 @@ export function TaskBoard() {
         </div>
 
         <DragOverlay>{activeDragId ? <DragPreviewCard id={activeDragId} /> : null}</DragOverlay>
-      </DndContext>
+        </DndContext>
+      </div>
 
       <JsonExportPreviewDialog
         open={boardJsonExportOpen}

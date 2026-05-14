@@ -179,6 +179,25 @@ function descendantsAtDepthFromAncestor(ancestor: TaskNode, relDepth: number): C
   return out;
 }
 
+/** IDs der Karte und aller Nachfahren (Teilbaum), für Hover-Hervorhebung. */
+export function collectSubtreeNodeIds(root: TaskNode): Set<string> {
+  const ids = new Set<string>();
+  function walk(n: TaskNode) {
+    ids.add(n.id);
+    for (const c of n.children) walk(c);
+  }
+  walk(root);
+  return ids;
+}
+
+/** Teilbaum-IDs für eine Knoten-ID im Board, oder `null` wenn unbekannt. */
+export function subtreeNodeIdsForNodeId(roots: TaskNode[], nodeId: string | null): Set<string> | null {
+  if (!nodeId) return null;
+  const n = findNodeById(roots, nodeId);
+  if (!n) return null;
+  return collectSubtreeNodeIds(n);
+}
+
 /** Knoten, die in Spalte `columnIndex` sichtbar sind (0 = Wurzeln). */
 export function getColumnNodes(
   roots: TaskNode[],

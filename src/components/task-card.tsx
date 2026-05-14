@@ -51,6 +51,8 @@ export interface TaskCardProps {
   isOnActivePath: boolean;
   /** Karte liegt auf dem aktuellen Zweig (Pfad + Teilbaum unter letztem Pfad-Knoten). */
   branchHighlight?: boolean;
+  /** Maus-Hover: Karte gehört zum hervorgehobenen Teilbaum unter der gehoverten Karte. */
+  hoverSubtreeHighlight?: boolean;
   /** Diese Karte ist das aktuelle Karten-Drop-Ziel (nur bei targetMode card). */
   isCardDropTarget?: boolean;
   /** Sichtbare Kartenfelder (außer Titel). */
@@ -64,6 +66,10 @@ export interface TaskCardProps {
   onCopySubtreeJson?: () => void;
   /** Bei Fokus von außen: Drill-Pfad bis zu dieser Karte setzen (Ast aktivieren). */
   onFocusActivateBranch?: () => void;
+  /** Maus betritt die Karte — Teilbaum-Hervorhebung starten. */
+  onHoverSubtreeEnter?: () => void;
+  /** Maus verlässt die Karte — Hervorhebung zeitverzögert beenden. */
+  onHoverSubtreeLeave?: () => void;
 }
 
 export function TaskCard({
@@ -73,6 +79,7 @@ export function TaskCard({
   isDrilledHere,
   isOnActivePath,
   branchHighlight = false,
+  hoverSubtreeHighlight = false,
   isCardDropTarget = false,
   fieldVisibility,
   onAddChild,
@@ -81,6 +88,8 @@ export function TaskCard({
   onExportSubtree,
   onCopySubtreeJson,
   onFocusActivateBranch,
+  onHoverSubtreeEnter,
+  onHoverSubtreeLeave,
 }: TaskCardProps) {
   const effortOnTasksEnabled = useTaskTreeStore((s) => s.effortOnTasksEnabled);
   const cardHeadingId = useId();
@@ -132,14 +141,22 @@ export function TaskCard({
       tabIndex={-1}
       aria-labelledby={cardHeadingId}
       onPointerDown={tryFocusCardFromPointer}
+      onPointerEnter={(e) => {
+        if (e.pointerType === "mouse") onHoverSubtreeEnter?.();
+      }}
+      onPointerLeave={(e) => {
+        if (e.pointerType === "mouse") onHoverSubtreeLeave?.();
+      }}
       onFocusCapture={handleFocusIn}
       className={[
         "group relative scroll-my-1 rounded-md border px-1.5 py-1 shadow-sm transition outline-none focus:ring-2 focus:ring-sky-400/70 focus:ring-offset-1 focus-visible:ring-2 focus-visible:ring-sky-400/80 focus-visible:ring-offset-1",
         isCardDropTarget
           ? "border-slate-300/90 bg-slate-300/95"
-          : branchHighlight
-            ? "border-sky-200/80 bg-sky-50/95"
-            : "border-slate-200/80 bg-white",
+          : hoverSubtreeHighlight
+            ? "border-slate-300/80 bg-white shadow-sm ring-1 ring-slate-200/50"
+            : branchHighlight
+              ? "border-sky-200/75 bg-sky-50/85 shadow-sm ring-1 ring-sky-100/35"
+              : "border-slate-200/80 bg-white",
         isDragging ? "opacity-60 ring-2 ring-sky-200" : "opacity-100",
         !isCardDropTarget && isDrilledHere
           ? "border-sky-400 ring-2 ring-sky-100"

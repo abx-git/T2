@@ -72,6 +72,10 @@ export interface TaskColumnProps {
   pathIds: string[];
   /** Knoten auf dem aktuellen Zweig (Hintergrund in Spaltenansicht). */
   branchNodeIds: Set<string>;
+  /** Knoten-IDs im Teilbaum unter der per Maus gehoverten Karte (inkl. Wurzel der Hervorhebung). */
+  hoverSubtreeIds: Set<string> | null;
+  onHoverSubtreeEnter: (nodeId: string) => void;
+  onHoverSubtreeLeave: () => void;
   onAddCard: (columnIndex: number) => void;
   onAddChildCard: (parentId: string) => void;
   onEditCard: (nodeId: string) => void;
@@ -91,6 +95,9 @@ export function TaskColumn({
   rows,
   pathIds,
   branchNodeIds,
+  hoverSubtreeIds,
+  onHoverSubtreeEnter,
+  onHoverSubtreeLeave,
   onAddCard,
   onAddChildCard,
   onEditCard,
@@ -167,6 +174,9 @@ export function TaskColumn({
                   isDrilledHere={pathIds[columnIndex] === row.node.id}
                   isOnActivePath={pathIds.includes(row.node.id)}
                   branchHighlight={branchNodeIds.has(row.node.id)}
+                  hoverSubtreeHighlight={Boolean(hoverSubtreeIds?.has(row.node.id))}
+                  onHoverSubtreeEnter={() => onHoverSubtreeEnter(row.node.id)}
+                  onHoverSubtreeLeave={onHoverSubtreeLeave}
                   isCardDropTarget={
                     Boolean(
                       previewHere?.targetMode === "card" && previewHere.anchorCardId === row.node.id,
@@ -250,6 +260,9 @@ export function TaskColumn({
                   isDrilledHere={pathIds[columnIndex] === row.node.id}
                   isOnActivePath={pathIds.includes(row.node.id)}
                   branchHighlight={branchNodeIds.has(row.node.id)}
+                  hoverSubtreeHighlight={Boolean(hoverSubtreeIds?.has(row.node.id))}
+                  onHoverSubtreeEnter={() => onHoverSubtreeEnter(row.node.id)}
+                  onHoverSubtreeLeave={onHoverSubtreeLeave}
                   isCardDropTarget={
                     Boolean(
                       previewHere?.targetMode === "card" && previewHere.anchorCardId === row.node.id,

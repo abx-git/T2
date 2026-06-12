@@ -14,6 +14,8 @@ Hierarchische Aufgaben als Board / Mindmap — wie **diagrams.net**: App im Brow
 
 ### 👉 [https://abx-git.github.io/T2/](https://abx-git.github.io/T2/)
 
+**Nur `github.io`, nicht `github.com`.** Sehen Sie Markdown-Text statt eines Boards? → [Pages-Einrichtung](#github-pages-deployen) (Branch `gh-pages`).
+
 1. Link im Browser öffnen (Chrome oder Edge empfohlen).
 2. Toolbar **„Daten“** → **Arbeitsdatei (JSON)** → **Datei öffnen** oder **Neue Datei**.
 3. Fertig — Änderungen werden automatisch in Ihre lokale JSON geschrieben.
@@ -59,8 +61,12 @@ Die öffentliche URL wird per **GitHub Pages** ausgeliefert (statischer Build, k
 
 Repository: [github.com/abx-git/T2](https://github.com/abx-git/T2) · Workflow: `.github/workflows/deploy-github-pages.yml`
 
-1. Auf GitHub: **Settings → Pages → Source: GitHub Actions**
-2. Push auf `main` → Workflow **Deploy GitHub Pages**
+**Wenn nur dieses README erscheint:** Pages-Quelle ist falsch (oft `main` / root). So einstellen:
+
+1. **Settings → Pages → Build and deployment**
+2. **Source:** Deploy from a branch
+3. **Branch:** `gh-pages` · **Folder:** `/ (root)` · Save
+4. Push auf `main` → Workflow schreibt die App in den Branch `gh-pages`
 
 Lokal testen:
 

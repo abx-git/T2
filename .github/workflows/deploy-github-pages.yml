@@ -1,3 +1,5 @@
+# Statische App nach gh-pages — nicht README aus main/ rendern.
+# GitHub: Settings → Pages → Source: Deploy from branch → gh-pages → / (root)
 name: Deploy GitHub Pages
 
 on:
@@ -6,16 +8,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,18 +32,11 @@ jobs:
         env:
           NEXT_PUBLIC_BASE_PATH: /T2
 
-      - uses: actions/configure-pages@v5
-
-      - uses: actions/upload-pages-artifact@v3
+      - name: Publish to gh-pages branch
+        uses: JamesIves/github-pages-deploy-action@v4
         with:
-          path: out
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          folder: out
+          branch: gh-pages
+          clean: true
+          single-commit: true
+          commit-message: "Deploy T2 app"

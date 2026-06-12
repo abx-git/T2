@@ -1,6 +1,7 @@
 "use client";
 
 import { useId } from "react";
+import { createPortal } from "react-dom";
 
 export interface ConfirmDialogProps {
   open: boolean;
@@ -27,11 +28,11 @@ export function ConfirmDialog({
   const titleId = useId();
   if (!open) return null;
 
-  return (
+  const layer = (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[1200] flex items-end justify-center bg-slate-900/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="presentation"
-      onMouseDown={(e) => {
+      onPointerDown={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}
     >
@@ -39,25 +40,25 @@ export function ConfirmDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl"
-        onMouseDown={(e) => e.stopPropagation()}
+        className="w-full max-w-md touch-manipulation rounded-t-xl border border-slate-200 bg-white p-5 shadow-xl sm:rounded-xl"
+        onPointerDown={(e) => e.stopPropagation()}
       >
         <h2 id={titleId} className="text-base font-semibold text-slate-900">
           {title}
         </h2>
-        <p className="mt-3 text-sm leading-relaxed text-slate-600">{message}</p>
+        <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-600">{message}</p>
         <div className="mt-6 flex justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="min-h-11 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 active:bg-slate-50"
           >
             {cancelLabel}
           </button>
           <button
             type="button"
-            onClick={onConfirm}
-            className={confirmClassName}
+            onClick={() => onConfirm()}
+            className={[confirmClassName, "min-h-11 active:opacity-90"].join(" ")}
           >
             {confirmLabel}
           </button>
@@ -65,4 +66,6 @@ export function ConfirmDialog({
       </div>
     </div>
   );
+
+  return typeof document !== "undefined" ? createPortal(layer, document.body) : layer;
 }

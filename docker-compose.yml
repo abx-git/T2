@@ -1,0 +1,18 @@
+services:
+  t2:
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      T2_SESSION_SECRET: ${T2_SESSION_SECRET:-}
+      T2_AUTH_USERNAME: ${T2_AUTH_USERNAME:-admin}
+      T2_AUTH_PASSWORD: ${T2_AUTH_PASSWORD:-}
+      T2_BOARD_FILE_PATH: ${T2_BOARD_FILE_PATH:-./data/t2-board.json}
+    volumes:
+      - t2-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  t2-data:

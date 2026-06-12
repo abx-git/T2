@@ -1,6 +1,13 @@
-import { isTaskMarkedDone } from "@/lib/task-tags";
+import {
+  computeMindmapBoardLayout,
+  type ColumnDisplayRow,
+  type MindmapBoardLayout,
+} from "@/lib/mindmap-layout";
+import { isTaskMarkedDone, nodeHasAnyFilterTag } from "@/lib/task-tags";
 import type { TaskNode } from "@/types/task-node";
 import type { BoardDropPreview, DropIntent } from "@/types/dnd-preview";
+
+export type { ColumnDisplayRow } from "@/lib/mindmap-layout";
 
 /** Liegt `id` irgendwo im Teilbaum von `node` (inkl. Wurzel)? */
 export function subtreeContainsId(node: TaskNode, id: string): boolean {
@@ -21,7 +28,20 @@ export function findNodeById(nodes: TaskNode[], id: string): TaskNode | null {
 export function updateNodeFields(
   roots: TaskNode[],
   nodeId: string,
-  fields: Partial<Pick<TaskNode, "title" | "description" | "tags" | "dueDate" | "reminderDate" | "effort">>,
+  fields: Partial<
+    Pick<
+      TaskNode,
+      | "title"
+      | "link"
+      | "description"
+      | "tags"
+      | "dueDate"
+      | "reminderDate"
+      | "effort"
+      | "effortUnit"
+      | "effortSource"
+    >
+  >,
 ): TaskNode[] {
   let found = false;
   function mapNodes(nodes: TaskNode[]): TaskNode[] {
@@ -52,36 +72,15 @@ export function findDirectParentId(
   return undefined;
 }
 
-/** Spaltenindex, in dem der Knoten aktuell sichtbar ist. */
+/** Spaltenindex, in dem der Knoten im Mindmap-Layout sichtbar ist. */
 export function columnIndexOfNode(
   roots: TaskNode[],
   pathIds: string[],
   nodeId: string,
+  collapsedIds: ReadonlySet<string> = new Set(),
 ): number | null {
-  const maxC = maxBoardColumnIndex(roots, pathIds);
-  for (let c = 0; c <= maxC; c++) {
-    const col = getColumnDisplayRows(roots, pathIds, c);
-    if (col.some((r) => r.node.id === nodeId)) return c;
-  }
-  return null;
-}
-
-/** Alle Knoten-IDs auf dem geöffneten Pfad inkl. Teilbaum unter dem letzten Pfad-Knoten. */
-export function getCurrentBranchNodeIds(roots: TaskNode[], pathIds: string[]): Set<string> {
-  const out = new Set<string>();
-  for (const id of pathIds) {
-    out.add(id);
-  }
-  if (pathIds.length === 0) return out;
-  const leafId = pathIds[pathIds.length - 1];
-  const leaf = findNodeById(roots, leafId);
-  if (!leaf) return out;
-  function walk(n: TaskNode) {
-    out.add(n.id);
-    n.children.forEach(walk);
-  }
-  leaf.children.forEach(walk);
-  return out;
+  const entry = computeMindmapBoardLayout(roots, collapsedIds).byNodeId.get(nodeId);
+  return entry?.column ?? null;
 }
 
 /** Kette der IDs von der Wurzel bis zu `nodeId` (inkl.), oder `null`. */
@@ -107,76 +106,123 @@ export function maxChainDepthBelow(node: TaskNode): number {
   return 1 + Math.max(...node.children.map(maxChainDepthBelow));
 }
 
-/** Anzahl Spalten: Pfad + eine Spalte pro weiterer Tiefe unter dem Pfad-Endknoten. */
-export function boardColumnCount(roots: TaskNode[], pathIds: string[]): number {
-  if (pathIds.length === 0) return 1;
-  const leaf = findNodeById(roots, pathIds[pathIds.length - 1]);
-  const maxBelow = leaf ? maxChainDepthBelow(leaf) : 0;
-  return pathIds.length + 1 + Math.max(0, maxBelow - 1);
+/** Anzahl Spalten = maximale Tiefe des sichtbaren Baums (+1). */
+export function boardColumnCount(
+  roots: TaskNode[],
+  pathIds: string[],
+  collapsedIds: ReadonlySet<string> = new Set(),
+): number {
+  if (roots.length === 0) return 1;
+  return computeMindmapBoardLayout(roots, collapsedIds).columnCount;
 }
 
-export function maxBoardColumnIndex(roots: TaskNode[], pathIds: string[]): number {
-  return boardColumnCount(roots, pathIds) - 1;
+export function maxBoardColumnIndex(
+  roots: TaskNode[],
+  pathIds: string[],
+  collapsedIds: ReadonlySet<string> = new Set(),
+): number {
+  return boardColumnCount(roots, pathIds, collapsedIds) - 1;
 }
 
-/** Zeile in der Spaltenansicht: Knoten und zugehörige Geschwisterliste (DnD). */
-export type ColumnDisplayRow = {
-  node: TaskNode;
-  listParentId: string | null;
-};
+/** Layout für Board-Rendering (einmal pro Render berechnen). */
+export function getMindmapBoardLayout(
+  roots: TaskNode[],
+  collapsedIds: ReadonlySet<string> = new Set(),
+): MindmapBoardLayout {
+  return computeMindmapBoardLayout(roots, collapsedIds);
+}
 
 /** Blendet Karten mit Status „erledigt“ für die Ansicht aus (Daten bleiben unverändert). */
-export function filterColumnRowsHideCompleted(rows: ColumnDisplayRow[]): ColumnDisplayRow[] {
-  return rows.filter((r) => !isTaskMarkedDone(r.node));
+export function filterColumnRowsHideCompleted(
+  rows: ColumnDisplayRow[],
+  completedTag: string,
+): ColumnDisplayRow[] {
+  return rows.filter((r) => !isTaskMarkedDone(r.node, completedTag));
+}
+
+function nodeOrDescendantMatchesFilterTags(node: TaskNode, filterTags: string[]): boolean {
+  if (!filterTags.length) return true;
+  if (nodeHasAnyFilterTag(node, filterTags)) return true;
+  return node.children.some((c) => nodeOrDescendantMatchesFilterTags(c, filterTags));
+}
+
+/** Blendet Karten ohne gewähltes Tag (und ohne passenden Nachfahren) aus. */
+export function filterColumnRowsByTags(
+  rows: ColumnDisplayRow[],
+  filterTags: string[],
+): ColumnDisplayRow[] {
+  if (!filterTags.length) return rows;
+  return rows.filter((r) => nodeOrDescendantMatchesFilterTags(r.node, filterTags));
 }
 
 /**
- * Spalte 0 = Wurzeln; Spalten 1…pathIds.length = direkte Kinder von pathIds[k - 1];
- * Spalten danach = alle Knoten mit festem Baum-Abstand zum Pfad-Endknoten (eine Spalte pro weiterer Tiefe).
+ * Wald für Mindmap-Layout: gleiche Sichtlogik wie `filterColumnRowsHideCompleted` /
+ * `filterColumnRowsByTags`, aber strukturell (keine „Leerzeilen“ im Raster).
+ * Erledigte Knoten werden entfernt und deren Kinder eine Ebene nach oben gezogen.
  */
-export function getColumnDisplayRows(
+export function rootsForMindmapDisplay(
   roots: TaskNode[],
-  pathIds: string[],
-  columnIndex: number,
-): ColumnDisplayRow[] {
-  if (columnIndex === 0) {
-    return roots.map((node) => ({ node, listParentId: null }));
+  opts: {
+    hideCompletedTasks: boolean;
+    completedTag: string;
+    filterTags: string[];
+  },
+): TaskNode[] {
+  if (!opts.hideCompletedTasks && !opts.filterTags.length) return roots;
+
+  let next = roots;
+
+  if (opts.hideCompletedTasks) {
+    const tag = opts.completedTag;
+    const lift = (nodes: TaskNode[]): TaskNode[] => {
+      const out: TaskNode[] = [];
+      for (const n of nodes) {
+        if (isTaskMarkedDone(n, tag)) {
+          out.push(...lift(n.children));
+        } else {
+          out.push({
+            ...n,
+            children: lift(n.children),
+          });
+        }
+      }
+      return out;
+    };
+    next = lift(next);
   }
-  if (columnIndex <= pathIds.length) {
-    const parentOnPathId = pathIds[columnIndex - 1];
-    if (!parentOnPathId) return [];
-    const parentOnPath = findNodeById(roots, parentOnPathId);
-    if (!parentOnPath) return [];
-    return parentOnPath.children.map((node) => ({
-      node,
-      listParentId: parentOnPathId,
-    }));
+
+  if (opts.filterTags.length) {
+    const tags = opts.filterTags;
+    const walk = (n: TaskNode): TaskNode | null => {
+      const kids = n.children.map(walk).filter((c): c is TaskNode => c !== null);
+      if (nodeHasAnyFilterTag(n, tags) || kids.length > 0) {
+        return { ...n, children: kids };
+      }
+      return null;
+    };
+    next = next.map(walk).filter((c): c is TaskNode => c !== null);
   }
-  if (pathIds.length === 0) return [];
-  const leafId = pathIds[pathIds.length - 1];
-  const leaf = findNodeById(roots, leafId);
-  if (!leaf) return [];
-  const relDepth = columnIndex - pathIds.length + 1;
-  return descendantsAtDepthFromAncestor(leaf, relDepth);
+
+  return next;
 }
 
-/** Alle Knoten mit Abstand `relDepth` (Kanten) vom Pfad-Endknoten; `relDepth` 1 = direkte Kinder. */
-function descendantsAtDepthFromAncestor(ancestor: TaskNode, relDepth: number): ColumnDisplayRow[] {
-  const out: ColumnDisplayRow[] = [];
-  if (relDepth < 1) return [];
-  function dfs(n: TaskNode, d: number, listParentId: string) {
-    if (d === relDepth) {
-      out.push({ node: n, listParentId: listParentId });
-      return;
-    }
-    for (const ch of n.children) {
-      dfs(ch, d + 1, n.id);
-    }
-  }
-  for (const ch of ancestor.children) {
-    dfs(ch, 1, ancestor.id);
-  }
-  return out;
+/** Zeilen einer Spalte aus dem Mindmap-Layout (sortiert nach ySlot). */
+export function getColumnDisplayRows(
+  roots: TaskNode[],
+  _pathIds: string[],
+  columnIndex: number,
+  collapsedIds: ReadonlySet<string> = new Set(),
+): ColumnDisplayRow[] {
+  const layout = computeMindmapBoardLayout(roots, collapsedIds);
+  const col = layout.byColumn.get(columnIndex) ?? [];
+  return col.map((e) => ({
+    node: e.node,
+    listParentId: e.listParentId,
+    ySlot: e.ySlot,
+    slotStart: e.slotStart,
+    slotEnd: e.slotEnd,
+    rowSpan: e.rowSpan,
+  }));
 }
 
 /** IDs der Karte und aller Nachfahren (Teilbaum), für Hover-Hervorhebung. */
@@ -188,14 +234,6 @@ export function collectSubtreeNodeIds(root: TaskNode): Set<string> {
   }
   walk(root);
   return ids;
-}
-
-/** Teilbaum-IDs für eine Knoten-ID im Board, oder `null` wenn unbekannt. */
-export function subtreeNodeIdsForNodeId(roots: TaskNode[], nodeId: string | null): Set<string> | null {
-  if (!nodeId) return null;
-  const n = findNodeById(roots, nodeId);
-  if (!n) return null;
-  return collectSubtreeNodeIds(n);
 }
 
 /** Knoten, die in Spalte `columnIndex` sichtbar sind (0 = Wurzeln). */
@@ -231,6 +269,18 @@ export function normalizePathIds(roots: TaskNode[], pathIds: string[]): string[]
     next.push(id);
   }
   return next;
+}
+
+/**
+ * Nach DnD: Pfad bis zur verschobenen Karte (inkl.), wie bei `expandToNode` —
+ * die Karte erscheint sofort in der Geschwister-Spalte ihres Parents, ohne erneutes Klicken.
+ */
+export function pathIdsAfterNodeMove(
+  roots: TaskNode[],
+  movedNodeId: string,
+  previousPathIds: string[],
+): string[] {
+  return pathFromRootToNode(roots, movedNodeId) ?? normalizePathIds(roots, previousPathIds);
 }
 
 function updateNodeChildren(
@@ -375,8 +425,8 @@ function mapIntentToPreview(
   anchorCardId: string | null,
   gapListParentId: string | null | undefined,
 ): BoardDropPreview {
-  const targetMode: "column" | "card" =
-    intent === "column-end" || intent === "reorder-gap" ? "column" : "card";
+  /** Nur „unter Karte hängen“ nutzt Karten-Highlight; Sortieren immer über Einfügelinie. */
+  const targetMode: BoardDropPreview["targetMode"] = intent === "nest-under" ? "card" : "column";
   return {
     activeId,
     targetMode,
@@ -384,33 +434,27 @@ function mapIntentToPreview(
     toCol,
     insertIndex,
     anchorCardId,
-    gapListParentId: targetMode === "column" ? gapListParentId : undefined,
+    gapListParentId: targetMode === "column" ? (gapListParentId ?? null) : undefined,
   };
 }
 
-function listParentExpectedForColumn(pathIds: string[], columnIndex: number): string | null {
-  if (columnIndex === 0) return null;
-  return pathIds[columnIndex - 1] ?? null;
-}
-
-/** Lücken in Spalten unterhalb des Pfad-Endes: Geschwisterliste muss im Teilbaum unter dem Blatt liegen. */
-function gapListParentAllowedInDepthSliceColumns(
+/** Einfüge-Lücke: listParentId muss zur Spalte passen (Wurzel vs. beliebiger Parent). */
+function gapListParentValid(
   roots: TaskNode[],
-  pathIds: string[],
+  columnIndex: number,
   lp: string | null,
+  activeNode: TaskNode,
 ): boolean {
+  if (columnIndex === 0) return lp === null;
   if (lp === null) return false;
-  const leafId = pathIds[pathIds.length - 1];
-  const leaf = findNodeById(roots, leafId);
-  if (!leaf) return false;
-  return lp === leafId || subtreeContainsId(leaf, lp);
+  if (lp === activeNode.id || subtreeContainsId(activeNode, lp)) return false;
+  return findNodeById(roots, lp) !== null;
 }
 
-/** Öffentlich für DnD-Over-Daten in Spalten-Komponenten. */
+/** Öffentlich: Parent für „Neue Karte“ in Spalte (Fokus-Pfad) und DnD-Fallback. */
 export function listParentForColumn(pathIds: string[], columnIndex: number): string | null {
   if (columnIndex === 0) return null;
-  if (columnIndex <= pathIds.length) return pathIds[columnIndex - 1] ?? null;
-  return pathIds[pathIds.length - 1] ?? null;
+  return pathIds[columnIndex - 1] ?? null;
 }
 
 /** Index der Karte in ihrer Geschwisterliste (für Lücken-Drops bei mehreren Eltern pro Spalte). */
@@ -424,6 +468,29 @@ export function siblingInsertIndexBeforeCard(
   return Math.max(0, i);
 }
 
+/** Drop-Ziel aus Live-Vorschau (zuverlässiger als Kollisions-`over` beim Loslassen). */
+export function dragOverKindFromPreview(
+  roots: TaskNode[],
+  preview: BoardDropPreview,
+  pathIds: string[],
+): TreeDragOverKind {
+  if (preview.intent === "nest-under" && preview.anchorCardId) {
+    const pt = findDirectParentId(roots, preview.anchorCardId);
+    return {
+      kind: "card",
+      columnIndex: preview.toCol,
+      cardId: preview.anchorCardId,
+      listParentId: pt ?? null,
+    };
+  }
+  return {
+    kind: "columnGap",
+    columnIndex: preview.toCol,
+    insertIndex: preview.insertIndex,
+    listParentId: preview.gapListParentId ?? listParentForColumn(pathIds, preview.toCol),
+  };
+}
+
 export function buildMindmapDropPreview(
   roots: TaskNode[],
   pathIds: string[],
@@ -435,16 +502,7 @@ export function buildMindmapDropPreview(
 
   if (overKind.kind === "columnGap") {
     const { columnIndex: c, insertIndex: gapIdx, listParentId: lp } = overKind;
-    const pathLeafCol = pathIds.length;
-    if (pathIds.length > 0 && c > pathLeafCol) {
-      if (!gapListParentAllowedInDepthSliceColumns(roots, pathIds, lp)) return null;
-    } else {
-      const expected = listParentExpectedForColumn(pathIds, c);
-      if (lp !== expected) return null;
-    }
-    if (lp !== null && (activeId === lp || subtreeContainsId(activeNode, lp))) {
-      return null;
-    }
+    if (!gapListParentValid(roots, c, lp, activeNode)) return null;
     const sibs = getSiblingsList(roots, lp);
     if (gapIdx < 0 || gapIdx > sibs.length) return null;
     const intent: DropIntent = c === 0 && gapIdx === sibs.length ? "column-end" : "reorder-gap";
@@ -487,7 +545,7 @@ export function buildMindmapDropPreview(
   if (pa === pt) {
     const sibs = getSiblingsList(roots, listParent);
     const insertIndex = insertIndexBelowCardAmongSiblings(sibs, activeId, targetId);
-    return mapIntentToPreview(activeId, "reorder-sibling", targetCol, insertIndex, targetId, undefined);
+    return mapIntentToPreview(activeId, "reorder-sibling", targetCol, insertIndex, targetId, listParent);
   }
 
   if (subtreeContainsId(activeNode, targetId)) return null;
@@ -513,16 +571,7 @@ export function applyMindmapDrop(
 
   if (overKind.kind === "columnGap") {
     const { columnIndex: c, insertIndex: gapIdx, listParentId: lp } = overKind;
-    const pathLeafCol = pathIds.length;
-    if (pathIds.length > 0 && c > pathLeafCol) {
-      if (!gapListParentAllowedInDepthSliceColumns(roots, pathIds, lp)) return roots;
-    } else {
-      const expected = listParentExpectedForColumn(pathIds, c);
-      if (lp !== expected) return roots;
-    }
-    if (lp !== null && (activeId === lp || subtreeContainsId(activeNode, lp))) {
-      return roots;
-    }
+    if (!gapListParentValid(roots, c, lp, activeNode)) return roots;
     const sibsBefore = getSiblingsList(roots, lp);
     if (gapIdx < 0 || gapIdx > sibsBefore.length) return roots;
     const insertAt = gapIndexToInsertAfterDetach(sibsBefore, activeId, gapIdx);

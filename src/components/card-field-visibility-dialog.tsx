@@ -8,19 +8,22 @@ import {
   mergeCardFieldVisibility,
   type CardFieldVisibility,
 } from "@/lib/card-field-visibility";
+import { DEFAULT_COMPLETED_TAG } from "@/lib/task-tags";
 
 export interface CardFieldVisibilityDialogProps {
   open: boolean;
   value: CardFieldVisibility;
   effortOnTasksEnabled: boolean;
+  completedTag: string;
   onClose: () => void;
-  onApply: (next: CardFieldVisibility, effortOnTasksEnabled: boolean) => void;
+  onApply: (next: CardFieldVisibility, effortOnTasksEnabled: boolean, completedTag: string) => void;
 }
 
 export function CardFieldVisibilityDialog({
   open,
   value,
   effortOnTasksEnabled,
+  completedTag,
   onClose,
   onApply,
 }: CardFieldVisibilityDialogProps) {
@@ -28,12 +31,14 @@ export function CardFieldVisibilityDialog({
   const baseId = useId();
   const [draft, setDraft] = useState<CardFieldVisibility>(() => mergeCardFieldVisibility(value));
   const [effortOn, setEffortOn] = useState(effortOnTasksEnabled);
+  const [doneTag, setDoneTag] = useState(completedTag);
 
   useLayoutEffect(() => {
     if (!open) return;
     setDraft(mergeCardFieldVisibility(value));
     setEffortOn(effortOnTasksEnabled);
-  }, [open, value, effortOnTasksEnabled]);
+    setDoneTag(completedTag);
+  }, [open, value, effortOnTasksEnabled, completedTag]);
 
   if (!open) return null;
 
@@ -42,7 +47,7 @@ export function CardFieldVisibilityDialog({
   };
 
   const handleApply = () => {
-    onApply(mergeCardFieldVisibility(draft), effortOn);
+    onApply(mergeCardFieldVisibility(draft), effortOn, doneTag.trim() || DEFAULT_COMPLETED_TAG);
     onClose();
   };
 
@@ -62,30 +67,50 @@ export function CardFieldVisibilityDialog({
         onMouseDown={(e) => e.stopPropagation()}
       >
         <h2 id={titleId} className="text-sm font-semibold text-slate-900">
-          Kartenfelder
+          Kartenfelder &amp; Tags
         </h2>
         <p className="mt-1 text-xs text-slate-500">
           Steuert die Sichtbarkeit in Karten- und Detailansicht. Beim JSON-Import/Export bleiben alle Daten erhalten;
           der Titel ist immer sichtbar.
         </p>
 
-        <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2">
-          <label htmlFor={`${baseId}-effort-global`} className="flex cursor-pointer items-start gap-2 text-sm text-slate-800">
-            <input
-              id={`${baseId}-effort-global`}
-              type="checkbox"
-              checked={effortOn}
-              onChange={() => setEffortOn((v) => !v)}
-              className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-sky-600 focus:ring-sky-500/40"
-            />
-            <span>
-              <span className="font-medium">Aufwand (Stunden) an Aufgaben</span>
-              <span className="mt-0.5 block text-[11px] font-normal text-slate-500">
-                Aus: keine Eingabe und keine Anzeige von Stunden oder Summe (Σ), unabhängig von „Aufwand“ in der
-                Liste unten.
+        <div className="mt-3 space-y-3">
+          <div className="rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2">
+            <label htmlFor={`${baseId}-effort-global`} className="flex cursor-pointer items-start gap-2 text-sm text-slate-800">
+              <input
+                id={`${baseId}-effort-global`}
+                type="checkbox"
+                checked={effortOn}
+                onChange={() => setEffortOn((v) => !v)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-sky-600 focus:ring-sky-500/40"
+              />
+              <span>
+                <span className="font-medium">Aufwand an Aufgaben</span>
+                <span className="mt-0.5 block text-[11px] font-normal text-slate-500">
+                  Aus: keine Eingabe und keine Anzeige von Aufwand, Σ oder kritischem Pfad, unabhängig von „Aufwand“ in der
+                  Liste unten.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+          </div>
+
+          <div className="rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2">
+            <label htmlFor={`${baseId}-completed-tag`} className="block text-xs font-medium text-slate-600">
+              Tag „erledigt“
+            </label>
+            <input
+              id={`${baseId}-completed-tag`}
+              type="text"
+              value={doneTag}
+              onChange={(e) => setDoneTag(e.target.value)}
+              placeholder={DEFAULT_COMPLETED_TAG}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none ring-sky-500/30 focus:ring-2"
+            />
+            <p className="mt-1 text-[11px] text-slate-500">
+              Karten mit diesem Tag gelten als erledigt (Filter ausblenden, KP, überfällig, Meilenstein-Summen). Groß-/
+              Kleinschreibung beim Tag auf der Karte egal.
+            </p>
+          </div>
         </div>
 
         <ul className="mt-3 max-h-[min(60vh,22rem)] space-y-2 overflow-y-auto pr-0.5">

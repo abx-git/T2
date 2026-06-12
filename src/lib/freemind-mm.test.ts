@@ -26,6 +26,7 @@ describe("freemind-mm", () => {
       {
         id: "id-1",
         title: "Projekt",
+        link: "https://example.org/p",
         description: "Hinweis",
         tags: ["Demo"],
         dueDate: null,
@@ -35,6 +36,7 @@ describe("freemind-mm", () => {
           {
             id: "id-2",
             title: "Teil",
+            link: "",
             description: "",
             tags: [],
             dueDate: null,
@@ -52,6 +54,7 @@ describe("freemind-mm", () => {
     expect(back[0]!.description).toContain("Hinweis");
     expect(back[0]!.tags).toContain("Demo");
     expect(back[0]!.effort).toBe(3);
+    expect(back[0]!.link).toBe("https://example.org/p");
     expect(back[0]!.children[0]!.title).toBe("Teil");
   });
 
@@ -60,6 +63,7 @@ describe("freemind-mm", () => {
       {
         id: "a",
         title: "R1",
+        link: "",
         description: "",
         tags: [],
         dueDate: null,
@@ -70,6 +74,7 @@ describe("freemind-mm", () => {
       {
         id: "b",
         title: "R2",
+        link: "",
         description: "",
         tags: [],
         dueDate: null,

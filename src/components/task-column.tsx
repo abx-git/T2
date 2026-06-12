@@ -1,9 +1,8 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { Plus } from "lucide-react";
-import { Fragment } from "react";
+import { ClipboardPaste, Plus } from "lucide-react";
 
 import {
   columnGapId,
@@ -12,6 +11,7 @@ import {
   siblingInsertIndexBeforeCard,
   type ColumnDisplayRow,
 } from "@/lib/tree-utils";
+import { MINDMAP_ROW_HEIGHT } from "@/lib/mindmap-layout";
 import type { CardFieldVisibility } from "@/lib/card-field-visibility";
 import type { BoardDropPreview } from "@/types/dnd-preview";
 import type { TaskNode } from "@/types/task-node";
@@ -21,7 +21,7 @@ import { TaskCard } from "./task-card";
 function DropSlotLine() {
   return (
     <div className="pointer-events-none relative z-30 py-1" aria-hidden>
-      <div className="h-1 w-full rounded-full bg-sky-600 shadow-[0_0_0_2px_rgba(255,255,255,1)]" />
+      <div className="h-1.5 w-full rounded-full bg-sky-600 shadow-[0_0_0_2px_rgba(255,255,255,1)] ring-2 ring-sky-200/90" />
     </div>
   );
 }
@@ -32,13 +32,14 @@ function ColumnInsertGap({
   listParentId,
   showLine,
   highlightColumn,
+  topPx,
 }: {
   columnIndex: number;
   insertIndex: number;
   listParentId: string | null;
   showLine: boolean;
-  /** Hauptebene: End-Lücke — gleiche Flächen-Hervorhebung wie früher die große Drop-Zone. */
   highlightColumn: boolean;
+  topPx: number;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: columnGapId(columnIndex, insertIndex, listParentId),
@@ -54,10 +55,11 @@ function ColumnInsertGap({
     <div
       ref={setNodeRef}
       className={[
-        "relative z-10 min-h-[12px] shrink-0 rounded-md transition-colors",
+        "absolute left-0 right-0 z-10 min-h-[12px] shrink-0 rounded-md transition-colors",
         highlightColumn && isOver ? "min-h-[24px] bg-sky-100/90 ring-2 ring-sky-500" : "",
         !highlightColumn && isOver ? "bg-sky-50/80" : "",
       ].join(" ")}
+      style={{ top: topPx }}
     >
       {showLine ? <DropSlotLine /> : <div className="h-1" aria-hidden />}
     </div>
@@ -69,23 +71,23 @@ export interface TaskColumnProps {
   columnIndex: number;
   roots: TaskNode[];
   rows: ColumnDisplayRow[];
+  totalRows: number;
   pathIds: string[];
-  /** Knoten auf dem aktuellen Zweig (Hintergrund in Spaltenansicht). */
-  branchNodeIds: Set<string>;
-  /** Knoten-IDs im Teilbaum unter der per Maus gehoverten Karte (inkl. Wurzel der Hervorhebung). */
-  hoverSubtreeIds: Set<string> | null;
-  onHoverSubtreeEnter: (nodeId: string) => void;
-  onHoverSubtreeLeave: () => void;
+  collapsedIds: Set<string>;
+  searchFocusNodeId?: string | null;
   onAddCard: (columnIndex: number) => void;
+  onPasteSubtree?: (columnIndex: number) => void;
   onAddChildCard: (parentId: string) => void;
-  onEditCard: (nodeId: string) => void;
-  onDeleteCard: (nodeId: string) => void;
-  /** Pfad bis zur fokussierten Karte setzen (Ast aktivieren). */
+  onOpenDetails: (nodeId: string) => void;
+  onToggleCollapsed: (nodeId: string) => void;
+  titleEditNodeId: string | null;
+  onTitleSave: (nodeId: string, title: string, meta?: import("./task-card").TaskTitleSaveMeta) => void;
+  onTitleEditCancel: (nodeId: string) => void;
+  compact?: boolean;
   onActivateBranch: (nodeId: string) => void;
   dropPreview: BoardDropPreview | null;
   fieldVisibility: CardFieldVisibility;
-  onExportSubtree?: (node: TaskNode) => void;
-  onCopySubtreeJson?: (node: TaskNode) => void;
+  onCopySubtree?: (node: TaskNode) => void;
 }
 
 export function TaskColumn({
@@ -93,39 +95,46 @@ export function TaskColumn({
   columnIndex,
   roots,
   rows,
+  totalRows,
   pathIds,
-  branchNodeIds,
-  hoverSubtreeIds,
-  onHoverSubtreeEnter,
-  onHoverSubtreeLeave,
+  collapsedIds,
+  searchFocusNodeId = null,
   onAddCard,
+  onPasteSubtree,
   onAddChildCard,
-  onEditCard,
-  onDeleteCard,
+  onOpenDetails,
+  onToggleCollapsed,
+  titleEditNodeId,
+  onTitleSave,
+  onTitleEditCancel,
+  compact = false,
   onActivateBranch,
   dropPreview,
   fieldVisibility,
-  onExportSubtree,
-  onCopySubtreeJson,
+  onCopySubtree,
 }: TaskColumnProps) {
-  const ids = rows.map((r) => r.node.id);
   const listLp = listParentForColumn(pathIds, columnIndex);
-  const depthSliceColumn = pathIds.length > 0 && columnIndex > pathIds.length;
-  const allowAddCard = columnIndex === 0 || columnIndex <= pathIds.length;
+  const allowAddCard = columnIndex === 0 || pathIds[columnIndex - 1] != null;
 
   const previewHere =
     dropPreview && dropPreview.toCol === columnIndex ? dropPreview : null;
 
-  const gapLineAt = (insertIndex: number, gapLp: string | null) =>
-    Boolean(
-      previewHere &&
-        previewHere.targetMode === "column" &&
-        (previewHere.intent === "reorder-gap" || previewHere.intent === "column-end") &&
-        previewHere.insertIndex === insertIndex &&
-        (previewHere.gapListParentId === undefined || previewHere.gapListParentId === gapLp),
+  const gapLineAt = (insertIndex: number, gapLp: string | null) => {
+    if (!previewHere || previewHere.targetMode !== "column") return false;
+    const sortIntent =
+      previewHere.intent === "reorder-gap" ||
+      previewHere.intent === "column-end" ||
+      previewHere.intent === "reorder-sibling" ||
+      previewHere.intent === "root-sibling";
+    if (!sortIntent) return false;
+    return (
+      previewHere.insertIndex === insertIndex &&
+      (previewHere.gapListParentId === undefined || previewHere.gapListParentId === gapLp)
     );
+  };
 
-  const siblingTailInsertIndex = () => getSiblingsList(roots, listLp).length;
+  const siblingTailInsertIndex = (listParentId: string | null) =>
+    getSiblingsList(roots, listParentId).length;
 
   const mainTailHighlight = (insertIndex: number, gapLp: string | null) =>
     columnIndex === 0 &&
@@ -134,198 +143,124 @@ export function TaskColumn({
       previewHere?.intent === "column-end" &&
         previewHere.insertIndex === insertIndex &&
         (previewHere.gapListParentId === undefined || previewHere.gapListParentId === null) &&
-        (rows.length === 0 ? insertIndex === 0 : insertIndex === siblingTailInsertIndex()),
+        (rows.length === 0
+          ? insertIndex === 0
+          : insertIndex === siblingTailInsertIndex(rows[rows.length - 1]?.listParentId ?? null)),
     );
 
-  const renderUniformList = () => (
-    <>
-      {rows.length === 0 ? (
-        <div className="flex min-h-[72px] flex-col">
-          <ColumnInsertGap
-            columnIndex={columnIndex}
-            insertIndex={0}
-            listParentId={listLp}
-            showLine={gapLineAt(0, listLp)}
-            highlightColumn={mainTailHighlight(0, listLp)}
-          />
-        </div>
-      ) : (
-        <div className="flex flex-col gap-0.5">
-          <ColumnInsertGap
-            columnIndex={columnIndex}
-            insertIndex={siblingInsertIndexBeforeCard(roots, rows[0].listParentId, rows[0].node.id)}
-            listParentId={rows[0].listParentId}
-            showLine={gapLineAt(
-              siblingInsertIndexBeforeCard(roots, rows[0].listParentId, rows[0].node.id),
-              rows[0].listParentId,
-            )}
-            highlightColumn={mainTailHighlight(
-              siblingInsertIndexBeforeCard(roots, rows[0].listParentId, rows[0].node.id),
-              rows[0].listParentId,
-            )}
-          />
-          {rows.map((row, i) => (
-            <Fragment key={row.node.id}>
-              <div className="relative z-20">
-                <TaskCard
-                  node={row.node}
-                  columnIndex={columnIndex}
-                  listParentId={listLp}
-                  isDrilledHere={pathIds[columnIndex] === row.node.id}
-                  isOnActivePath={pathIds.includes(row.node.id)}
-                  branchHighlight={branchNodeIds.has(row.node.id)}
-                  hoverSubtreeHighlight={Boolean(hoverSubtreeIds?.has(row.node.id))}
-                  onHoverSubtreeEnter={() => onHoverSubtreeEnter(row.node.id)}
-                  onHoverSubtreeLeave={onHoverSubtreeLeave}
-                  isCardDropTarget={
-                    Boolean(
-                      previewHere?.targetMode === "card" && previewHere.anchorCardId === row.node.id,
-                    )
-                  }
-                  onAddChild={() => onAddChildCard(row.node.id)}
-                  onEdit={() => onEditCard(row.node.id)}
-                  onDelete={() => onDeleteCard(row.node.id)}
-                  fieldVisibility={fieldVisibility}
-                  onFocusActivateBranch={() => onActivateBranch(row.node.id)}
-                  onExportSubtree={
-                    onExportSubtree ? () => onExportSubtree(row.node) : undefined
-                  }
-                  onCopySubtreeJson={
-                    onCopySubtreeJson ? () => onCopySubtreeJson(row.node) : undefined
-                  }
-                />
-              </div>
-              <ColumnInsertGap
-                columnIndex={columnIndex}
-                insertIndex={
-                  i + 1 < rows.length
-                    ? siblingInsertIndexBeforeCard(roots, rows[i + 1].listParentId, rows[i + 1].node.id)
-                    : getSiblingsList(roots, row.listParentId).length
-                }
-                listParentId={i + 1 < rows.length ? rows[i + 1].listParentId : row.listParentId}
-                showLine={gapLineAt(
-                  i + 1 < rows.length
-                    ? siblingInsertIndexBeforeCard(roots, rows[i + 1].listParentId, rows[i + 1].node.id)
-                    : getSiblingsList(roots, row.listParentId).length,
-                  i + 1 < rows.length ? rows[i + 1].listParentId : row.listParentId,
-                )}
-                highlightColumn={mainTailHighlight(
-                  i + 1 < rows.length
-                    ? siblingInsertIndexBeforeCard(roots, rows[i + 1].listParentId, rows[i + 1].node.id)
-                    : getSiblingsList(roots, row.listParentId).length,
-                  i + 1 < rows.length ? rows[i + 1].listParentId : row.listParentId,
-                )}
-              />
-            </Fragment>
-          ))}
-        </div>
-      )}
-    </>
-  );
+  const canvasHeight = Math.max(totalRows, 1) * MINDMAP_ROW_HEIGHT;
 
-  const renderDepthSliceList = () => (
-    <>
-      {rows.length === 0 ? (
-        <div className="flex min-h-[72px] flex-col">
-          <ColumnInsertGap
+  const renderPositioned = () => {
+    if (rows.length === 0) {
+      return (
+        <ColumnInsertGap
+          columnIndex={columnIndex}
+          insertIndex={0}
+          listParentId={listLp}
+          showLine={gapLineAt(0, listLp)}
+          highlightColumn={mainTailHighlight(0, listLp)}
+          topPx={0}
+        />
+      );
+    }
+
+    const elements: ReactNode[] = [];
+
+    rows.forEach((row, i) => {
+      const insertBefore = siblingInsertIndexBeforeCard(roots, row.listParentId, row.node.id);
+      const gapTop = row.slotStart * MINDMAP_ROW_HEIGHT;
+
+      elements.push(
+        <ColumnInsertGap
+          key={`gap-before-${row.node.id}`}
+          columnIndex={columnIndex}
+          insertIndex={insertBefore}
+          listParentId={row.listParentId}
+          showLine={gapLineAt(insertBefore, row.listParentId)}
+          highlightColumn={mainTailHighlight(insertBefore, row.listParentId)}
+          topPx={gapTop}
+        />,
+      );
+
+      elements.push(
+        <div
+          key={row.node.id}
+          className="absolute left-0 right-0 z-20 px-0.5"
+          style={{ top: row.ySlot * MINDMAP_ROW_HEIGHT }}
+        >
+          <TaskCard
+            node={row.node}
             columnIndex={columnIndex}
-            insertIndex={0}
-            listParentId={listLp}
-            showLine={gapLineAt(0, listLp)}
-            highlightColumn={mainTailHighlight(0, listLp)}
+            listParentId={row.listParentId}
+            isSearchFocus={searchFocusNodeId === row.node.id}
+            isNestDropTarget={
+              previewHere?.intent === "nest-under" && previewHere.anchorCardId === row.node.id
+            }
+            isBranchCollapsed={collapsedIds.has(row.node.id)}
+            onToggleCollapsed={() => onToggleCollapsed(row.node.id)}
+            compact={compact}
+            isTitleEditing={titleEditNodeId === row.node.id}
+            onTitleSave={(t, meta) => onTitleSave(row.node.id, t, meta)}
+            onTitleEditCancel={() => onTitleEditCancel(row.node.id)}
+            onAddChild={() => onAddChildCard(row.node.id)}
+            onOpenDetails={() => onOpenDetails(row.node.id)}
+            fieldVisibility={fieldVisibility}
+            onOpenBranch={() => onActivateBranch(row.node.id)}
+            onCopySubtree={onCopySubtree ? () => onCopySubtree(row.node) : undefined}
           />
-        </div>
-      ) : (
-        <div className="flex flex-col gap-0.5">
+        </div>,
+      );
+
+      if (i === rows.length - 1) {
+        const tailIndex = siblingTailInsertIndex(row.listParentId);
+        const tailTop = row.slotEnd * MINDMAP_ROW_HEIGHT;
+        elements.push(
           <ColumnInsertGap
+            key={`gap-tail-${row.node.id}`}
             columnIndex={columnIndex}
-            insertIndex={siblingInsertIndexBeforeCard(roots, rows[0].listParentId, rows[0].node.id)}
-            listParentId={rows[0].listParentId}
-            showLine={gapLineAt(
-              siblingInsertIndexBeforeCard(roots, rows[0].listParentId, rows[0].node.id),
-              rows[0].listParentId,
-            )}
-            highlightColumn={mainTailHighlight(
-              siblingInsertIndexBeforeCard(roots, rows[0].listParentId, rows[0].node.id),
-              rows[0].listParentId,
-            )}
-          />
-          {rows.map((row, i) => (
-            <Fragment key={row.node.id}>
-              <div className="relative z-20">
-                <TaskCard
-                  node={row.node}
-                  columnIndex={columnIndex}
-                  listParentId={row.listParentId}
-                  isDrilledHere={pathIds[columnIndex] === row.node.id}
-                  isOnActivePath={pathIds.includes(row.node.id)}
-                  branchHighlight={branchNodeIds.has(row.node.id)}
-                  hoverSubtreeHighlight={Boolean(hoverSubtreeIds?.has(row.node.id))}
-                  onHoverSubtreeEnter={() => onHoverSubtreeEnter(row.node.id)}
-                  onHoverSubtreeLeave={onHoverSubtreeLeave}
-                  isCardDropTarget={
-                    Boolean(
-                      previewHere?.targetMode === "card" && previewHere.anchorCardId === row.node.id,
-                    )
-                  }
-                  onAddChild={() => onAddChildCard(row.node.id)}
-                  onEdit={() => onEditCard(row.node.id)}
-                  onDelete={() => onDeleteCard(row.node.id)}
-                  fieldVisibility={fieldVisibility}
-                  onFocusActivateBranch={() => onActivateBranch(row.node.id)}
-                  onExportSubtree={
-                    onExportSubtree ? () => onExportSubtree(row.node) : undefined
-                  }
-                  onCopySubtreeJson={
-                    onCopySubtreeJson ? () => onCopySubtreeJson(row.node) : undefined
-                  }
-                />
-              </div>
-              <ColumnInsertGap
-                columnIndex={columnIndex}
-                insertIndex={
-                  i + 1 < rows.length
-                    ? siblingInsertIndexBeforeCard(roots, rows[i + 1].listParentId, rows[i + 1].node.id)
-                    : getSiblingsList(roots, row.listParentId).length
-                }
-                listParentId={i + 1 < rows.length ? rows[i + 1].listParentId : row.listParentId}
-                showLine={gapLineAt(
-                  i + 1 < rows.length
-                    ? siblingInsertIndexBeforeCard(roots, rows[i + 1].listParentId, rows[i + 1].node.id)
-                    : getSiblingsList(roots, row.listParentId).length,
-                  i + 1 < rows.length ? rows[i + 1].listParentId : row.listParentId,
-                )}
-                highlightColumn={mainTailHighlight(
-                  i + 1 < rows.length
-                    ? siblingInsertIndexBeforeCard(roots, rows[i + 1].listParentId, rows[i + 1].node.id)
-                    : getSiblingsList(roots, row.listParentId).length,
-                  i + 1 < rows.length ? rows[i + 1].listParentId : row.listParentId,
-                )}
-              />
-            </Fragment>
-          ))}
-        </div>
-      )}
-    </>
-  );
+            insertIndex={tailIndex}
+            listParentId={row.listParentId}
+            showLine={gapLineAt(tailIndex, row.listParentId)}
+            highlightColumn={mainTailHighlight(tailIndex, row.listParentId)}
+            topPx={tailTop}
+          />,
+        );
+      }
+    });
+
+    return elements;
+  };
 
   return (
-    <section className="flex min-h-0 w-72 shrink-0 flex-col rounded-xl bg-column/90 p-2 shadow-sm ring-1 ring-slate-200/60 transition-shadow">
+    <section className="relative z-10 flex w-72 shrink-0 flex-col overflow-hidden rounded-xl bg-column/90 p-2 shadow-sm ring-1 ring-slate-200/60 transition-shadow">
       <header className="mb-2 flex shrink-0 items-center justify-between gap-1 px-1">
         <h2 className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
           {title}
         </h2>
         <div className="flex shrink-0 items-center gap-1">
           {allowAddCard ? (
-            <button
-              type="button"
-              onClick={() => onAddCard(columnIndex)}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-white hover:text-sky-700"
-              title="Neue Karte in dieser Spalte"
-              aria-label="Neue Karte in dieser Spalte"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => onAddCard(columnIndex)}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-white hover:text-sky-700"
+                title="Neue Karte in dieser Spalte"
+                aria-label="Neue Karte in dieser Spalte"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+              {onPasteSubtree ? (
+                <button
+                  type="button"
+                  onClick={() => onPasteSubtree(columnIndex)}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-white hover:text-violet-700"
+                  title="Teilbaum-JSON in diese Spalte einfügen"
+                  aria-label="Teilbaum-JSON in diese Spalte einfügen"
+                >
+                  <ClipboardPaste className="h-4 w-4" />
+                </button>
+              ) : null}
+            </>
           ) : null}
           <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-medium text-slate-600">
             {rows.length}
@@ -333,41 +268,14 @@ export function TaskColumn({
         </div>
       </header>
 
-      <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-        <div
-          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-y-contain rounded-lg p-0.5 scroll-py-2 outline-none [-webkit-overflow-scrolling:touch] focus-visible:ring-2 focus-visible:ring-sky-400/50 focus-visible:ring-offset-1"
-          role="region"
-          aria-label={`${title}: Kartenliste`}
-          title="Maus: Rad scrollen. Tastatur: Fokus hier (Tab), dann Pfeiltasten, Bild auf/ab, Pos1/Ende."
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.target !== e.currentTarget) return;
-            const el = e.currentTarget;
-            const step = 48;
-            if (e.key === "ArrowDown") {
-              e.preventDefault();
-              el.scrollBy({ top: step, behavior: "smooth" });
-            } else if (e.key === "ArrowUp") {
-              e.preventDefault();
-              el.scrollBy({ top: -step, behavior: "smooth" });
-            } else if (e.key === "PageDown") {
-              e.preventDefault();
-              el.scrollBy({ top: el.clientHeight * 0.9, behavior: "smooth" });
-            } else if (e.key === "PageUp") {
-              e.preventDefault();
-              el.scrollBy({ top: -el.clientHeight * 0.9, behavior: "smooth" });
-            } else if (e.key === "Home") {
-              e.preventDefault();
-              el.scrollTo({ top: 0, behavior: "smooth" });
-            } else if (e.key === "End") {
-              e.preventDefault();
-              el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-            }
-          }}
-        >
-          {depthSliceColumn ? renderDepthSliceList() : renderUniformList()}
-        </div>
-      </SortableContext>
+      <div
+        className="relative min-h-[72px] rounded-lg p-0.5"
+        role="region"
+        aria-label={`${title}: Kartenliste`}
+        style={{ height: canvasHeight }}
+      >
+        {renderPositioned()}
+      </div>
     </section>
   );
 }

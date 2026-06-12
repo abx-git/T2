@@ -6,9 +6,14 @@ import {
   applyMindmapDrop,
   boardColumnCount,
   buildMindmapDropPreview,
+  dragOverKindFromPreview,
+  columnIndexOfNode,
   gapIndexToInsertAfterDetach,
   getColumnDisplayRows,
   insertIndexBelowCardAmongSiblings,
+  normalizePathIds,
+  pathFromRootToNode,
+  pathIdsAfterNodeMove,
   type TreeDragOverKind,
 } from "./tree-utils";
 
@@ -17,6 +22,7 @@ function node(id: string, children: TaskNode[] = []): TaskNode {
   return {
     id,
     title: id,
+    link: "",
     description: "",
     tags: [],
     dueDate: null,
@@ -198,6 +204,36 @@ describe("applyMindmapDrop — Teilbaum bleibt intakt", () => {
   });
 });
 
+describe("pathIdsAfterNodeMove", () => {
+  it("Pfad bis zur Karte (inkl.), wie expandToNode", () => {
+    const roots = [node("p", [node("x")]), node("q")];
+    const oldPath = ["p", "x"];
+    const nextRoots = applyMindmapDrop(roots, oldPath, "x", card("q", 0, null));
+    expect(normalizePathIds(nextRoots, oldPath)).toEqual(["p"]);
+    expect(pathIdsAfterNodeMove(nextRoots, "x", oldPath)).toEqual(["x"]);
+    expect(columnIndexOfNode(nextRoots, pathIdsAfterNodeMove(nextRoots, "x", oldPath), "x")).toBe(0);
+  });
+
+  it("A-B-C-D: nach Nest unter C sofort sichtbar ohne Parent-Klick", () => {
+    const roots = [node("A", [node("B", [node("C", [node("D")])])])];
+    const stalePath = ["A", "B", "D"];
+
+    expect(columnIndexOfNode(roots, stalePath, "D")).toBe(3);
+
+    const path = pathIdsAfterNodeMove(roots, "D", stalePath);
+    expect(path).toEqual(["A", "B", "C", "D"]);
+    expect(columnIndexOfNode(roots, path, "D")).toBe(3);
+    expect(getColumnDisplayRows(roots, path, 3).some((r) => r.node.id === "D")).toBe(true);
+  });
+
+  it("nach Nest unter C: Pfad [A,B,C,D]", () => {
+    const underB = [node("A", [node("B", [node("C"), node("D")])])];
+    const underC = applyMindmapDrop(underB, ["A", "B"], "D", card("C", 2, "B"));
+    expect(shape(underC)).toBe("A(B(C(D())))");
+    expect(pathIdsAfterNodeMove(underC, "D", ["A", "B", "D"])).toEqual(["A", "B", "C", "D"]);
+  });
+});
+
 describe("buildMindmapDropPreview — konsistent mit erlaubten Drops", () => {
   const roots = [
     node("a", [node("x")]),
@@ -225,12 +261,22 @@ describe("buildMindmapDropPreview — konsistent mit erlaubten Drops", () => {
 
   it("Kind auf Wurzel (andere Spalte) → root-sibling", () => {
     const p = buildMindmapDropPreview(roots, pathRoots, "x", card("b", 0, null));
-    expect(p).toMatchObject({ intent: "root-sibling", anchorCardId: "b" });
+    expect(p).toMatchObject({
+      intent: "root-sibling",
+      targetMode: "column",
+      anchorCardId: "b",
+    });
   });
 
   it("gleiche Spalte unter b: y auf z → nest-under", () => {
     const p = buildMindmapDropPreview(roots, pathUnderB, "y", card("z", 1, "b"));
-    expect(p).toMatchObject({ intent: "nest-under", anchorCardId: "z" });
+    expect(p).toMatchObject({ intent: "nest-under", targetMode: "card", anchorCardId: "z" });
+    expect(dragOverKindFromPreview(roots, p!, pathUnderB)).toEqual({
+      kind: "card",
+      columnIndex: 1,
+      cardId: "z",
+      listParentId: "b",
+    });
   });
 
   it("andere Spalte: Wurzel a auf z unter b → nest-under", () => {
@@ -265,17 +311,17 @@ describe("buildMindmapDropPreview — abgelehnte Ziele", () => {
   });
 });
 
-describe("boardColumnCount / Spalten unter Pfad-Ende", () => {
-  it("zusätzliche Spalten für jede weitere Tiefe unter dem Blatt", () => {
+describe("boardColumnCount / Mindmap-Spalten nach Tiefe", () => {
+  it("Spaltenanzahl = maximale Baumtiefe", () => {
     const roots = [node("p", [node("a", [node("x", [node("deep")])])])];
-    expect(boardColumnCount(roots, ["p"])).toBe(4);
-    const col2 = getColumnDisplayRows(roots, ["p"], 2).map((r) => r.node.id);
-    const col3 = getColumnDisplayRows(roots, ["p"], 3).map((r) => r.node.id);
+    expect(boardColumnCount(roots, [])).toBe(4);
+    const col2 = getColumnDisplayRows(roots, [], 2).map((r) => r.node.id);
+    const col3 = getColumnDisplayRows(roots, [], 3).map((r) => r.node.id);
     expect(col2).toEqual(["x"]);
     expect(col3).toEqual(["deep"]);
   });
 
-  it("nur Pfad + eine Kinderspalte wenn kein Enkel", () => {
+  it("zwei Ebenen unter Wurzel", () => {
     const roots = [node("p", [node("a"), node("b")])];
     expect(boardColumnCount(roots, ["p"])).toBe(2);
   });

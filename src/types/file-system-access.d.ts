@@ -5,6 +5,12 @@ interface FilePickerAcceptType {
   accept: Record<string, string[]>;
 }
 
+interface OpenFilePickerOptions {
+  multiple?: boolean;
+  excludeAcceptAllOption?: boolean;
+  types?: FilePickerAcceptType[];
+}
+
 interface SaveFilePickerOptions {
   excludeAcceptAllOption?: boolean;
   suggestedName?: string;
@@ -21,11 +27,14 @@ interface FileSystemWritableFileStream extends WritableStream {
 }
 
 interface FileSystemFileHandle {
+  readonly name: string;
+  getFile(): Promise<File>;
   createWritable(options?: FileSystemCreateWritableOptions): Promise<FileSystemWritableFileStream>;
   queryPermission(descriptor: { mode: "read" | "readwrite" }): Promise<PermissionState>;
   requestPermission(descriptor: { mode: "read" | "readwrite" }): Promise<PermissionState>;
 }
 
 interface Window {
+  showOpenFilePicker?(options?: OpenFilePickerOptions): Promise<FileSystemFileHandle[]>;
   showSaveFilePicker?(options?: SaveFilePickerOptions): Promise<FileSystemFileHandle>;
 }

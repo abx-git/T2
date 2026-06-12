@@ -27,6 +27,10 @@
           "description": "Eindeutige Knoten-ID (z. B. UUID)."
         },
         "title": { "type": "string" },
+        "link": {
+          "type": "string",
+          "description": "Optional: externer Link (http/https); Titel auf der Karte wird dann klickbar."
+        },
         "description": { "type": "string" },
         "tags": {
           "type": "array",
@@ -45,7 +49,17 @@
         "effort": {
           "type": "number",
           "minimum": 0,
-          "description": "Aufwand in Stunden (nicht-negative Zahl)."
+          "description": "Aufwand (nicht-negative Zahl); Einheit über effortUnit."
+        },
+        "effortUnit": {
+          "type": "string",
+          "enum": ["hours", "minutes", "workdays"],
+          "description": "Optional: hours (Standard), minutes oder workdays (Werktage, kritischer Pfad ohne Sa/So)."
+        },
+        "effortSource": {
+          "type": "string",
+          "enum": ["manual", "calculated"],
+          "description": "Optional: manual (Standard) oder calculated (Summe offener direkter Kinder, per Knopf im Editor)."
         },
         "children": {
           "type": "array",
@@ -59,7 +73,10 @@
       "type": "object",
       "description": "Sichtbarkeit von Kartenfeldern (außer Titel) in Liste und Detail; rein UI. Fehlende Schlüssel werden beim Laden mit true belegt.",
       "properties": {
+        "completedCheck": { "type": "boolean" },
+        "id": { "type": "boolean" },
         "description": { "type": "boolean" },
+        "link": { "type": "boolean" },
         "tags": { "type": "boolean" },
         "effort": { "type": "boolean" },
         "dueDate": { "type": "boolean" },
@@ -115,11 +132,16 @@
         },
         "hideCompletedTasks": {
           "type": "boolean",
-          "description": "Optional: Karten mit Tag „Erledigt“ in der Spaltenansicht ausblenden; nur Anzeige."
+          "description": "Optional: Karten mit Erledigt-Tag in der Spaltenansicht ausblenden; nur Anzeige."
+        },
+        "completedTag": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional: Tag-Name für erledigte Karten (Standard „Erledigt“)."
         },
         "effortOnTasksEnabled": {
           "type": "boolean",
-          "description": "Optional: Stunden an Aufgaben erlauben (Standard true). Bei `false` werden keine Aufwände bearbeitet oder angezeigt."
+          "description": "Optional: Aufwand an Aufgaben erlauben (Standard true). Bei `false` werden keine Aufwände bearbeitet oder angezeigt."
         }
       },
       "required": ["format", "version", "exportedAt", "scope", "roots", "pathIds", "columnTitleOverrides"],

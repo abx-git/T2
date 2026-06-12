@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import type { TaskNode } from "@/types/task-node";
 
 import { mergeCardFieldVisibility } from "./card-field-visibility";
+import { isLoxTaskId } from "./task-id";
 import {
   EXPORT_FORMAT,
   EXPORT_VERSION,
+  boardExportTextsEquivalent,
   buildBoardSnapshot,
   buildSubtreeSnapshot,
   isBoardSnapshot,
@@ -21,6 +23,7 @@ function sampleNode(id: string): TaskNode {
   return {
     id,
     title: `T-${id}`,
+    link: "https://example.org/doc",
     description: "d",
     tags: ["A"],
     dueDate: new Date("2026-03-15T12:00:00.000Z"),
@@ -30,6 +33,7 @@ function sampleNode(id: string): TaskNode {
       {
         id: `${id}-c`,
         title: "Child",
+        link: "",
         description: "",
         tags: ["In Arbeit"],
         dueDate: null,
@@ -51,8 +55,18 @@ describe("task-tree-json", () => {
     const back = taskNodeFromJson(taskNodeToJson(n));
     expect(back.id).toBe(n.id);
     expect(back.title).toBe(n.title);
+    expect(back.link).toBe("https://example.org/doc");
     expect(back.dueDate?.toISOString()).toBe(n.dueDate?.toISOString());
     expect(back.children[0].tags).toEqual(["In Arbeit"]);
+  });
+
+  it("boardExportTextsEquivalent ignores exportedAt", () => {
+    const roots: TaskNode[] = [sampleNode("r1")];
+    const snap = buildBoardSnapshot(roots, [], {}, mergeCardFieldVisibility({}), false, true);
+    const a = stringifyExportedDocument(snap);
+    const b = stringifyExportedDocument({ ...snap, exportedAt: "2020-01-01T00:00:00.000Z" });
+    expect(a).not.toBe(b);
+    expect(boardExportTextsEquivalent(a, b)).toBe(true);
   });
 
   it("remapTaskNodeIds assigns fresh ids for whole subtree", () => {
@@ -63,6 +77,7 @@ describe("task-tree-json", () => {
     expect(next.size).toBe(orig.size);
     for (const id of next) {
       expect(orig.has(id)).toBe(false);
+      expect(isLoxTaskId(id)).toBe(true);
     }
     expect(m.title).toBe(n.title);
     expect(m.children).toHaveLength(1);
@@ -100,7 +115,7 @@ describe("task-tree-json", () => {
 
   it("roundtrips board cardFieldVisibility in JSON", () => {
     const roots: TaskNode[] = [sampleNode("r1")];
-    const vis = mergeCardFieldVisibility({ description: false, effort: false });
+    const vis = mergeCardFieldVisibility({ description: false, effort: false, completedCheck: false });
     const doc = buildBoardSnapshot(roots, [], {}, vis, false, true);
     const text = stringifyExportedDocument(doc);
     const parsed = parseExportedDocument(text);
@@ -108,6 +123,7 @@ describe("task-tree-json", () => {
     if (isBoardSnapshot(parsed)) {
       expect(parsed.cardFieldVisibility?.description).toBe(false);
       expect(parsed.cardFieldVisibility?.effort).toBe(false);
+      expect(parsed.cardFieldVisibility?.completedCheck).toBe(false);
       expect(parsed.cardFieldVisibility?.tags).toBe(true);
     }
   });

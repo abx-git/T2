@@ -1,4 +1,14 @@
+import {
+  DEFAULT_EFFORT_UNIT,
+  getEffortSource,
+  getEffortUnit,
+  parseEffortSource,
+  parseEffortUnit,
+  type EffortUnit,
+} from "@/lib/task-effort";
 import { uniqNonEmptyTags } from "@/lib/task-tags";
+import { generateUniqueTaskIdFromTaken } from "@/lib/task-id";
+import { normalizeTaskLink } from "@/lib/task-link";
 import type { TaskNode } from "@/types/task-node";
 
 const NS_HINT = "hierarchical-task-manager";
@@ -36,7 +46,9 @@ function readNoteDescription(el: Element): string {
   return "";
 }
 
-function readMmNode(el: Element): TaskNode {
+function readMmNode(el: Element, taken: Set<string>): TaskNode {
+  const id = generateUniqueTaskIdFromTaken(taken);
+  taken.add(id);
   const title = el.getAttribute("TEXT")?.trim() ?? "";
   const desc = readNoteDescription(el);
   const tags = uniqNonEmptyTags(
@@ -46,24 +58,30 @@ function readMmNode(el: Element): TaskNode {
       .filter(Boolean),
   );
   const effort = parseEffort(el.getAttribute("HIER_TM_EFFORT"));
+  const effortUnit = parseEffortUnit(el.getAttribute("HIER_TM_EFFORT_UNIT") ?? undefined) ?? DEFAULT_EFFORT_UNIT;
+  const effortSource = parseEffortSource(el.getAttribute("HIER_TM_EFFORT_SOURCE") ?? undefined) ?? "manual";
   const dueDate = parseIsoDate(el.getAttribute("HIER_TM_DUE"));
   const reminderDate = parseIsoDate(el.getAttribute("HIER_TM_REMINDER"));
+  const link = normalizeTaskLink(el.getAttribute("HIER_TM_LINK") ?? "");
 
   const children: TaskNode[] = [];
   for (const ch of el.children) {
     if (ch.tagName.toLowerCase() === "node") {
-      children.push(readMmNode(ch));
+      children.push(readMmNode(ch, taken));
     }
   }
 
   return {
-    id: crypto.randomUUID(),
+    id,
     title,
+    link,
     description: desc,
     tags,
     dueDate,
     reminderDate,
     effort,
+    ...(effortUnit !== DEFAULT_EFFORT_UNIT ? { effortUnit } : {}),
+    ...(effortSource === "calculated" ? { effortSource: "calculated" } : {}),
     children,
   };
 }
@@ -86,17 +104,19 @@ export function parseFreemindMmToRoots(xmlText: string): TaskNode[] {
   const topNodes = [...map.children].filter((c) => c.tagName.toLowerCase() === "node");
   if (topNodes.length === 0) throw new Error("Mindmap ohne Knoten.");
 
+  const taken = new Set<string>();
+
   if (topNodes.length === 1) {
     const only = topNodes[0]!;
     if (only.getAttribute("HIER_TM_WRAPPER") === "1") {
       return [...only.children]
         .filter((c) => c.tagName.toLowerCase() === "node")
-        .map((c) => readMmNode(c));
+        .map((c) => readMmNode(c, taken));
     }
-    return [readMmNode(only)];
+    return [readMmNode(only, taken)];
   }
 
-  return topNodes.map((n) => readMmNode(n));
+  return topNodes.map((n) => readMmNode(n, taken));
 }
 
 function noteXml(description: string): string {
@@ -108,16 +128,26 @@ function noteXml(description: string): string {
 function taskToMmXml(node: TaskNode, depth: number): string {
   const pad = "  ".repeat(depth);
   const tags = node.tags.length ? ` HIER_TM_TAGS="${escAttr(node.tags.join("|"))}"` : "";
+  const unit: EffortUnit = getEffortUnit(node);
   const eff = node.effort > 0 ? ` HIER_TM_EFFORT="${escAttr(String(node.effort))}"` : "";
+  const effUnit =
+    node.effort > 0 && unit !== DEFAULT_EFFORT_UNIT
+      ? ` HIER_TM_EFFORT_UNIT="${escAttr(unit)}"`
+      : "";
+  const effSrc =
+    node.effort > 0 && getEffortSource(node) === "calculated"
+      ? ` HIER_TM_EFFORT_SOURCE="calculated"`
+      : "";
   const due = node.dueDate ? ` HIER_TM_DUE="${escAttr(node.dueDate.toISOString())}"` : "";
   const rem = node.reminderDate ? ` HIER_TM_REMINDER="${escAttr(node.reminderDate.toISOString())}"` : "";
+  const link = node.link.trim() ? ` HIER_TM_LINK="${escAttr(node.link)}"` : "";
   const note = noteXml(node.description);
   const childXml = node.children.map((c) => taskToMmXml(c, depth + 1)).join("");
   const textAttr = escAttr(node.title);
   if (!node.children.length && !note) {
-    return `${pad}<node TEXT="${textAttr}"${tags}${eff}${due}${rem}/>\n`;
+    return `${pad}<node TEXT="${textAttr}"${tags}${eff}${effUnit}${effSrc}${due}${rem}${link}/>\n`;
   }
-  return `${pad}<node TEXT="${textAttr}"${tags}${eff}${due}${rem}>\n${note}${childXml}${pad}</node>\n`;
+  return `${pad}<node TEXT="${textAttr}"${tags}${eff}${effUnit}${effSrc}${due}${rem}${link}>\n${note}${childXml}${pad}</node>\n`;
 }
 
 /** Serialisiert den Board-Baum als FreeMind-XML (UTF-8, eine map-Wurzel). */

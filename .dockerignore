@@ -1,0 +1,13 @@
+node_modules
+.next
+out
+dist
+.git
+.env
+.env*.local
+data
+coverage
+*.md
+!scripts/standalone-bundle/START.md
+.DS_Store
+npm-debug.log*

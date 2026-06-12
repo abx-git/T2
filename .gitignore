@@ -28,10 +28,18 @@ yarn-debug.log*
 yarn-error.log*
 
 # env files
+.env
 .env*.local
+
+# Server-Board-Daten
+/data/
 
 # typescript
 *.tsbuildinfo
 
 # Verteil-Paket (ZIP)
 /dist/
+
+# Serwist (generiert beim Build)
+public/sw*
+public/swe-worker*

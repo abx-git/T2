@@ -1,26 +1,70 @@
 "use client";
 
-import { useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { Copy, GripVertical, ListPlus, Pencil, Trash2, FileDown } from "lucide-react";
-import { type FocusEvent, useId, type PointerEvent } from "react";
-
-import { aggregateEffort, aggregateNextDue, formatDueHint } from "@/lib/aggregates";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
+import {
+  ChevronDown,
+  ChevronRight,
+  Circle,
+  CircleCheck,
+  ClipboardPaste,
+  Copy,
+  GripVertical,
+  ListPlus,
+  MoreHorizontal,
+  Pencil,
+  Target,
+  Trash2,
+} from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
+import { createPortal } from "react-dom";
+import {
+  aggregateNextDueOpen,
+  aggregateOverdueDue,
+  formatDueHint,
+  getNextChildMilestonePreview,
+  isDueOverdue,
+} from "@/lib/aggregates";
 import type { CardFieldVisibility } from "@/lib/card-field-visibility";
-import { tagChipClass } from "@/lib/task-tags";
+import { taskLinkHref } from "@/lib/task-link";
+import { criticalPathTotals, formatCriticalPathHint } from "@/lib/critical-path";
+import {
+  aggregateOpenEffortTotals,
+  effortTotalsIsEmpty,
+  formatEffortTotals,
+  getEffectiveEffortTotals,
+  getEffortSource,
+  rollupDisplayTotals,
+} from "@/lib/task-effort";
+import {
+  isTaskMarkedDone,
+  isTaskMilestone,
+  setCompletedTagOnTags,
+  tagChipClass,
+  tagsWithoutCompletedTag,
+} from "@/lib/task-tags";
+import { isCoarsePointerDevice } from "@/lib/coarse-pointer";
+import { formatTaskIdForDisplay } from "@/lib/task-id";
 import { useTaskTreeStore } from "@/store/task-tree-store";
 import type { TaskNode } from "@/types/task-node";
 
-/** Klick-/Pointer-Ziel als Element (Textknoten → Elternelement). */
-function eventTargetElement(target: EventTarget | null): Element | null {
-  if (!target) return null;
-  if (target instanceof Element) return target;
-  if (target instanceof Text) return target.parentElement;
-  return null;
-}
+const CARD_CLICK_DELAY_MS = 280;
 
-function isInsideInteractiveControl(el: Element): boolean {
-  return Boolean(el.closest("button, a, input, textarea, select, [contenteditable='true'], [role='button']"));
+function isInteractiveCardTarget(target: EventTarget | null): boolean {
+  if (!target) return false;
+  const el =
+    target instanceof Element ? target : target instanceof Text ? target.parentElement : null;
+  return Boolean(
+    el?.closest("button, input, textarea, select, a, [role='menu'], [role='menuitem']"),
+  );
 }
 
 function hasVisibleMetaLine(
@@ -28,172 +72,717 @@ function hasVisibleMetaLine(
   node: TaskNode,
   showRollup: boolean,
   rollupDue: Date | null,
+  rollupOverdue: Date | null,
   effortOnTasksEnabled: boolean,
+  milestonePreview: ReturnType<typeof getNextChildMilestonePreview>,
+  criticalPathHint: string | null,
+  completedTag: string,
 ): boolean {
+  const ownEffort = getEffectiveEffortTotals(node, completedTag);
   const effortVisible =
-    effortOnTasksEnabled && visibility.effort && (showRollup || node.effort > 0);
-  const dueVisible = visibility.dueDate && Boolean(formatDueHint(rollupDue));
+    effortOnTasksEnabled &&
+    visibility.effort &&
+    (showRollup || !effortTotalsIsEmpty(ownEffort));
+  const dueVisible =
+    visibility.dueDate && Boolean(formatDueHint(rollupOverdue ?? rollupDue));
   const reminderVisible = visibility.reminderDate && Boolean(node.reminderDate);
-  return effortVisible || dueVisible || reminderVisible;
+  const milestoneVisible = Boolean(milestonePreview);
+  const cpVisible = effortOnTasksEnabled && visibility.effort && Boolean(criticalPathHint);
+  return effortVisible || dueVisible || reminderVisible || milestoneVisible || cpVisible;
 }
 
-const btnClass =
-  "flex h-7 w-7 shrink-0 items-center justify-center rounded border border-transparent text-slate-400 hover:bg-white hover:text-slate-700";
+const iconBtnClass =
+  "flex h-6 w-6 shrink-0 items-center justify-center rounded border border-transparent text-slate-400 transition hover:bg-white hover:text-slate-700";
+
+const dragHandleClass =
+  "flex h-7 w-6 shrink-0 touch-none items-center justify-center rounded border border-transparent text-slate-400 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-600 active:cursor-grabbing";
+
+const addChildBtnClass =
+  "flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-sky-200/90 bg-sky-50 text-sky-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-100";
+
+const cardMenuItemClass =
+  "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-slate-700 hover:bg-slate-50";
+
+const cardMenuItemDangerClass =
+  "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-red-700 hover:bg-red-50";
+
+const cardMenuPanelClass =
+  "fixed z-[80] min-w-[10rem] rounded-md border border-slate-200 bg-white py-0.5 shadow-lg ring-1 ring-slate-900/5";
+
+export type TaskTitleSaveMeta = { addSiblingAfter?: boolean };
 
 export interface TaskCardProps {
   node: TaskNode;
   columnIndex: number;
   /** Parent der Geschwisterliste dieser Karte (`null` = Wurzeln). Für DnD-Semantik. */
   listParentId: string | null;
-  /** Diese Karte ist die aktuell „aufgeklappte“ in ihrer Spalte (pathIds[columnIndex]). */
-  isDrilledHere: boolean;
-  /** Karte liegt irgendwo auf der aktiven Drill-Down-Kette. */
-  isOnActivePath: boolean;
-  /** Karte liegt auf dem aktuellen Zweig (Pfad + Teilbaum unter letztem Pfad-Knoten). */
-  branchHighlight?: boolean;
-  /** Maus-Hover: Karte gehört zum hervorgehobenen Teilbaum unter der gehoverten Karte. */
-  hoverSubtreeHighlight?: boolean;
-  /** Diese Karte ist das aktuelle Karten-Drop-Ziel (nur bei targetMode card). */
-  isCardDropTarget?: boolean;
+  /** Aktueller Suchtreffer (Hervorhebung). */
+  isSearchFocus?: boolean;
+  /** Ziel für „als Unterkarte einhängen“ (nicht für Sortieren). */
+  isNestDropTarget?: boolean;
   /** Sichtbare Kartenfelder (außer Titel). */
   fieldVisibility: CardFieldVisibility;
+  compact?: boolean;
+  isTitleEditing?: boolean;
+  onTitleSave?: (title: string, meta?: TaskTitleSaveMeta) => void;
+  onTitleEditCancel?: () => void;
   onAddChild: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  /** Teilbaum als JSON-Datei exportieren (optional). */
-  onExportSubtree?: () => void;
-  /** Teilbaum-JSON anzeigen und kopieren (optional). */
-  onCopySubtreeJson?: () => void;
-  /** Bei Fokus von außen: Drill-Pfad bis zu dieser Karte setzen (Ast aktivieren). */
-  onFocusActivateBranch?: () => void;
-  /** Maus betritt die Karte — Teilbaum-Hervorhebung starten. */
-  onHoverSubtreeEnter?: () => void;
-  /** Maus verlässt die Karte — Hervorhebung zeitverzögert beenden. */
-  onHoverSubtreeLeave?: () => void;
+  /** Detail-Dialog öffnen. */
+  onOpenDetails: () => void;
+  /** Zweig exportieren (Format + Attribute). */
+  onCopySubtree?: () => void;
+  /** Teilbaum-JSON als Kind dieser Karte einfügen. */
+  onPasteSubtreeUnder?: () => void;
+  /** Drill-Pfad bis zu dieser Karte (Kinder-Spalte öffnen). */
+  onOpenBranch: () => void;
+  /** Löschen (mit Bestätigung im Board). */
+  onRequestDelete?: () => void;
+  isBranchCollapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }
 
 export function TaskCard({
   node,
   columnIndex,
   listParentId,
-  isDrilledHere,
-  isOnActivePath,
-  branchHighlight = false,
-  hoverSubtreeHighlight = false,
-  isCardDropTarget = false,
+  isSearchFocus = false,
+  isNestDropTarget = false,
   fieldVisibility,
+  compact = false,
+  isTitleEditing = false,
+  onTitleSave,
+  onTitleEditCancel,
   onAddChild,
-  onEdit,
-  onDelete,
-  onExportSubtree,
-  onCopySubtreeJson,
-  onFocusActivateBranch,
-  onHoverSubtreeEnter,
-  onHoverSubtreeLeave,
+  onOpenDetails,
+  onCopySubtree,
+  onPasteSubtreeUnder,
+  onOpenBranch,
+  onRequestDelete,
+  isBranchCollapsed = false,
+  onToggleCollapsed,
 }: TaskCardProps) {
+  const openFocusMode = useTaskTreeStore((s) => s.openFocusMode);
+
   const effortOnTasksEnabled = useTaskTreeStore((s) => s.effortOnTasksEnabled);
+  const completedTag = useTaskTreeStore((s) => s.completedTag);
+  const updateCard = useTaskTreeStore((s) => s.updateCard);
   const cardHeadingId = useId();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuPanelRef = useRef<HTMLDivElement>(null);
+  const branchClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleBlurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [titleDraft, setTitleDraft] = useState(node.title);
+  const [coarsePointer, setCoarsePointer] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<{ top: number; right: number } | null>(null);
+
+  useEffect(() => {
+    setCoarsePointer(isCoarsePointerDevice());
+  }, []);
+
+  useEffect(() => {
+    if (isTitleEditing) {
+      setTitleDraft(node.title);
+      const focusInput = () => {
+        const el = titleInputRef.current;
+        el?.focus({ preventScroll: true });
+        if (node.title.trim()) el?.select();
+      };
+      requestAnimationFrame(() => {
+        focusInput();
+        window.setTimeout(focusInput, 50);
+      });
+    }
+  }, [isTitleEditing, node.id, node.title]);
+
+  useEffect(() => {
+    return () => {
+      if (titleBlurTimerRef.current) clearTimeout(titleBlurTimerRef.current);
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!menuOpen) {
+      setMenuAnchor(null);
+      return;
+    }
+    const updateAnchor = () => {
+      const anchor = menuRef.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      setMenuAnchor({ top: rect.bottom + 4, right: rect.right });
+    };
+    updateAnchor();
+    window.addEventListener("scroll", updateAnchor, true);
+    window.addEventListener("resize", updateAnchor);
+    return () => {
+      window.removeEventListener("scroll", updateAnchor, true);
+      window.removeEventListener("resize", updateAnchor);
+    };
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDocPointerDown = (e: globalThis.PointerEvent) => {
+      const target = e.target;
+      if (!(target instanceof Node)) return;
+      if (menuRef.current?.contains(target) || menuPanelRef.current?.contains(target)) return;
+      setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onDocPointerDown);
+    return () => document.removeEventListener("pointerdown", onDocPointerDown);
+  }, [menuOpen]);
+
+  const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
     id: node.id,
     data: { columnIndex, kind: "card" as const, listParentId },
   });
 
-  const rollupEffort = aggregateEffort(node);
-  const rollupDue = aggregateNextDue(node);
-  const hasChildren = node.children.length > 0;
-  const showRollup = hasChildren;
+  const { setNodeRef: setDropRef } = useDroppable({
+    id: node.id,
+    disabled: isDragging,
+    data: { columnIndex, kind: "card" as const, listParentId },
+  });
 
+  const setNodeRef = useCallback(
+    (el: HTMLElement | null) => {
+      setDragRef(el);
+      setDropRef(el);
+    },
+    [setDragRef, setDropRef],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (branchClickTimerRef.current) clearTimeout(branchClickTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isDragging && branchClickTimerRef.current) {
+      clearTimeout(branchClickTimerRef.current);
+      branchClickTimerRef.current = null;
+    }
+  }, [isDragging]);
+
+  const rollupTotals = rollupDisplayTotals(node, completedTag);
+  const rollupOpenTotals = aggregateOpenEffortTotals(node, completedTag);
+  const rollupDueOpen = aggregateNextDueOpen(node, completedTag);
+  const rollupOverdue = aggregateOverdueDue(node, completedTag);
+  const ownEffort = getEffectiveEffortTotals(node, completedTag);
+  const effortIsCalculated = getEffortSource(node) === "calculated";
+  const nodeIsDone = isTaskMarkedDone(node, completedTag);
+  const visibleTags = tagsWithoutCompletedTag(node.tags, completedTag);
+
+  const toggleDone = () => {
+    updateCard(node.id, {
+      tags: setCompletedTagOnTags(node.tags, completedTag, !nodeIsDone),
+    });
+  };
+  const hasChildren = node.children.length > 0;
+  const isNewTitleEdit = isTitleEditing && !node.title.trim();
+  const cpTotals = hasChildren ? criticalPathTotals(node, completedTag) : ownEffort;
+  const cpDeadline = rollupOverdue ?? rollupDueOpen;
+  /** Blatt ohne Termin: nur Aufwand, kein KP (keine Projektion ab „jetzt“). */
+  const showCriticalPath =
+    !nodeIsDone &&
+    effortOnTasksEnabled &&
+    fieldVisibility.effort &&
+    (hasChildren
+      ? !effortTotalsIsEmpty(cpTotals) || !effortTotalsIsEmpty(rollupOpenTotals)
+      : Boolean(cpDeadline) && !effortTotalsIsEmpty(ownEffort));
+  const criticalPathHint = showCriticalPath
+    ? formatCriticalPathHint(cpTotals, {
+        deadline: cpDeadline,
+        durationTotals: cpDeadline ? rollupOpenTotals : cpTotals,
+      })
+    : null;
+  const dueShownInCriticalPath = Boolean(criticalPathHint && cpDeadline);
+  const milestonePreview = getNextChildMilestonePreview(node, completedTag);
+  const showRollup = hasChildren;
+  const isMilestoneCard = isTaskMilestone(node);
+  const isOverdueInTree = rollupOverdue !== null;
+  const isOwnDueOverdue = isDueOverdue(node.dueDate, isTaskMarkedDone(node, completedTag));
+  const displayDue = rollupOverdue ?? rollupDueOpen;
+
+  const cardLink = taskLinkHref(node.link);
   const desc = node.description?.trim() ?? "";
   const hasDescription = Boolean(desc) && fieldVisibility.description;
+  const showLinkMeta = Boolean(cardLink) && fieldVisibility.link && !compact;
   const hasMetaLine = hasVisibleMetaLine(
     fieldVisibility,
     node,
     showRollup,
-    rollupDue,
+    rollupDueOpen,
+    rollupOverdue,
     effortOnTasksEnabled,
+    milestonePreview,
+    criticalPathHint,
+    completedTag,
   );
   const showEffortMeta = effortOnTasksEnabled && fieldVisibility.effort;
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+  const commitTitle = (meta?: TaskTitleSaveMeta) => {
+    if (titleBlurTimerRef.current) {
+      clearTimeout(titleBlurTimerRef.current);
+      titleBlurTimerRef.current = null;
+    }
+    onTitleSave?.(titleDraft, meta);
   };
 
-  const handleFocusIn = (e: FocusEvent<HTMLElement>) => {
-    const root = e.currentTarget;
-    const prev = e.relatedTarget as Node | null;
-    if (prev && root.contains(prev)) return;
-    onFocusActivateBranch?.();
+  const handleTitleBlur = () => {
+    if (coarsePointer) return;
+    if (titleBlurTimerRef.current) clearTimeout(titleBlurTimerRef.current);
+    titleBlurTimerRef.current = setTimeout(() => {
+      titleBlurTimerRef.current = null;
+      if (document.activeElement === titleInputRef.current) return;
+      commitTitle();
+    }, 120);
   };
 
-  const tryFocusCardFromPointer = (e: PointerEvent<HTMLElement>) => {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    const el = eventTargetElement(e.target);
-    if (!el || !e.currentTarget.contains(el)) return;
-    if (isInsideInteractiveControl(el)) return;
-    e.currentTarget.focus({ preventScroll: false });
+  const onTitleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitTitle(e.shiftKey ? { addSiblingAfter: true } : undefined);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      onTitleEditCancel?.();
+    }
   };
+
+  const scheduleOpenBranch = () => {
+    if (branchClickTimerRef.current) clearTimeout(branchClickTimerRef.current);
+    branchClickTimerRef.current = setTimeout(() => {
+      branchClickTimerRef.current = null;
+      onOpenBranch();
+    }, CARD_CLICK_DELAY_MS);
+  };
+
+  const handleCardClick = (e: MouseEvent<HTMLElement>) => {
+    if (isTitleEditing || isDragging) return;
+    if (isInteractiveCardTarget(e.target)) return;
+    if (!hasChildren) return;
+    scheduleOpenBranch();
+  };
+
+  const handleCardPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (isTitleEditing) e.stopPropagation();
+  };
+
+  const handleCardDoubleClick = (e: MouseEvent<HTMLElement>) => {
+    if (isTitleEditing || isDragging) return;
+    if (isInteractiveCardTarget(e.target)) return;
+    if (branchClickTimerRef.current) {
+      clearTimeout(branchClickTimerRef.current);
+      branchClickTimerRef.current = null;
+    }
+    e.preventDefault();
+    onOpenDetails();
+  };
+
+  const cardActionMenu =
+    menuOpen && menuAnchor ? (
+      <div
+        ref={menuPanelRef}
+        role="menu"
+        style={{
+          top: menuAnchor.top,
+          left: menuAnchor.right,
+          transform: "translateX(-100%)",
+        }}
+        className={cardMenuPanelClass}
+      >
+        <button
+          type="button"
+          role="menuitem"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setMenuOpen(false);
+            onOpenDetails();
+          }}
+          className={cardMenuItemClass}
+        >
+          <Pencil className="h-3.5 w-3.5 shrink-0 text-sky-700" aria-hidden />
+          Ändern
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setMenuOpen(false);
+            openFocusMode(node.id);
+          }}
+          className={cardMenuItemClass}
+        >
+          <Target className="h-3.5 w-3.5 shrink-0 text-violet-700" aria-hidden />
+          Fokus-Modus
+        </button>
+        {onCopySubtree ? (
+          <button
+            type="button"
+            role="menuitem"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setMenuOpen(false);
+              onCopySubtree();
+            }}
+            className={cardMenuItemClass}
+          >
+            <Copy className="h-3.5 w-3.5 shrink-0 text-violet-700" aria-hidden />
+            Zweig exportieren
+          </button>
+        ) : null}
+        {onPasteSubtreeUnder ? (
+          <button
+            type="button"
+            role="menuitem"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setMenuOpen(false);
+              onPasteSubtreeUnder();
+            }}
+            className={cardMenuItemClass}
+          >
+            <ClipboardPaste className="h-3.5 w-3.5 shrink-0 text-violet-700" aria-hidden />
+            Teilbaum einfügen
+          </button>
+        ) : null}
+        {hasChildren && onToggleCollapsed ? (
+          <button
+            type="button"
+            role="menuitem"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setMenuOpen(false);
+              onToggleCollapsed();
+            }}
+            className={cardMenuItemClass}
+          >
+            {isBranchCollapsed ? (
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-600" aria-hidden />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-600" aria-hidden />
+            )}
+            {isBranchCollapsed ? "Zweig aufklappen" : "Zweig zuklappen"}
+          </button>
+        ) : null}
+        {onRequestDelete ? (
+          <>
+            <div className="my-0.5 border-t border-slate-100" role="separator" />
+            <button
+              type="button"
+              role="menuitem"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setMenuOpen(false);
+                onRequestDelete();
+              }}
+              className={cardMenuItemDangerClass}
+            >
+              <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              Löschen
+            </button>
+          </>
+        ) : null}
+      </div>
+    ) : null;
 
   return (
     <article
       ref={setNodeRef}
-      style={style}
-      tabIndex={-1}
+      data-task-card-id={node.id}
       aria-labelledby={cardHeadingId}
-      onPointerDown={tryFocusCardFromPointer}
-      onPointerEnter={(e) => {
-        if (e.pointerType === "mouse") onHoverSubtreeEnter?.();
-      }}
-      onPointerLeave={(e) => {
-        if (e.pointerType === "mouse") onHoverSubtreeLeave?.();
-      }}
-      onFocusCapture={handleFocusIn}
+      onClick={handleCardClick}
+      onPointerDown={handleCardPointerDown}
+      onDoubleClick={handleCardDoubleClick}
+      title={
+        isTitleEditing
+          ? undefined
+          : hasChildren
+            ? "Klick: Zweig zu-/aufklappen (nur nächste Ebene) · Doppelklick: Details · Griff (⋮⋮): Verschieben"
+            : "Doppelklick: Details · Griff (⋮⋮): Verschieben"
+      }
       className={[
-        "group relative scroll-my-1 rounded-md border px-1.5 py-1 shadow-sm transition outline-none focus:ring-2 focus:ring-sky-400/70 focus:ring-offset-1 focus-visible:ring-2 focus-visible:ring-sky-400/80 focus-visible:ring-offset-1",
-        isCardDropTarget
-          ? "border-slate-300/90 bg-slate-300/95"
-          : hoverSubtreeHighlight
-            ? "border-slate-300/80 bg-white shadow-sm ring-1 ring-slate-200/50"
-            : branchHighlight
-              ? "border-sky-200/75 bg-sky-50/85 shadow-sm ring-1 ring-sky-100/35"
+        "group relative rounded-md border shadow-sm transition",
+        isTitleEditing ? "" : isDragging ? "cursor-grabbing" : "",
+        compact ? "px-1 py-0.5" : "px-1.5 py-1",
+        isTitleEditing && !isNewTitleEdit ? "ring-2 ring-sky-300/80" : "",
+        isNestDropTarget
+          ? "border-violet-400/90 bg-violet-50/95 ring-2 ring-violet-300/80"
+          : isOverdueInTree
+            ? isOwnDueOverdue
+              ? "border-red-300/90 bg-red-50/90 ring-1 ring-red-200/70"
+              : "border-red-200/80 bg-red-50/40 ring-1 ring-red-100/50"
+            : isMilestoneCard
+              ? "border-amber-300/80 bg-amber-50/50 ring-1 ring-amber-200/60"
               : "border-slate-200/80 bg-white",
-        isDragging ? "opacity-60 ring-2 ring-sky-200" : "opacity-100",
-        !isCardDropTarget && isDrilledHere
-          ? "border-sky-400 ring-2 ring-sky-100"
-          : !isCardDropTarget && isOnActivePath
-            ? "border-violet-200 ring-1 ring-violet-100"
-            : "",
+        isDragging ? "border-dashed border-sky-300/90 bg-sky-50/40 opacity-35 shadow-none" : "opacity-100",
+        isSearchFocus ? "z-10 border-amber-400 bg-amber-50/90 ring-2 ring-amber-300/90" : "",
       ].join(" ")}
     >
-      <div className="flex gap-1.5">
-        <button
-          type="button"
-          className={`${btnClass} mt-0.5 shrink-0 self-start text-slate-400 hover:border-slate-200`}
-          aria-label="Karte verschieben"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-3.5 w-3.5" />
-        </button>
-
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <div className="flex min-w-0 items-start justify-between gap-1.5">
-            <h3
-              id={cardHeadingId}
-              className="line-clamp-2 min-w-0 flex-1 break-words text-xs font-semibold leading-tight text-slate-900"
+      {isNestDropTarget ? (
+        <span className="pointer-events-none absolute right-1 top-0.5 z-10 rounded bg-violet-600 px-1.5 py-px text-[9px] font-semibold leading-tight text-white shadow-sm">
+          Unterkarte
+        </span>
+      ) : null}
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <div className="flex min-w-0 items-center gap-0.5">
+          <button
+            type="button"
+            className={dragHandleClass}
+            aria-label="Karte verschieben"
+            title="Ziehen zum Verschieben"
+            {...attributes}
+            {...listeners}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <GripVertical className="h-4 w-4" strokeWidth={2} aria-hidden />
+          </button>
+          {fieldVisibility.completedCheck ? (
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleDone();
+              }}
+              className={[
+                iconBtnClass,
+                nodeIsDone
+                  ? "text-emerald-700 hover:border-emerald-200 hover:bg-emerald-50"
+                  : "hover:border-emerald-200 hover:text-emerald-700",
+              ].join(" ")}
+              title={
+                nodeIsDone
+                  ? `Erledigt — Tag „${completedTag}“ entfernen`
+                  : `Als erledigt markieren (Tag „${completedTag}“)`
+              }
+              aria-label={nodeIsDone ? "Als offen markieren" : "Als erledigt markieren"}
+              aria-pressed={nodeIsDone}
             >
-              {node.title.trim() ? node.title : <span className="font-normal text-slate-400">(Ohne Titel)</span>}
-            </h3>
+              {nodeIsDone ? (
+                <CircleCheck className="h-3.5 w-3.5" strokeWidth={2.25} />
+              ) : (
+                <Circle className="h-3.5 w-3.5" strokeWidth={2} />
+              )}
+            </button>
+          ) : null}
+
+          {hasChildren ? (
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (branchClickTimerRef.current) {
+                  clearTimeout(branchClickTimerRef.current);
+                  branchClickTimerRef.current = null;
+                }
+                onOpenBranch();
+              }}
+              className={iconBtnClass}
+              title={isBranchCollapsed ? "Zweig aufklappen" : "Zweig einklappen"}
+              aria-label={isBranchCollapsed ? "Zweig aufklappen" : "Zweig einklappen"}
+              aria-expanded={!isBranchCollapsed}
+            >
+              {isBranchCollapsed ? (
+                <ChevronRight className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />
+              )}
+            </button>
+          ) : null}
+
+          <div
+            className="min-w-0 flex-1 py-0.5"
+            onClick={(e) => {
+              if (isTitleEditing || coarsePointer) return;
+              if (!hasChildren) return;
+              e.stopPropagation();
+              scheduleOpenBranch();
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            {isTitleEditing ? (
+              <input
+                ref={titleInputRef}
+                type="text"
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onKeyDown={onTitleKeyDown}
+                onBlur={handleTitleBlur}
+                onPointerDown={(e) => e.stopPropagation()}
+                enterKeyHint="done"
+                placeholder={
+                  isNewTitleEdit
+                    ? "Titel eingeben … (⇧↵ nächste Geschwisterkarte)"
+                    : "Titel eingeben …"
+                }
+                aria-label="Kartentitel"
+                className={
+                  isNewTitleEdit
+                    ? "w-full min-w-0 touch-manipulation rounded-sm border border-slate-200/80 bg-slate-50/50 px-0.5 py-0.5 text-xs font-semibold text-slate-800 outline-none placeholder:font-normal placeholder:text-slate-400 focus:border-slate-300 focus:bg-white focus:ring-1 focus:ring-slate-200/90"
+                    : "w-full min-w-0 touch-manipulation rounded border border-sky-300 bg-white px-1.5 py-1 text-base font-semibold text-slate-900 outline-none ring-2 ring-sky-400/50"
+                }
+              />
+            ) : cardLink ? (
+              <a
+                id={cardHeadingId}
+                href={cardLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                className={[
+                  "min-w-0 break-words px-0.5 text-xs font-semibold leading-tight text-sky-800 underline-offset-2 hover:underline",
+                  compact ? "line-clamp-1" : "line-clamp-2",
+                  nodeIsDone ? "text-slate-500 line-through decoration-slate-400/80" : "",
+                ].join(" ")}
+                title={cardLink}
+              >
+                {node.title.trim() ? node.title : <span className="font-normal">(Ohne Titel)</span>}
+              </a>
+            ) : (
+              <h3
+                id={cardHeadingId}
+                role={coarsePointer ? "button" : undefined}
+                tabIndex={coarsePointer ? 0 : undefined}
+                onClick={
+                  coarsePointer
+                    ? (e) => {
+                        e.stopPropagation();
+                        onOpenDetails();
+                      }
+                    : undefined
+                }
+                onKeyDown={
+                  coarsePointer
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onOpenDetails();
+                        }
+                      }
+                    : undefined
+                }
+                className={[
+                  "min-w-0 break-words px-0.5 text-xs font-semibold leading-tight",
+                  coarsePointer ? "cursor-pointer touch-manipulation" : "",
+                  compact ? "line-clamp-1" : "line-clamp-2",
+                  nodeIsDone ? "text-slate-500 line-through decoration-slate-400/80" : "text-slate-900",
+                ].join(" ")}
+              >
+                {node.title.trim() ? (
+                  node.title
+                ) : (
+                  <span className="font-normal text-slate-400">(Ohne Titel)</span>
+                )}
+              </h3>
+            )}
           </div>
 
-          {fieldVisibility.tags && node.tags.length > 0 ? (
+          <div
+            ref={menuRef}
+            className={[
+              "relative shrink-0 transition-opacity",
+              menuOpen || coarsePointer
+                ? "opacity-100"
+                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+            ].join(" ")}
+          >
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setMenuOpen((o) => !o);
+                }}
+                className={iconBtnClass}
+                title="Weitere Aktionen"
+                aria-label="Weitere Aktionen"
+                aria-expanded={menuOpen}
+                aria-haspopup="menu"
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </button>
+          </div>
+          {typeof document !== "undefined" && cardActionMenu
+            ? createPortal(cardActionMenu, document.body)
+            : null}
+
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              openFocusMode(node.id);
+            }}
+            className={[
+              iconBtnClass,
+              "hover:border-violet-200 hover:bg-violet-50 hover:text-violet-800",
+            ].join(" ")}
+            title="Fokus-Modus — nur dieser Zweig"
+            aria-label="Fokus-Modus öffnen"
+          >
+            <Target className="h-3.5 w-3.5" strokeWidth={2.1} aria-hidden />
+          </button>
+
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onAddChild();
+            }}
+            className={addChildBtnClass}
+            title="Unterkarte anlegen"
+            aria-label="Unterkarte anlegen"
+          >
+            <ListPlus className="h-3.5 w-3.5" strokeWidth={2.25} />
+          </button>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-0.5 pl-7">
+          {fieldVisibility.id && !compact ? (
+            <p
+              className="font-mono text-[9px] leading-none tracking-wide text-slate-400"
+              title={`Karten-ID: ${node.id}`}
+            >
+              {formatTaskIdForDisplay(node.id)}
+            </p>
+          ) : null}
+
+          {fieldVisibility.tags && visibleTags.length > 0 && !compact ? (
             <div className="flex flex-wrap gap-0.5">
-              {node.tags.map((t) => (
+              {visibleTags.map((t) => (
                 <span
                   key={t}
                   className={[
                     "rounded px-1 py-px text-[9px] font-medium leading-none ring-1",
-                    tagChipClass(t),
+                    tagChipClass(t, completedTag),
                   ].join(" ")}
                 >
                   {t}
@@ -202,24 +791,97 @@ export function TaskCard({
             </div>
           ) : null}
 
-          {hasDescription ? (
-            <p className="whitespace-pre-wrap break-words text-[11px] leading-snug text-slate-500">{desc}</p>
+          {showLinkMeta ? (
+            <p className="truncate text-[10px] leading-snug text-sky-700/90" title={cardLink!}>
+              {cardLink}
+            </p>
           ) : null}
 
-          {hasMetaLine ? (
+          {hasDescription ? (
+            <p
+              className={[
+                "overflow-hidden break-words text-[11px] leading-snug text-slate-500",
+                compact ? "line-clamp-1" : "line-clamp-2",
+              ].join(" ")}
+              title={desc}
+            >
+              {desc}
+            </p>
+          ) : null}
+
+          {hasMetaLine && !compact ? (
             <div className="flex max-w-full flex-nowrap items-center gap-x-2 overflow-x-auto text-[10px] text-slate-500 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {showEffortMeta && showRollup ? (
-                <span className="shrink-0">
-                  Σ <span className="font-medium text-slate-700">{rollupEffort}h</span>
+              {showEffortMeta && showRollup && !effortTotalsIsEmpty(rollupTotals) ? (
+                <span
+                  className="shrink-0"
+                  title={effortIsCalculated ? "Aufwand aus Kindern berechnet" : undefined}
+                >
+                  Σ{" "}
+                  <span
+                    className={[
+                      "font-medium",
+                      effortIsCalculated ? "text-violet-800" : "text-slate-700",
+                    ].join(" ")}
+                  >
+                    {formatEffortTotals(rollupTotals)}
+                  </span>
                 </span>
-              ) : showEffortMeta && node.effort > 0 ? (
-                <span className="shrink-0">
-                  <span className="font-medium text-slate-700">{node.effort}h</span>
+              ) : showEffortMeta && !effortTotalsIsEmpty(ownEffort) ? (
+                <span
+                  className="shrink-0"
+                  title={effortIsCalculated ? "Aufwand aus Kindern berechnet" : undefined}
+                >
+                  <span
+                    className={[
+                      "font-medium",
+                      effortIsCalculated ? "text-violet-800" : "text-slate-700",
+                    ].join(" ")}
+                  >
+                    {formatEffortTotals(ownEffort)}
+                  </span>
                 </span>
               ) : null}
-              {fieldVisibility.dueDate && formatDueHint(rollupDue) ? (
+              {criticalPathHint ? (
+                <span
+                  className="shrink-0 whitespace-nowrap text-violet-800"
+                  title="Längster Aufwandsweg (kritischer Pfad); Werktage ohne Wochenende"
+                >
+                  {criticalPathHint}
+                </span>
+              ) : null}
+              {fieldVisibility.dueDate && formatDueHint(displayDue) && !dueShownInCriticalPath ? (
                 <span className="shrink-0 whitespace-nowrap">
-                  <span className="font-medium text-slate-700">{formatDueHint(rollupDue)}</span>
+                  {rollupOverdue ? (
+                    <span className="font-medium text-red-700" title="Überfälliger Termin im Ast">
+                      überfällig {formatDueHint(rollupOverdue)}
+                    </span>
+                  ) : (
+                    <span className="font-medium text-slate-700">{formatDueHint(displayDue)}</span>
+                  )}
+                </span>
+              ) : null}
+              {rollupOverdue && dueShownInCriticalPath ? (
+                <span className="shrink-0 whitespace-nowrap font-medium text-red-700" title="Überfälliger Termin im Ast">
+                  überfällig {formatDueHint(rollupOverdue)}
+                </span>
+              ) : null}
+              {milestonePreview ? (
+                <span
+                  className="shrink-0 whitespace-nowrap text-amber-900"
+                  title="Aufwand offener Geschwister vor dem ersten Meilenstein"
+                >
+                  bis{" "}
+                  <span className="font-medium">
+                    {milestonePreview.milestone.title.trim() || "(Meilenstein)"}
+                  </span>
+                  {effortOnTasksEnabled ? (
+                    <>
+                      :{" "}
+                      <span className="font-medium">
+                        {formatEffortTotals(milestonePreview.effortBeforeMilestone)}
+                      </span>
+                    </>
+                  ) : null}
                 </span>
               ) : null}
               {fieldVisibility.reminderDate && node.reminderDate ? (
@@ -233,77 +895,6 @@ export function TaskCard({
             </div>
           ) : null}
 
-          <div className="mt-0.5 flex flex-wrap items-center gap-0.5 border-t border-slate-100/90 pt-0.5">
-            <button
-              type="button"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.preventDefault();
-                onAddChild();
-              }}
-              className={`${btnClass} hover:border-sky-200 hover:text-sky-800`}
-              title="Unterkarte anlegen"
-              aria-label="Unterkarte anlegen"
-            >
-              <ListPlus className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.preventDefault();
-                onEdit();
-              }}
-              className={`${btnClass} hover:border-slate-200`}
-              title="Bearbeiten"
-              aria-label="Karte bearbeiten"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-            {onExportSubtree ? (
-              <button
-                type="button"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.preventDefault();
-                  onExportSubtree();
-                }}
-                className={`${btnClass} hover:border-emerald-200 hover:text-emerald-800`}
-                title="Teilbaum als JSON-Datei exportieren"
-                aria-label="Teilbaum als JSON-Datei exportieren"
-              >
-                <FileDown className="h-3.5 w-3.5" />
-              </button>
-            ) : null}
-            {onCopySubtreeJson ? (
-              <button
-                type="button"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.preventDefault();
-                  onCopySubtreeJson();
-                }}
-                className={`${btnClass} hover:border-violet-200 hover:text-violet-800`}
-                title="Teilbaum-JSON anzeigen und kopieren"
-                aria-label="Teilbaum-JSON anzeigen und kopieren"
-              >
-                <Copy className="h-3.5 w-3.5" />
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.preventDefault();
-                onDelete();
-              }}
-              className={`${btnClass} hover:border-red-200 hover:text-red-700`}
-              title="Löschen"
-              aria-label="Karte löschen"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          </div>
         </div>
       </div>
     </article>

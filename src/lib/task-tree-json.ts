@@ -1,5 +1,19 @@
 import { mergeCardFieldVisibility, parseCardFieldVisibilityFromJson, type CardFieldVisibility } from "@/lib/card-field-visibility";
-import { tagsFromLegacyStatus, uniqNonEmptyTags } from "@/lib/task-tags";
+import {
+  DEFAULT_EFFORT_UNIT,
+  getEffortSource,
+  getEffortUnit,
+  parseEffortSource,
+  parseEffortUnit,
+} from "@/lib/task-effort";
+import {
+  DEFAULT_COMPLETED_TAG,
+  normalizeCompletedTag,
+  tagsFromLegacyStatus,
+  uniqNonEmptyTags,
+} from "@/lib/task-tags";
+import { generateUniqueTaskIdFromTaken } from "@/lib/task-id";
+import { normalizeTaskLink } from "@/lib/task-link";
 import type { TaskNode } from "@/types/task-node";
 
 export const EXPORT_FORMAT = "hierarchical-task-manager" as const;
@@ -19,6 +33,7 @@ function isLegacyTaskStatus(s: unknown): s is LegacyTaskStatus {
 export interface TaskNodeJson {
   id: string;
   title: string;
+  link?: string;
   description: string;
   tags?: string[];
   /** Nur Import älterer Exporte ohne `tags`. */
@@ -26,6 +41,8 @@ export interface TaskNodeJson {
   dueDate: string | null;
   reminderDate: string | null;
   effort: number;
+  effortUnit?: "hours" | "minutes" | "workdays";
+  effortSource?: "manual" | "calculated";
   children: TaskNodeJson[];
 }
 
@@ -36,6 +53,8 @@ export interface BoardSnapshotV1 {
   scope: "board";
   roots: TaskNodeJson[];
   pathIds: string[];
+  /** Eingeklappte Knoten (Kinder ausgeblendet). */
+  collapsedIds?: string[];
   /** JSON serialisiert Keys als String; beim Laden in Record<number, string> wandeln. */
   columnTitleOverrides: Record<string, string>;
   /** @deprecated Wird ignoriert; Spaltenansicht ist immer aktiv. */
@@ -44,6 +63,10 @@ export interface BoardSnapshotV1 {
   cardFieldVisibility?: CardFieldVisibility;
   /** Erledigte Karten in der Ansicht ausblenden; optional, Standard false. */
   hideCompletedTasks?: boolean;
+  /** Aktive Tag-Filter; optional, Standard leer. */
+  filterTags?: string[];
+  /** Tag für „erledigt“; optional, Standard „Erledigt“. */
+  completedTag?: string;
   /** Aufwand (Stunden) an Karten erlauben; optional, Standard true. */
   effortOnTasksEnabled?: boolean;
 }
@@ -64,11 +87,14 @@ export function taskNodeToJson(node: TaskNode): TaskNodeJson {
   return {
     id: node.id,
     title: node.title,
+    ...((node.link ?? "").trim() ? { link: (node.link ?? "").trim() } : {}),
     description: node.description,
     tags: [...node.tags],
     dueDate: node.dueDate ? node.dueDate.toISOString() : null,
     reminderDate: node.reminderDate ? node.reminderDate.toISOString() : null,
     effort: node.effort,
+    ...(getEffortUnit(node) !== DEFAULT_EFFORT_UNIT ? { effortUnit: getEffortUnit(node) } : {}),
+    ...(getEffortSource(node) === "calculated" ? { effortSource: "calculated" } : {}),
     children: node.children.map(taskNodeToJson),
   };
 }
@@ -81,21 +107,27 @@ export function taskNodeFromJson(j: TaskNodeJson): TaskNode {
   return {
     id: j.id,
     title: j.title,
+    link: typeof j.link === "string" ? normalizeTaskLink(j.link) : "",
     description: j.description,
     tags,
     dueDate: j.dueDate ? new Date(j.dueDate) : null,
     reminderDate: j.reminderDate ? new Date(j.reminderDate) : null,
     effort: j.effort,
+    ...(parseEffortUnit(j.effortUnit) ? { effortUnit: parseEffortUnit(j.effortUnit) } : {}),
+    ...(parseEffortSource(j.effortSource) === "calculated" ? { effortSource: "calculated" } : {}),
     children: j.children.map(taskNodeFromJson),
   };
 }
 
 /** Alle IDs neu vergeben (z. B. nach JSON-Import eines Teilbaums). */
 export function remapTaskNodeIds(root: TaskNode): TaskNode {
+  const taken = new Set<string>();
   function walk(n: TaskNode): TaskNode {
+    const id = generateUniqueTaskIdFromTaken(taken);
+    taken.add(id);
     return {
       ...n,
-      id: crypto.randomUUID(),
+      id,
       dueDate: n.dueDate ? new Date(n.dueDate.getTime()) : null,
       reminderDate: n.reminderDate ? new Date(n.reminderDate.getTime()) : null,
       children: n.children.map(walk),
@@ -128,16 +160,22 @@ function expectTaskNodeJson(raw: unknown, path: string): TaskNodeJson {
   const o = expectObject(raw, `${path}: Objekt erwartet`);
   const id = o.id;
   const title = o.title;
+  const linkRaw = o.link;
   const description = o.description;
   const tagsRaw = o.tags;
   const statusLegacy = o.status;
   const effort = o.effort;
+  const effortUnitRaw = o.effortUnit;
+  const effortSourceRaw = o.effortSource;
   const dueDate = o.dueDate;
   const reminderDate = o.reminderDate;
   const children = o.children;
 
   if (typeof id !== "string" || !id.trim()) throw new Error(`${path}.id: nicht-leere Zeichenkette erwartet`);
   if (typeof title !== "string") throw new Error(`${path}.title: Zeichenkette erwartet`);
+  if (linkRaw !== undefined && typeof linkRaw !== "string") {
+    throw new Error(`${path}.link: Zeichenkette erwartet`);
+  }
   if (typeof description !== "string") throw new Error(`${path}.description: Zeichenkette erwartet`);
 
   let tags: string[];
@@ -159,6 +197,14 @@ function expectTaskNodeJson(raw: unknown, path: string): TaskNodeJson {
 
   if (typeof effort !== "number" || !Number.isFinite(effort) || effort < 0) {
     throw new Error(`${path}.effort: nicht-negative Zahl erwartet`);
+  }
+  const effortUnit = parseEffortUnit(effortUnitRaw);
+  if (effortUnitRaw !== undefined && effortUnit === undefined) {
+    throw new Error(`${path}.effortUnit: hours, minutes oder workdays erwartet`);
+  }
+  const effortSource = parseEffortSource(effortSourceRaw);
+  if (effortSourceRaw !== undefined && effortSource === undefined) {
+    throw new Error(`${path}.effortSource: manual oder calculated erwartet`);
   }
   if (dueDate != null && typeof dueDate !== "string") throw new Error(`${path}.dueDate: null oder ISO-String`);
   if (reminderDate != null && typeof reminderDate !== "string") {
@@ -182,11 +228,14 @@ function expectTaskNodeJson(raw: unknown, path: string): TaskNodeJson {
   return {
     id,
     title,
+    ...(typeof linkRaw === "string" && linkRaw.trim() ? { link: linkRaw } : {}),
     description,
     tags,
     dueDate: due,
     reminderDate: rem,
     effort,
+    ...(effortUnit ? { effortUnit } : {}),
+    ...(effortSource === "calculated" ? { effortSource } : {}),
     children: children.map((ch, i) => expectTaskNodeJson(ch, `${path}.children[${i}]`)),
   };
 }
@@ -219,6 +268,10 @@ export function parseExportedDocument(text: string): ExportedDocumentV1 {
       const pathIds = Array.isArray(pathIdsRaw)
         ? pathIdsRaw.filter((x): x is string => typeof x === "string")
         : [];
+      const collapsedIdsRaw = root.collapsedIds;
+      const collapsedIds = Array.isArray(collapsedIdsRaw)
+        ? collapsedIdsRaw.filter((x): x is string => typeof x === "string")
+        : [];
       const columnTitleOverrides = parseColumnTitleOverridesFromJson(root.columnTitleOverrides);
       const cardFieldVisibility = parseCardFieldVisibilityFromJson(root.cardFieldVisibility);
       const effortOn =
@@ -230,12 +283,21 @@ export function parseExportedDocument(text: string): ExportedDocumentV1 {
         scope: "board",
         roots,
         pathIds,
+        ...(collapsedIds.length ? { collapsedIds } : {}),
         columnTitleOverrides: Object.fromEntries(
           Object.entries(columnTitleOverrides).map(([k, v]) => [String(k), v]),
         ) as Record<string, string>,
         cardFieldVisibility,
         ...(typeof root.hideCompletedTasks === "boolean"
           ? { hideCompletedTasks: root.hideCompletedTasks }
+          : {}),
+        ...(Array.isArray(root.filterTags)
+          ? {
+              filterTags: root.filterTags.filter((x): x is string => typeof x === "string"),
+            }
+          : {}),
+        ...(typeof root.completedTag === "string" && root.completedTag.trim()
+          ? { completedTag: normalizeCompletedTag(root.completedTag) }
           : {}),
         ...(effortOn !== undefined ? { effortOnTasksEnabled: effortOn } : {}),
       };
@@ -300,6 +362,9 @@ export function buildBoardSnapshot(
   cardFieldVisibility: CardFieldVisibility,
   hideCompletedTasks: boolean,
   effortOnTasksEnabled: boolean,
+  filterTags: string[] = [],
+  completedTag: string = DEFAULT_COMPLETED_TAG,
+  collapsedIds: string[] = [],
 ): BoardSnapshotV1 {
   const co: Record<string, string> = {};
   for (const [k, v] of Object.entries(columnTitleOverrides)) {
@@ -312,10 +377,15 @@ export function buildBoardSnapshot(
     scope: "board",
     roots: roots.map(taskNodeToJson),
     pathIds: [...pathIds],
+    ...(collapsedIds.length ? { collapsedIds: [...collapsedIds] } : {}),
     columnTitleOverrides: co,
     showFullTree: false,
     cardFieldVisibility: mergeCardFieldVisibility(cardFieldVisibility),
     ...(hideCompletedTasks ? { hideCompletedTasks: true } : {}),
+    ...(filterTags.length ? { filterTags: [...filterTags] } : {}),
+    ...(normalizeCompletedTag(completedTag) !== DEFAULT_COMPLETED_TAG
+      ? { completedTag: normalizeCompletedTag(completedTag) }
+      : {}),
     ...(effortOnTasksEnabled ? {} : { effortOnTasksEnabled: false }),
   };
 }
@@ -363,15 +433,83 @@ export function boardSnapshotToColumnOverrides(doc: BoardSnapshotV1): Record<num
 }
 
 /** Payload für `replaceBoardFromImport` aus einem Board-Export. */
-export function boardSnapshotToReplacePayload(snap: BoardSnapshotV1) {
+export type BoardImportPayload = {
+  roots: TaskNode[];
+  pathIds: string[];
+  collapsedIds?: string[];
+  columnTitleOverrides: Record<number, string>;
+  cardFieldVisibility?: CardFieldVisibility;
+  hideCompletedTasks?: boolean;
+  filterTags?: string[];
+  completedTag?: string;
+  effortOnTasksEnabled?: boolean;
+};
+
+export function boardSnapshotToReplacePayload(snap: BoardSnapshotV1): BoardImportPayload {
   return {
     roots: snap.roots.map(taskNodeFromJson),
     pathIds: snap.pathIds,
+    ...(snap.collapsedIds?.length ? { collapsedIds: [...snap.collapsedIds] } : {}),
     columnTitleOverrides: boardSnapshotToColumnOverrides(snap),
     cardFieldVisibility: snap.cardFieldVisibility,
     ...(snap.hideCompletedTasks === true ? { hideCompletedTasks: true } : {}),
+    ...(snap.filterTags?.length ? { filterTags: [...snap.filterTags] } : {}),
+    ...(snap.completedTag ? { completedTag: normalizeCompletedTag(snap.completedTag) } : {}),
     ...(snap.effortOnTasksEnabled === false ? { effortOnTasksEnabled: false } : {}),
   };
+}
+
+/** Stabiler Vergleichsschlüssel ohne `exportedAt` (vermeidet Fehlalarme beim Multi-Device-Polling). */
+export function stableBoardStateKey(payload: BoardImportPayload): string {
+  const co: Record<string, string> = {};
+  for (const [k, v] of Object.entries(payload.columnTitleOverrides)) {
+    if (typeof v === "string" && v.trim()) co[String(k)] = v.trim();
+  }
+  const tags = payload.filterTags?.length
+    ? [...payload.filterTags].map((t) => t.trim()).filter(Boolean).sort()
+    : [];
+  return JSON.stringify({
+    roots: payload.roots.map(taskNodeToJson),
+    pathIds: [...payload.pathIds],
+    collapsedIds: [...(payload.collapsedIds ?? [])].sort(),
+    columnTitleOverrides: co,
+    cardFieldVisibility: mergeCardFieldVisibility(payload.cardFieldVisibility),
+    hideCompletedTasks: payload.hideCompletedTasks === true,
+    effortOnTasksEnabled: payload.effortOnTasksEnabled !== false,
+    filterTags: tags,
+    completedTag: normalizeCompletedTag(payload.completedTag ?? DEFAULT_COMPLETED_TAG),
+  });
+}
+
+export function boardImportPayloadFromExportText(text: string): BoardImportPayload | null {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return {
+      roots: [],
+      pathIds: [],
+      columnTitleOverrides: {},
+    };
+  }
+  try {
+    const doc = parseExportedDocument(trimmed);
+    if (!isBoardSnapshot(doc)) return null;
+    return boardSnapshotToReplacePayload(doc);
+  } catch {
+    return null;
+  }
+}
+
+export function stableBoardStateKeyFromExportText(text: string): string | null {
+  const payload = boardImportPayloadFromExportText(text);
+  if (!payload) return null;
+  return stableBoardStateKey(payload);
+}
+
+export function boardExportTextsEquivalent(a: string, b: string): boolean {
+  const ka = stableBoardStateKeyFromExportText(a);
+  const kb = stableBoardStateKeyFromExportText(b);
+  if (ka === null || kb === null) return a === b;
+  return ka === kb;
 }
 
 export function isBoardSnapshot(doc: ExportedDocumentV1): doc is BoardSnapshotV1 {

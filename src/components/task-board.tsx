@@ -1,15 +1,24 @@
 "use client";
 
-import type { DragEndEvent, DragOverEvent, DragStartEvent, Over } from "@dnd-kit/core";
+import type {
+  CollisionDetection,
+  DragEndEvent,
+  DragOverEvent,
+  DragStartEvent,
+  Over,
+} from "@dnd-kit/core";
 import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  TouchSensor,
   closestCorners,
+  pointerWithin,
+  rectIntersection,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { Copy, ClipboardPaste, Download, ListFilter, Route, Save, Settings2, SlidersHorizontal, Upload, X } from "lucide-react";
+import { HardDrive, Settings2, SlidersHorizontal, Rows3 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 
 import { resolveColumnDisplayTitle } from "@/lib/column-titles";
@@ -17,7 +26,6 @@ import type { BoardSnapshotV1 } from "@/lib/task-tree-json";
 import {
   boardSnapshotToReplacePayload,
   buildBoardSnapshot,
-  buildSubtreeSnapshot,
   downloadJsonFile,
   downloadTextFile,
   flattenNodesForParentSelect,
@@ -29,49 +37,103 @@ import {
 } from "@/lib/task-tree-json";
 import { parseFreemindMmToRoots, taskRootsToFreemindMm } from "@/lib/freemind-mm";
 import {
-  disableLiveBackup,
+  attachWorkingFileFromPicker,
+  createAndAttachWorkingFile,
+  detachWorkingFile,
   fileSystemAccessUnavailableMessage,
   fileSystemAccessUnavailableTooltip,
-  flushLiveBackupJson,
-  getLiveBackupHandle,
-  isLiveBackupSupported,
-  markPersistedBoardJson,
-  pickLiveBackupTarget,
-  STANDARD_BOARD_BACKUP_FILENAME,
-} from "@/lib/live-backup";
+  getWorkingFileHandle,
+  isWorkingFileAttached,
+  isWorkingFileDirty,
+  isWorkingFileSupported,
+  restoreWorkingFileFromDisk,
+  STANDARD_WORKING_FILENAME,
+  writeWorkingFileJson,
+} from "@/lib/working-file";
 import {
-  boardColumnCount,
   buildMindmapDropPreview,
+  COLUMN_GAP_PREFIX,
+  dragOverKindFromPreview,
   findNodeById,
-  filterColumnRowsHideCompleted,
-  getColumnDisplayRows,
-  getCurrentBranchNodeIds,
-  listParentForColumn,
+  getMindmapBoardLayout,
+  pathFromRootToNode,
   parseColumnGapId,
-  subtreeNodeIdsForNodeId,
+  rootsForMindmapDisplay,
   type TreeDragOverKind,
 } from "@/lib/tree-utils";
+import type { AuthSessionInfo } from "@/lib/server-board";
+import { flushLocalBoardMirror, readLocalBoardMirror } from "@/lib/board-local-mirror";
+import {
+  deriveStorageDisplayStatus,
+  formatStorageRelativeTime,
+  formatStorageStatusTooltip,
+  resolveAutoSaveTarget,
+} from "@/lib/storage-coordinator";
+import { getLastKnownOpsSeq } from "@/lib/board-ops/queue";
+import {
+  clearOfflinePauseState,
+  hasOfflinePauseState,
+  hasOfflinePendingChanges,
+  pauseServerBoardOffline,
+} from "@/lib/server-board-offline";
+import {
+  detachServerBoard,
+  fetchAuthSession,
+  getLastKnownEtag,
+  getLastSyncedBoardJson,
+  isServerBoardDirty,
+  loginServerBoard,
+  logoutServerBoard,
+  writeBoardToServer,
+} from "@/lib/server-board";
 import { useTaskTreeStore } from "@/store/task-tree-store";
-import type { BoardDropPreview } from "@/types/dnd-preview";
+import { dropIntentLabel, type BoardDropPreview } from "@/types/dnd-preview";
 import type { TaskNode } from "@/types/task-node";
 
-import { TaskColumn } from "./task-column";
+import { BoardLocalPersist } from "./board-local-persist";
+import { TagFilterBar } from "./tag-filter-bar";
+import { TaskSearch } from "./task-search";
+import { MindmapGrid } from "./mindmap-grid";
 import { CardFieldVisibilityDialog } from "./card-field-visibility-dialog";
 import { ConfirmDialog } from "./confirm-dialog";
+import { FocusModeView } from "./focus-mode-view";
 import { ImportSubtreeDialog } from "./import-subtree-dialog";
-import { JsonExportPreviewDialog, JsonPasteImportDialog } from "./json-clipboard-dialog";
+import { AppointmentsListDialog } from "./appointments-list-dialog";
+import { BranchExportDialog, JsonExportPreviewDialog, JsonPasteImportDialog } from "./json-clipboard-dialog";
 import { LevelNamesSetupDialog } from "./level-names-setup-dialog";
-import { LiveBackupSync } from "./live-backup-sync";
+import { ServerBoardNetworkSync } from "./server-board-network-sync";
+import { ServerBoardOfflineSync } from "./server-board-offline-sync";
+import { ServerBoardSync } from "./server-board-sync";
+import { ServerLoginDialog } from "./server-login-dialog";
+import { WorkingFileSync } from "./working-file-sync";
+import { DataStoragePanel } from "./data-storage-panel";
+import { PostImportSaveDialog } from "./post-import-save-dialog";
 import { TaskEditorDialog } from "./task-editor-dialog";
 
-function exportFilenameSlug(title: string): string {
-  const s = title
-    .trim()
-    .replace(/[^a-zA-Z0-9äöüÄÖÜß]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-  return s || "export";
-}
+/** Karte vor Einfügelücke; auf Touch-Geräten zusätzlich Flächen-Treffer (pointerWithin allein reicht oft nicht). */
+const mindmapCollisionDetection: CollisionDetection = (args) => {
+  const activeId = String(args.active.id);
+  const pickTarget = (hits: ReturnType<typeof pointerWithin>) => {
+    if (hits.length === 0) return null;
+    const cardHit = hits.find((c) => {
+      const id = String(c.id);
+      return id !== activeId && !id.startsWith(COLUMN_GAP_PREFIX);
+    });
+    if (cardHit) return [cardHit];
+    const gapHit = hits.find((c) => String(c.id).startsWith(COLUMN_GAP_PREFIX));
+    return gapHit ? [gapHit] : null;
+  };
+
+  const pointerHits = pointerWithin(args);
+  const fromPointer = pickTarget(pointerHits);
+  if (fromPointer) return fromPointer;
+
+  const rectHits = rectIntersection(args);
+  const fromRect = pickTarget(rectHits);
+  if (fromRect) return fromRect;
+
+  return closestCorners(args);
+};
 
 function overToDragKind(over: Over, pathIds: string[]): TreeDragOverKind | null {
   const gap = parseColumnGapId(over.id);
@@ -112,14 +174,28 @@ function buildPreview(
   return buildMindmapDropPreview(roots, pathIds, activeId, overKind);
 }
 
-function DragPreviewCard({ id }: { id: string }) {
+function DragPreviewCard({
+  id,
+  dropPreview,
+}: {
+  id: string;
+  dropPreview: BoardDropPreview | null;
+}) {
   const roots = useTaskTreeStore((s) => s.roots);
   const node = findNodeById(roots, id);
   if (!node) return null;
+  const intent = dropPreview?.activeId === id ? dropPreview.intent : undefined;
   return (
     <div className="pointer-events-none w-72 max-w-[85vw] rounded-lg border border-slate-200 bg-white p-3 shadow-2xl ring-2 ring-sky-200/90">
       <p className="text-sm font-semibold text-slate-900">{node.title.trim() || "(Ohne Titel)"}</p>
-      <p className="mt-1 text-[11px] text-slate-500">Zweig wird verschoben …</p>
+      <p
+        className={[
+          "mt-1 text-[11px] font-medium",
+          intent === "nest-under" ? "text-violet-700" : "text-sky-700",
+        ].join(" ")}
+      >
+        {dropIntentLabel(intent)}
+      </p>
     </div>
   );
 }
@@ -127,9 +203,13 @@ function DragPreviewCard({ id }: { id: string }) {
 export function TaskBoard() {
   const roots = useTaskTreeStore((s) => s.roots);
   const pathIds = useTaskTreeStore((s) => s.pathIds);
+  const collapsedIds = useTaskTreeStore((s) => s.collapsedIds);
+  const toggleNodeCollapsed = useTaskTreeStore((s) => s.toggleNodeCollapsed);
+  const activateNode = useTaskTreeStore((s) => s.activateNode);
   const expandToNode = useTaskTreeStore((s) => s.expandToNode);
   const applyTreeDrag = useTaskTreeStore((s) => s.applyTreeDrag);
   const addCardAfter = useTaskTreeStore((s) => s.addCardAfter);
+  const addCardAfterSibling = useTaskTreeStore((s) => s.addCardAfterSibling);
   const updateCard = useTaskTreeStore((s) => s.updateCard);
   const removeCard = useTaskTreeStore((s) => s.removeCard);
   const columnTitleOverrides = useTaskTreeStore((s) => s.columnTitleOverrides);
@@ -141,49 +221,14 @@ export function TaskBoard() {
   const effortOnTasksEnabled = useTaskTreeStore((s) => s.effortOnTasksEnabled);
   const setEffortOnTasksEnabled = useTaskTreeStore((s) => s.setEffortOnTasksEnabled);
   const hideCompletedTasks = useTaskTreeStore((s) => s.hideCompletedTasks);
-  const setHideCompletedTasks = useTaskTreeStore((s) => s.setHideCompletedTasks);
+  const filterTags = useTaskTreeStore((s) => s.filterTags);
+  const completedTag = useTaskTreeStore((s) => s.completedTag);
+  const setCompletedTag = useTaskTreeStore((s) => s.setCompletedTag);
+  const focusNodeId = useTaskTreeStore((s) => s.focusNodeId);
+  const openFocusMode = useTaskTreeStore((s) => s.openFocusMode);
+  const closeFocusMode = useTaskTreeStore((s) => s.closeFocusMode);
 
-  const branchNodeIds = useMemo(() => getCurrentBranchNodeIds(roots, pathIds), [roots, pathIds]);
-
-  const HOVER_SUBTREE_CLEAR_MS = 90;
-  const [hoverSubtreeRootId, setHoverSubtreeRootId] = useState<string | null>(null);
-  const hoverClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const cancelHoverSubtreeClear = useCallback(() => {
-    if (hoverClearTimerRef.current != null) {
-      clearTimeout(hoverClearTimerRef.current);
-      hoverClearTimerRef.current = null;
-    }
-  }, []);
-
-  const scheduleHoverSubtreeClear = useCallback(() => {
-    cancelHoverSubtreeClear();
-    hoverClearTimerRef.current = setTimeout(() => {
-      hoverClearTimerRef.current = null;
-      setHoverSubtreeRootId(null);
-    }, HOVER_SUBTREE_CLEAR_MS);
-  }, [cancelHoverSubtreeClear]);
-
-  const handleHoverSubtreeEnter = useCallback(
-    (nodeId: string) => {
-      cancelHoverSubtreeClear();
-      setHoverSubtreeRootId(nodeId);
-    },
-    [cancelHoverSubtreeClear],
-  );
-
-  const handleHoverSubtreeLeave = useCallback(() => {
-    scheduleHoverSubtreeClear();
-  }, [scheduleHoverSubtreeClear]);
-
-  useEffect(() => {
-    return () => cancelHoverSubtreeClear();
-  }, [cancelHoverSubtreeClear]);
-
-  const hoverSubtreeIds = useMemo(
-    () => subtreeNodeIdsForNodeId(roots, hoverSubtreeRootId),
-    [roots, hoverSubtreeRootId],
-  );
+  const [searchFocusNodeId, setSearchFocusNodeId] = useState<string | null>(null);
 
   const [dropPreview, setDropPreview] = useState<BoardDropPreview | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -194,25 +239,170 @@ export function TaskBoard() {
   const [cardFieldsOpen, setCardFieldsOpen] = useState(false);
   const [pendingBoardImport, setPendingBoardImport] = useState<BoardSnapshotV1 | null>(null);
   const [pendingSubtreeImport, setPendingSubtreeImport] = useState<TaskNode | null>(null);
-  const [liveBackupFileName, setLiveBackupFileName] = useState<string | null>(null);
-  const [persistDirty, setPersistDirty] = useState(false);
-  /** Server + erste Client-Zeichnung false — gleiches Markup wie SSR, vermeidet Hydration-Mismatch zu `showSaveFilePicker`. */
+  const [workingFileName, setWorkingFileName] = useState<string | null>(null);
+  const [workingFileDirty, setWorkingFileDirty] = useState(false);
+  const [workingFileSaving, setWorkingFileSaving] = useState(false);
+  /** Server + erste Client-Zeichnung false — gleiches Markup wie SSR, vermeidet Hydration-Mismatch. */
   const [fsAccessSupportedForUi, setFsAccessSupportedForUi] = useState(false);
   /** Nach useEffect: dynamische Tooltips (UA/Brave) erst clientseitig. */
-  const [persistUiReady, setPersistUiReady] = useState(false);
+  const [workingFileUiReady, setWorkingFileUiReady] = useState(false);
+  const [serverSession, setServerSession] = useState<AuthSessionInfo | null>(null);
+  const [serverBoardEnabled, setServerBoardEnabled] = useState(false);
+  const [serverBoardDirty, setServerBoardDirty] = useState(false);
+  const [serverBoardSaving, setServerBoardSaving] = useState(false);
+  const [serverLoginOpen, setServerLoginOpen] = useState(false);
+  const [serverOfflinePending, setServerOfflinePending] = useState(false);
+  const [serverBoardAutoPaused, setServerBoardAutoPaused] = useState(false);
+  const [titleEditNodeId, setTitleEditNodeId] = useState<string | null>(null);
+  const [compactCards, setCompactCards] = useState(false);
   const [boardJsonExportOpen, setBoardJsonExportOpen] = useState(false);
   const [pasteImportOpen, setPasteImportOpen] = useState(false);
-  const [subtreeJsonExportNode, setSubtreeJsonExportNode] = useState<TaskNode | null>(null);
+  const [pasteSubtreeParentId, setPasteSubtreeParentId] = useState<string | null>(null);
+  const [branchExportNode, setBranchExportNode] = useState<TaskNode | null>(null);
+  const [appointmentsListOpen, setAppointmentsListOpen] = useState(false);
+  const [scrollToNodeId, setScrollToNodeId] = useState<string | null>(null);
+  const [dataStoragePanelOpen, setDataStoragePanelOpen] = useState(false);
+  const [storagePanelBusy, setStoragePanelBusy] = useState(false);
+  const [localMirrorSavedAt, setLocalMirrorSavedAt] = useState<string | null>(null);
+  const [postImportSaveOpen, setPostImportSaveOpen] = useState(false);
+  const [openWorkingFileConfirmOpen, setOpenWorkingFileConfirmOpen] = useState(false);
+  const boardColumnsRef = useRef<HTMLDivElement>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
+  const dropPreviewRef = useRef<BoardDropPreview | null>(null);
 
-  const onPersistDirtyChange = useCallback((dirty: boolean) => {
-    setPersistDirty(dirty);
+  const onWorkingFileDirtyChange = useCallback((dirty: boolean) => {
+    setWorkingFileDirty(dirty);
   }, []);
 
   useEffect(() => {
-    setFsAccessSupportedForUi(isLiveBackupSupported());
-    setPersistUiReady(true);
+    setFsAccessSupportedForUi(isWorkingFileSupported());
+    setWorkingFileUiReady(true);
   }, []);
+
+  useEffect(() => {
+    const refreshMirror = () => {
+      setLocalMirrorSavedAt(readLocalBoardMirror()?.savedAt ?? null);
+    };
+    refreshMirror();
+    const timer = setInterval(refreshMirror, 2000);
+    const unsub = useTaskTreeStore.subscribe(() => {
+      refreshMirror();
+    });
+    return () => {
+      clearInterval(timer);
+      unsub();
+    };
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const s = await fetchAuthSession();
+      setServerSession(s);
+      if (!s.configured || !s.authenticated || hasOfflinePauseState()) return;
+      // diagrams.net-Modell: gespeicherte lokale Arbeitsdatei hat Vorrang vor Server-Board.
+      if (isWorkingFileSupported()) {
+        const handle = await restoreWorkingFileFromDisk();
+        if (handle) return;
+      }
+      setServerBoardEnabled(true);
+    })();
+  }, []);
+
+  const onServerBoardDirtyChange = useCallback((dirty: boolean) => {
+    setServerBoardDirty(dirty);
+  }, []);
+
+  const onServerBoardConnectFailed = useCallback(() => {
+    setServerBoardEnabled(false);
+  }, []);
+
+  useEffect(() => {
+    if (!scrollToNodeId) return;
+
+    const reveal = () => {
+      const path = pathFromRootToNode(roots, scrollToNodeId);
+      if (path) {
+        for (const id of path) {
+          const onPath = document.querySelector(`[data-task-card-id="${id}"]`);
+          if (onPath instanceof HTMLElement) {
+            onPath.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+          }
+        }
+      }
+
+      const target = document.querySelector(`[data-task-card-id="${scrollToNodeId}"]`);
+      if (!(target instanceof HTMLElement)) return false;
+
+      target.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+      const board = boardColumnsRef.current;
+      if (board) {
+        const boardRect = board.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const targetLeft = targetRect.left - boardRect.left + board.scrollLeft;
+        const targetRight = targetLeft + targetRect.width;
+        const margin = 48;
+        if (targetLeft < board.scrollLeft + margin) {
+          board.scrollTo({ left: Math.max(0, targetLeft - margin), behavior: "smooth" });
+        } else if (targetRight > board.scrollLeft + board.clientWidth - margin) {
+          board.scrollTo({
+            left: targetRight - board.clientWidth + margin,
+            behavior: "smooth",
+          });
+        }
+      }
+      target.focus({ preventScroll: true });
+      setScrollToNodeId(null);
+      return true;
+    };
+
+    let frame = 0;
+    const tryReveal = () => {
+      if (reveal()) return;
+      frame += 1;
+      if (frame < 8) requestAnimationFrame(tryReveal);
+    };
+    requestAnimationFrame(tryReveal);
+  }, [scrollToNodeId, roots]);
+
+  const handleActivateBranch = useCallback(
+    (nodeId: string) => {
+      setSearchFocusNodeId((prev) => (prev !== null && prev !== nodeId ? null : prev));
+      activateNode(nodeId);
+    },
+    [activateNode],
+  );
+
+  useEffect(() => {
+    if (!focusNodeId) return;
+    setSearchFocusNodeId(null);
+    setTitleEditNodeId(null);
+  }, [focusNodeId]);
+
+  useEffect(() => {
+    if (!focusNodeId) return;
+    if (!findNodeById(roots, focusNodeId)) {
+      closeFocusMode();
+    }
+  }, [focusNodeId, roots, closeFocusMode]);
+
+  const handleCloseFocus = useCallback(() => {
+    const nodeId = useTaskTreeStore.getState().focusNodeId;
+    closeFocusMode();
+    const { roots } = useTaskTreeStore.getState();
+    if (!nodeId || !findNodeById(roots, nodeId)) return;
+    expandToNode(nodeId);
+    setSearchFocusNodeId(nodeId);
+    setScrollToNodeId(nodeId);
+  }, [closeFocusMode, expandToNode]);
+
+  const handleSearchSelect = useCallback(
+    (nodeId: string) => {
+      expandToNode(nodeId);
+      setSearchFocusNodeId(nodeId);
+      setScrollToNodeId(nodeId);
+    },
+    [expandToNode],
+  );
 
   const boardSnapshotTextFromStore = useCallback(() => {
     const s = useTaskTreeStore.getState();
@@ -224,9 +414,232 @@ export function TaskBoard() {
         s.cardFieldVisibility,
         s.hideCompletedTasks,
         s.effortOnTasksEnabled,
+        s.filterTags,
+        s.completedTag,
+        s.collapsedIds,
       ),
     );
   }, []);
+
+  const enterServerBoardOfflineMode = useCallback(
+    (options?: { auto?: boolean }) => {
+      if (!serverBoardEnabled) return;
+      const json = boardSnapshotTextFromStore();
+      pauseServerBoardOffline({
+        baselineJson: getLastSyncedBoardJson() ?? json,
+        baselineEtag: getLastKnownEtag(),
+        currentJson: json,
+        autoPaused: options?.auto ?? false,
+        baselineSeq: getLastKnownOpsSeq(),
+      });
+      detachServerBoard();
+      setServerBoardEnabled(false);
+      setServerBoardDirty(false);
+      setServerOfflinePending(hasOfflinePendingChanges(json));
+      setServerBoardAutoPaused(options?.auto ?? false);
+      flushLocalBoardMirror(json);
+    },
+    [boardSnapshotTextFromStore, serverBoardEnabled],
+  );
+
+  const reconnectServerBoard = useCallback(() => {
+    if (!serverSession?.authenticated) return;
+    setServerBoardAutoPaused(false);
+    setServerBoardEnabled(true);
+  }, [serverSession?.authenticated]);
+
+  const detachWorkingFileWithSave = useCallback(async (): Promise<boolean> => {
+    if (!isWorkingFileAttached()) return true;
+    const json = boardSnapshotTextFromStore();
+    if (isWorkingFileDirty(json)) {
+      const ok = await writeWorkingFileJson(json);
+      if (!ok) {
+        window.alert(
+          "Trennen nicht möglich: letzter Schreibvorgang in die Arbeitsdatei ist fehlgeschlagen.",
+        );
+        return false;
+      }
+    }
+    await detachWorkingFile();
+    setWorkingFileName(null);
+    setWorkingFileDirty(false);
+    return true;
+  }, [boardSnapshotTextFromStore]);
+
+  const disconnectServerBoardLink = useCallback(
+    async (options?: { saveFirst?: boolean; offline?: boolean }) => {
+      if (!serverBoardEnabled) return true;
+      const json = boardSnapshotTextFromStore();
+      if (options?.saveFirst !== false && isServerBoardDirty(json)) {
+        try {
+          await writeBoardToServer(json, getLastKnownEtag());
+        } catch {
+          if (options?.offline) {
+            const cont = window.confirm(
+              "Speichern auf den Server ist fehlgeschlagen.\n\nTrotzdem trennen? Ihre Änderungen bleiben als Offline-Entwurf auf diesem Gerät erhalten.",
+            );
+            if (!cont) return false;
+          } else {
+            window.alert("Trennen nicht möglich: letzter Schreibvorgang auf den Server ist fehlgeschlagen.");
+            return false;
+          }
+        }
+      }
+      if (options?.offline !== false) {
+        enterServerBoardOfflineMode({ auto: false });
+      } else {
+        setServerBoardEnabled(false);
+        setServerBoardDirty(false);
+      }
+      return true;
+    },
+    [boardSnapshotTextFromStore, enterServerBoardOfflineMode, serverBoardEnabled],
+  );
+
+  const connectServerBoardLink = useCallback(async () => {
+    if (!serverSession?.configured) {
+      window.alert(
+        "Server-Board ist nicht konfiguriert. Auf dem Host T2_SESSION_SECRET und T2_AUTH_PASSWORD setzen.",
+      );
+      return false;
+    }
+    if (!serverSession.authenticated) {
+      setServerLoginOpen(true);
+      return false;
+    }
+    const detached = await detachWorkingFileWithSave();
+    if (!detached) return false;
+    setServerBoardAutoPaused(false);
+    setServerBoardEnabled(true);
+    return true;
+  }, [detachWorkingFileWithSave, serverSession?.authenticated, serverSession?.configured]);
+
+  const attachWorkingFileLink = useCallback(
+    async (createNew: boolean) => {
+      if (!isWorkingFileSupported()) {
+        window.alert(fileSystemAccessUnavailableMessage());
+        return false;
+      }
+      if (serverBoardEnabled) {
+        const ok = await disconnectServerBoardLink({ offline: true });
+        if (!ok) return false;
+      }
+      try {
+        const json = boardSnapshotTextFromStore();
+        const handle = createNew
+          ? await createAndAttachWorkingFile(json)
+          : await attachWorkingFileFromPicker();
+        if (!handle) return false;
+        setWorkingFileName(handle.name?.trim() ? handle.name : "Arbeitsdatei");
+        if (createNew) setWorkingFileDirty(false);
+        return true;
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return false;
+        window.alert(err instanceof Error ? err.message : "Arbeitsdatei konnte nicht verknüpft werden.");
+        return false;
+      }
+    },
+    [boardSnapshotTextFromStore, disconnectServerBoardLink, serverBoardEnabled],
+  );
+
+  const runAttachWorkingFileWithBusy = useCallback(
+    (createNew: boolean) => {
+      setStoragePanelBusy(true);
+      void attachWorkingFileLink(createNew).finally(() => setStoragePanelBusy(false));
+    },
+    [attachWorkingFileLink],
+  );
+
+  const beginAttachWorkingFile = useCallback(
+    (createNew: boolean) => {
+      if (!isWorkingFileSupported()) {
+        window.alert(fileSystemAccessUnavailableMessage());
+        return;
+      }
+      if (createNew) {
+        runAttachWorkingFileWithBusy(true);
+        return;
+      }
+      setOpenWorkingFileConfirmOpen(true);
+    },
+    [runAttachWorkingFileWithBusy],
+  );
+
+  const handleConfirmOpenWorkingFile = useCallback(() => {
+    setOpenWorkingFileConfirmOpen(false);
+    runAttachWorkingFileWithBusy(false);
+  }, [runAttachWorkingFileWithBusy]);
+
+  const handleSelectAutoSaveTarget = useCallback(
+    async (target: "local" | "working-file" | "server") => {
+      if (target === "working-file") {
+        if (isWorkingFileAttached()) return;
+        beginAttachWorkingFile(false);
+        return;
+      }
+
+      setStoragePanelBusy(true);
+      try {
+        if (target === "local") {
+          if (serverBoardEnabled) {
+            const ok = await disconnectServerBoardLink({ offline: true });
+            if (!ok) return;
+          }
+          if (isWorkingFileAttached()) {
+            const ok = await detachWorkingFileWithSave();
+            if (!ok) return;
+          }
+          return;
+        }
+        if (target === "server") {
+          if (serverBoardEnabled) return;
+          await connectServerBoardLink();
+        }
+      } finally {
+        setStoragePanelBusy(false);
+      }
+    },
+    [
+      beginAttachWorkingFile,
+      connectServerBoardLink,
+      detachWorkingFileWithSave,
+      disconnectServerBoardLink,
+      serverBoardEnabled,
+    ],
+  );
+
+  const handlePostImportSaveToFile = useCallback(async () => {
+    setPostImportSaveOpen(false);
+    if (!isWorkingFileAttached()) {
+      beginAttachWorkingFile(false);
+      return;
+    }
+    const json = boardSnapshotTextFromStore();
+    const written = await writeWorkingFileJson(json);
+    if (!written) window.alert("Speichern in die Arbeitsdatei ist fehlgeschlagen.");
+    else setWorkingFileDirty(false);
+  }, [beginAttachWorkingFile, boardSnapshotTextFromStore]);
+
+  const handlePostImportSyncServer = useCallback(async () => {
+    setPostImportSaveOpen(false);
+    if (!serverSession?.configured) {
+      setServerLoginOpen(true);
+      return;
+    }
+    if (!serverSession.authenticated) {
+      setServerLoginOpen(true);
+      return;
+    }
+    await detachWorkingFileWithSave();
+    setServerBoardEnabled(true);
+    const json = boardSnapshotTextFromStore();
+    try {
+      await writeBoardToServer(json, getLastKnownEtag());
+      setServerBoardDirty(false);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Speichern auf den Server ist fehlgeschlagen.");
+    }
+  }, [boardSnapshotTextFromStore, detachWorkingFileWithSave, serverSession?.authenticated, serverSession?.configured]);
 
   const openEditor = (id: string) => {
     setEditorNodeId(id);
@@ -238,12 +651,34 @@ export function TaskBoard() {
     setEditorNodeId(null);
   };
 
-  const handleAddInColumn = (columnIndex: number) => {
-    openEditor(addCardAfter(listParentForColumn(pathIds, columnIndex)));
+  const handleOpenDetails = (nodeId: string) => {
+    setTitleEditNodeId(null);
+    openEditor(nodeId);
   };
 
-  const handleEditCard = (nodeId: string) => {
-    openEditor(nodeId);
+  const handleTitleSave = (
+    nodeId: string,
+    title: string,
+    meta?: { addSiblingAfter?: boolean },
+  ) => {
+    updateCard(nodeId, { title: title.trim() });
+    if (meta?.addSiblingAfter) {
+      const newId = addCardAfterSibling(nodeId);
+      if (newId) {
+        setTitleEditNodeId(newId);
+        setScrollToNodeId(newId);
+        return;
+      }
+    }
+    setTitleEditNodeId(null);
+  };
+
+  const handleTitleEditCancel = (nodeId: string) => {
+    const node = findNodeById(roots, nodeId);
+    if (node && !node.title.trim()) {
+      removeCard(nodeId);
+    }
+    setTitleEditNodeId(null);
   };
 
   const handleRequestDelete = (nodeId: string) => {
@@ -258,8 +693,11 @@ export function TaskBoard() {
       cardFieldVisibility,
       hideCompletedTasks,
       effortOnTasksEnabled,
+      filterTags,
+      completedTag,
+      collapsedIds,
     );
-    downloadJsonFile(STANDARD_BOARD_BACKUP_FILENAME, stringifyExportedDocument(doc));
+    downloadJsonFile(STANDARD_WORKING_FILENAME, stringifyExportedDocument(doc));
   };
 
   const handleExportMindmapMm = () => {
@@ -267,9 +705,32 @@ export function TaskBoard() {
     downloadTextFile(`task-board-${stamp}.mm`, taskRootsToFreemindMm(roots), "application/xml");
   };
 
-  const handleExportSubtree = (node: TaskNode) => {
-    const doc = buildSubtreeSnapshot(node, { sourceNodeTitle: node.title });
-    downloadJsonFile(`teilbaum-${exportFilenameSlug(node.title)}.json`, stringifyExportedDocument(doc));
+  const applySubtreePastedText = (raw: string) => {
+    const parentId = pasteSubtreeParentId;
+    if (parentId === null) return;
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      window.alert("Kein Inhalt.");
+      return;
+    }
+    try {
+      const doc = parseExportedDocument(trimmed);
+      if (isBoardSnapshot(doc)) {
+        window.alert(
+          "Bitte Teilbaum-JSON (scope „subtree“) einfügen — keinen vollständigen Board-Export. Für das gesamte Board „Daten“ → Backup einspielen nutzen.",
+        );
+        return;
+      }
+      if (isSubtreeSnapshot(doc)) {
+        importSubtreeRoot(parentId, taskNodeFromJson(doc.root));
+        setPasteSubtreeParentId(null);
+        expandToNode(parentId);
+        return;
+      }
+      window.alert("Unbekanntes Format — erwartet wird Teilbaum-JSON (scope „subtree“).");
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Import fehlgeschlagen.");
+    }
   };
 
   const applyImportedText = (raw: string) => {
@@ -290,6 +751,9 @@ export function TaskBoard() {
             s.cardFieldVisibility,
             s.hideCompletedTasks,
             s.effortOnTasksEnabled,
+            s.filterTags,
+            s.completedTag,
+            s.collapsedIds,
           ),
         );
         setPasteImportOpen(false);
@@ -316,38 +780,34 @@ export function TaskBoard() {
     }
   };
 
-  const handlePersistBoardToFile = async () => {
-    if (!isLiveBackupSupported()) {
-      window.alert(fileSystemAccessUnavailableMessage());
-      return;
-    }
-    try {
-      if (!getLiveBackupHandle()) {
-        const h = await pickLiveBackupTarget();
-        if (!h) return;
-        setLiveBackupFileName(h.name?.trim() ? h.name : "Speicherdatei");
-      }
+  const handleServerLogout = useCallback(async () => {
+    if (!serverSession?.authenticated) return;
+    if (serverBoardEnabled) {
       const json = boardSnapshotTextFromStore();
-      const ok = await flushLiveBackupJson(json);
-      if (!ok) {
-        window.alert("Speichern fehlgeschlagen (Berechtigung oder kein gültiges Speicherziel).");
-        await disableLiveBackup();
-        setLiveBackupFileName(null);
-        setPersistDirty(false);
-        return;
+      if (isServerBoardDirty(json)) {
+        try {
+          await writeBoardToServer(json, getLastKnownEtag());
+        } catch {
+          window.alert("Abmelden nicht möglich: letzter Schreibvorgang auf den Server ist fehlgeschlagen.");
+          return;
+        }
       }
-      markPersistedBoardJson(json);
-      setPersistDirty(false);
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      window.alert(e instanceof Error ? e.message : "Speichern fehlgeschlagen.");
+      setServerBoardEnabled(false);
     }
-  };
+    await logoutServerBoard();
+    clearOfflinePauseState();
+    setServerSession({ configured: serverSession.configured, authenticated: false });
+    setServerBoardDirty(false);
+    setServerOfflinePending(false);
+    setServerBoardAutoPaused(false);
+  }, [boardSnapshotTextFromStore, serverBoardEnabled, serverSession]);
 
-  const handleStopLiveBackup = async () => {
-    await disableLiveBackup();
-    setLiveBackupFileName(null);
-    setPersistDirty(false);
+  const handleServerLogin = async (username: string, password: string) => {
+    await loginServerBoard(username, password);
+    const s = await fetchAuthSession();
+    setServerSession(s);
+    const detached = await detachWorkingFileWithSave();
+    if (detached) setServerBoardEnabled(true);
   };
 
   const handleImportFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -359,25 +819,28 @@ export function TaskBoard() {
   };
 
   const onDragStart = (e: DragStartEvent) => {
-    cancelHoverSubtreeClear();
-    setHoverSubtreeRootId(null);
     setActiveDragId(String(e.active.id));
+    dropPreviewRef.current = null;
     setDropPreview(null);
   };
 
   const onDragOver = (event: DragOverEvent) => {
     const { active, over } = event;
     if (!over) {
+      dropPreviewRef.current = null;
       setDropPreview(null);
       return;
     }
     const activeId = String(active.id);
     const { roots: r, pathIds: p } = useTaskTreeStore.getState();
     const preview = buildPreview(r, p, activeId, over);
-    setDropPreview(preview && preview.activeId === activeId ? preview : null);
+    const next = preview && preview.activeId === activeId ? preview : null;
+    dropPreviewRef.current = next;
+    setDropPreview(next);
   };
 
   const endDragUi = () => {
+    dropPreviewRef.current = null;
     setDropPreview(null);
     setActiveDragId(null);
   };
@@ -388,15 +851,41 @@ export function TaskBoard() {
 
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    const overKind = over ? overToDragKind(over, useTaskTreeStore.getState().pathIds) : null;
     const activeId = String(active.id);
+    const { roots: r, pathIds: p } = useTaskTreeStore.getState();
+    const preview = dropPreviewRef.current;
+
+    let overKind: TreeDragOverKind | null = null;
+    if (preview?.activeId === activeId) {
+      overKind = dragOverKindFromPreview(r, preview, p);
+    } else if (over) {
+      overKind = overToDragKind(over, p);
+    }
+
     endDragUi();
-    if (!over || !overKind) return;
+    if (!overKind) return;
 
     applyTreeDrag(activeId, overKind);
   };
 
-  const columnCount = useMemo(() => boardColumnCount(roots, pathIds), [roots, pathIds]);
+  const collapsedSet = useMemo(() => new Set(collapsedIds), [collapsedIds]);
+
+  const mindmapDisplayRoots = useMemo(
+    () =>
+      rootsForMindmapDisplay(roots, {
+        hideCompletedTasks,
+        completedTag,
+        filterTags,
+      }),
+    [roots, hideCompletedTasks, completedTag, filterTags],
+  );
+
+  const mindmapLayout = useMemo(
+    () => getMindmapBoardLayout(mindmapDisplayRoots, collapsedSet),
+    [mindmapDisplayRoots, collapsedSet],
+  );
+
+  const columnCount = mindmapLayout.columnCount;
 
   const boardExportJsonText = boardJsonExportOpen
     ? stringifyExportedDocument(
@@ -407,37 +896,98 @@ export function TaskBoard() {
           cardFieldVisibility,
           hideCompletedTasks,
           effortOnTasksEnabled,
+          filterTags,
+          completedTag,
+          collapsedIds,
         ),
       )
     : "";
 
-  const subtreeExportJsonText = subtreeJsonExportNode
-    ? stringifyExportedDocument(
-        buildSubtreeSnapshot(subtreeJsonExportNode, { sourceNodeTitle: subtreeJsonExportNode.title }),
-      )
-    : "";
-
+  /** Griff-Handle: kurze Bewegung reicht (kein Long-Press — der kämpft mit Scroll auf Mobilgeräten). */
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 4 },
-    }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { distance: 10 } }),
   );
 
-  const persistTarget = getLiveBackupHandle();
-  const persistConnected = Boolean(persistTarget);
-  const persistLabel =
-    liveBackupFileName?.trim() ||
-    (persistTarget?.name != null && persistTarget.name.trim() !== "" ? persistTarget.name : null);
+  const workingFileAttached = isWorkingFileAttached();
+  const workingFileHandle = getWorkingFileHandle();
+  const workingFileLabel =
+    workingFileName?.trim() ||
+    (workingFileHandle?.name != null && workingFileHandle.name.trim() !== ""
+      ? workingFileHandle.name
+      : null);
+
+  const autoSaveTarget = resolveAutoSaveTarget({
+    serverBoardEnabled,
+    workingFileAttached,
+  });
+
+  const storageDisplayStatus = useMemo(
+    () =>
+      deriveStorageDisplayStatus({
+        autoSaveTarget,
+        workingFileLabel,
+        workingFileDirty,
+        workingFileSaving,
+        serverBoardDirty,
+        serverBoardSaving,
+        serverOfflinePending,
+        serverBoardAutoPaused,
+        localMirrorSavedAt,
+      }),
+    [
+      autoSaveTarget,
+      workingFileLabel,
+      workingFileDirty,
+      workingFileSaving,
+      serverBoardDirty,
+      serverBoardSaving,
+      serverOfflinePending,
+      serverBoardAutoPaused,
+      localMirrorSavedAt,
+    ],
+  );
+
+  const dataStorageTooltip = useMemo(
+    () => formatStorageStatusTooltip(storageDisplayStatus),
+    [storageDisplayStatus],
+  );
+
+  const localMirrorHint = formatStorageRelativeTime(localMirrorSavedAt);
 
   return (
     <div className="flex h-screen min-h-0 flex-col">
-      <LiveBackupSync onActiveFileNameChange={setLiveBackupFileName} onPersistDirtyChange={onPersistDirtyChange} />
+      <BoardLocalPersist />
+      <WorkingFileSync
+        onWorkingFileNameChange={setWorkingFileName}
+        onDirtyChange={onWorkingFileDirtyChange}
+        onSavingChange={setWorkingFileSaving}
+      />
+      <ServerBoardOfflineSync
+        serverBoardEnabled={serverBoardEnabled}
+        onOfflinePendingChange={setServerOfflinePending}
+      />
+      <ServerBoardNetworkSync
+        serverBoardEnabled={serverBoardEnabled}
+        authenticated={Boolean(serverSession?.authenticated)}
+        onAutoOffline={() => enterServerBoardOfflineMode({ auto: true })}
+        onAutoReconnect={reconnectServerBoard}
+        onAutoPausedChange={setServerBoardAutoPaused}
+      />
+      <ServerBoardSync
+        enabled={serverBoardEnabled}
+        onDirtyChange={onServerBoardDirtyChange}
+        onSavingChange={setServerBoardSaving}
+        onConnectFailed={onServerBoardConnectFailed}
+        onNetworkUnavailable={() => enterServerBoardOfflineMode({ auto: true })}
+      />
       {/* Header + Board in einer Spalte: Board kann den Header nicht überdecken (kein z-Index gegen Toolbar). */}
       <div className="flex min-h-0 flex-1 flex-col">
         <header className="shrink-0 border-b border-slate-200/80 bg-white px-6 py-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-semibold text-slate-900">Hierarchischer Task-Manager</h1>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+            <h1 className="shrink-0 text-lg font-semibold text-slate-900">T2</h1>
+            <TaskSearch onSelectNode={handleSearchSelect} />
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <input
@@ -450,97 +1000,13 @@ export function TaskBoard() {
             />
             <button
               type="button"
-              onClick={handleExportFullBoard}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
-              title="Gesamten Stand als JSON-Datei speichern"
-              aria-label="Gesamten Stand als JSON-Datei exportieren"
+              onClick={() => setDataStoragePanelOpen(true)}
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-slate-50/80 px-2.5 text-slate-600 transition hover:bg-white hover:text-slate-900"
+              title={dataStorageTooltip}
+              aria-label={`Daten und Speicher: ${storageDisplayStatus.primaryLine}`}
             >
-              <Download className="h-3.5 w-3.5" aria-hidden />
-            </button>
-            <button
-              type="button"
-              onClick={handleExportMindmapMm}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
-              title="Gesamten Stand als FreeMind-Mindmap (.mm)"
-              aria-label="Gesamten Stand als Mindmap exportieren"
-            >
-              <Route className="h-3.5 w-3.5" aria-hidden />
-            </button>
-            <button
-              type="button"
-              onClick={() => setBoardJsonExportOpen(true)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
-              title="Gesamten Stand als JSON anzeigen und kopieren"
-              aria-label="Gesamten Stand als JSON anzeigen und kopieren"
-            >
-              <Copy className="h-3.5 w-3.5" aria-hidden />
-            </button>
-            <button
-              type="button"
-              onClick={() => void handlePersistBoardToFile()}
-              className={[
-                "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition",
-                !fsAccessSupportedForUi
-                  ? "border-amber-200/90 bg-amber-50/80 text-amber-900 hover:bg-amber-100/90"
-                  : persistDirty && persistConnected
-                    ? "border-red-200/90 bg-red-50 text-red-700 ring-2 ring-red-300/70 hover:bg-red-100/90"
-                    : persistConnected
-                      ? "border-emerald-200/90 bg-emerald-50/90 text-emerald-900 ring-1 ring-emerald-200/80 hover:bg-emerald-100/80"
-                      : "border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900",
-              ].join(" ")}
-              title={
-                !fsAccessSupportedForUi
-                  ? !persistUiReady
-                    ? "Stand in eine Datei sichern (Browser-Unterstützung wird gleich geprüft)."
-                    : fileSystemAccessUnavailableTooltip()
-                  : !persistConnected
-                    ? "Stand sichern: Datei wählen oder anlegen — danach schreibt derselbe Knopf immer in diese Datei"
-                    : persistDirty
-                      ? persistLabel
-                        ? `Ungesicherte Änderungen — jetzt in „${persistLabel}“ schreiben`
-                        : "Ungesicherte Änderungen — jetzt in die konfigurierte Datei schreiben"
-                      : persistLabel
-                        ? `In „${persistLabel}“ speichern (bereits synchron, wenn nichts geändert wurde)`
-                        : "In die konfigurierte Datei speichern"
-              }
-              aria-label={
-                persistConnected
-                  ? persistLabel
-                    ? `Stand in ${persistLabel} sichern`
-                    : "Stand in konfigurierter Datei sichern"
-                  : "Stand sichern und Speicherdatei wählen"
-              }
-            >
-              <Save className="h-3.5 w-3.5" aria-hidden />
-            </button>
-            {persistConnected ? (
-              <button
-                type="button"
-                onClick={() => void handleStopLiveBackup()}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-500 transition hover:bg-white hover:text-red-700"
-                title="Speicherdatei trennen (zum Wechseln der Datei: trennen, dann erneut speichern)"
-                aria-label="Speicherdatei trennen"
-              >
-                <X className="h-3.5 w-3.5" aria-hidden />
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => importFileRef.current?.click()}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
-              title="JSON oder Mindmap (.mm) aus Datei importieren"
-              aria-label="JSON oder Mindmap aus Datei importieren"
-            >
-              <Upload className="h-3.5 w-3.5" aria-hidden />
-            </button>
-            <button
-              type="button"
-              onClick={() => setPasteImportOpen(true)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
-              title="JSON oder Mindmap (.mm) aus Textfeld importieren"
-              aria-label="JSON oder Mindmap aus Textfeld importieren"
-            >
-              <ClipboardPaste className="h-3.5 w-3.5" aria-hidden />
+              <HardDrive className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span className="hidden text-xs font-medium sm:inline">Daten</span>
             </button>
             <button
               type="button"
@@ -562,102 +1028,128 @@ export function TaskBoard() {
             </button>
             <button
               type="button"
-              onClick={() => setHideCompletedTasks(!hideCompletedTasks)}
+              onClick={() => setCompactCards((c) => !c)}
               className={[
-                "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition",
-                hideCompletedTasks
-                  ? "border-sky-300/90 bg-sky-50 text-sky-800 ring-1 ring-sky-200/80 hover:bg-sky-100/80"
+                "flex h-8 w-8 items-center justify-center rounded-lg border transition",
+                compactCards
+                  ? "border-sky-300/90 bg-sky-50 text-sky-900 ring-1 ring-sky-200/80 hover:bg-sky-100/80"
                   : "border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900",
               ].join(" ")}
-              title={
-                hideCompletedTasks
-                  ? "Erledigte Karten wieder in der Ansicht anzeigen"
-                  : "Erledigte Karten in der Spaltenansicht ausblenden (nur Anzeige; beim Export wird die Option mitgespeichert, wenn aktiv)"
-              }
-              aria-label="Filter: erledigte Aufgaben"
-              aria-pressed={hideCompletedTasks}
+              title={compactCards ? "Kompakt-Modus aus" : "Kompakt-Modus — kürzere Karten, Beschreibung gekürzt"}
+              aria-label={compactCards ? "Kompakt-Modus deaktivieren" : "Kompakt-Modus aktivieren"}
+              aria-pressed={compactCards}
             >
-              <ListFilter className="h-3.5 w-3.5" aria-hidden />
+              <Rows3 className="h-3.5 w-3.5" aria-hidden />
             </button>
           </div>
         </div>
+        <TagFilterBar onOpenAppointments={() => setAppointmentsListOpen(true)} />
       </header>
 
+        {focusNodeId ? (
+          <FocusModeView
+            focusNodeId={focusNodeId}
+            hideCompletedTasks={hideCompletedTasks}
+            fieldVisibility={cardFieldVisibility}
+            onClose={handleCloseFocus}
+            onFocusNodeChange={openFocusMode}
+            onOpenDetails={handleOpenDetails}
+          />
+        ) : (
         <DndContext
         id="task-board-dnd-aria"
         sensors={sensors}
-        autoScroll={false}
-        collisionDetection={closestCorners}
+        autoScroll
+        collisionDetection={mindmapCollisionDetection}
         onDragStart={onDragStart}
         onDragOver={onDragOver}
         onDragEnd={onDragEnd}
         onDragCancel={onDragCancel}
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="relative flex min-h-0 flex-1 items-stretch gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain px-4 py-4">
-            {Array.from({ length: columnCount }, (_, columnIndex) => {
-              const rawRows = getColumnDisplayRows(roots, pathIds, columnIndex);
-              if (columnIndex > 0 && rawRows.length === 0) return null;
-              const rows = hideCompletedTasks ? filterColumnRowsHideCompleted(rawRows) : rawRows;
-              return (
-                <TaskColumn
-                  key={columnIndex}
-                  title={resolveColumnDisplayTitle(columnTitleOverrides, columnIndex)}
-                  columnIndex={columnIndex}
-                  rows={rows}
-                  pathIds={pathIds}
-                  branchNodeIds={branchNodeIds}
-                  hoverSubtreeIds={hoverSubtreeIds}
-                  onHoverSubtreeEnter={handleHoverSubtreeEnter}
-                  onHoverSubtreeLeave={handleHoverSubtreeLeave}
-                  onAddCard={handleAddInColumn}
-                  roots={roots}
-                  onAddChildCard={(parentId) => {
-                    const id = addCardAfter(parentId);
-                    expandToNode(parentId);
-                    openEditor(id);
-                  }}
-                  onEditCard={handleEditCard}
-                  onDeleteCard={handleRequestDelete}
-                  onActivateBranch={expandToNode}
-                  dropPreview={dropPreview}
-                  fieldVisibility={cardFieldVisibility}
-                  onExportSubtree={handleExportSubtree}
-                  onCopySubtreeJson={(node) => setSubtreeJsonExportNode(node)}
-                />
-              );
-            })}
+          <div
+            ref={boardColumnsRef}
+            className={[
+              "relative min-h-0 flex-1 overflow-auto overscroll-contain px-4 py-4",
+              activeDragId ? "touch-none" : "",
+            ].join(" ")}
+          >
+            <MindmapGrid
+              layout={mindmapLayout}
+              roots={roots}
+              columnCount={columnCount}
+              columnTitleOverrides={columnTitleOverrides}
+              collapsedIds={collapsedSet}
+              searchFocusNodeId={searchFocusNodeId}
+              onPasteSubtreeUnder={setPasteSubtreeParentId}
+              onAddRootCard={() => {
+                const id = addCardAfter(null);
+                setTitleEditNodeId(id);
+                setScrollToNodeId(id);
+              }}
+              onAddChildCard={(parentId) => {
+                const id = addCardAfter(parentId);
+                expandToNode(id);
+                setTitleEditNodeId(id);
+                setScrollToNodeId(id);
+              }}
+              onOpenDetails={handleOpenDetails}
+              onToggleCollapsed={toggleNodeCollapsed}
+              titleEditNodeId={titleEditNodeId}
+              onTitleSave={handleTitleSave}
+              onTitleEditCancel={handleTitleEditCancel}
+              compact={compactCards}
+              onActivateBranch={handleActivateBranch}
+              dropPreview={dropPreview}
+              fieldVisibility={cardFieldVisibility}
+              onCopySubtree={(node) => setBranchExportNode(node)}
+              onRequestDelete={handleRequestDelete}
+            />
           </div>
         </div>
 
-        <DragOverlay>{activeDragId ? <DragPreviewCard id={activeDragId} /> : null}</DragOverlay>
+        <DragOverlay zIndex={40}>
+          {activeDragId ? <DragPreviewCard id={activeDragId} dropPreview={dropPreview} /> : null}
+        </DragOverlay>
         </DndContext>
+        )}
       </div>
 
       <JsonExportPreviewDialog
         open={boardJsonExportOpen}
-        title="Gesamter Stand als JSON"
-        hint="Identisch mit dem Dateiexport (format, roots, pathIds, Einstellungen). Text markieren oder über die Schaltfläche kopieren."
+        title="Backup als JSON (Kopieren)"
+        hint="Identisch mit „Backup erstellen“ — ändert weder Server noch Arbeitsdatei. Text markieren oder kopieren."
         jsonText={boardExportJsonText}
         onClose={() => setBoardJsonExportOpen(false)}
       />
-      <JsonExportPreviewDialog
-        open={subtreeJsonExportNode !== null}
-        title="Teilbaum als JSON"
-        hint={
-          subtreeJsonExportNode
-            ? `Wurzelknoten: „${subtreeJsonExportNode.title}“ — gleiches Format wie „Teilbaum als Datei exportieren“.`
-            : undefined
-        }
-        jsonText={subtreeExportJsonText}
-        onClose={() => setSubtreeJsonExportNode(null)}
+      <BranchExportDialog
+        open={branchExportNode !== null}
+        root={branchExportNode}
+        completedTag={completedTag}
+        effortOnTasksEnabled={effortOnTasksEnabled}
+        onClose={() => setBranchExportNode(null)}
+      />
+      <AppointmentsListDialog
+        open={appointmentsListOpen}
+        onClose={() => setAppointmentsListOpen(false)}
       />
       <JsonPasteImportDialog
         open={pasteImportOpen}
-        title="JSON oder Mindmap einfügen"
-        hint="Board-JSON (scope „board“), Teilbaum-JSON (scope „subtree“) oder FreeMind-/Freeplane-XML (.mm), beginnend mit „<“. Bei einem vollständigen Board-Import folgt die Bestätigung zum Ersetzen."
+        title="Backup einspielen (Text)"
+        hint="Board-JSON (scope „board“), Teilbaum-JSON (scope „subtree“) oder FreeMind-/Freeplane-XML (.mm). Ein vollständiges Board ersetzt alle Karten nach Bestätigung."
         onClose={() => setPasteImportOpen(false)}
         onApplyPastedText={applyImportedText}
+      />
+      <JsonPasteImportDialog
+        open={pasteSubtreeParentId !== null}
+        title={
+          pasteSubtreeParentId !== null
+            ? `Teilbaum einfügen unter „${findNodeById(roots, pasteSubtreeParentId)?.title?.trim() || "Karte"}“`
+            : "Teilbaum einfügen"
+        }
+        hint="Teilbaum-JSON (scope „subtree“), wie beim Kopieren eines Astes. Wird als Kind(er) der gewählten Karte eingefügt; alle IDs werden neu vergeben."
+        onClose={() => setPasteSubtreeParentId(null)}
+        onApplyPastedText={applySubtreePastedText}
       />
       <ImportSubtreeDialog
         open={pendingSubtreeImport !== null}
@@ -672,14 +1164,28 @@ export function TaskBoard() {
         }}
       />
       <ConfirmDialog
+        open={openWorkingFileConfirmOpen}
+        title="Bestehende Arbeitsdatei öffnen?"
+        message={
+          serverBoardEnabled
+            ? "Die gewählte JSON-Datei ersetzt die aktuelle Board-Ansicht in T2.\n\nDer Server wird getrennt. Offene Änderungen werden zuvor auf den Server geschrieben (sofern möglich); der letzte Stand auf dem Server bleibt erhalten.\n\nUm stattdessen den aktuellen Stand in eine neue Datei zu schreiben, wählen Sie „Neue Datei“."
+            : "Die gewählte JSON-Datei ersetzt die aktuelle Board-Ansicht in T2. Der Inhalt der Datei wird geladen — nicht der zuletzt sichtbare Stand, sofern er abweicht.\n\nUm den aktuellen Stand in eine neue Datei zu schreiben, wählen Sie „Neue Datei“."
+        }
+        confirmLabel="Datei öffnen"
+        cancelLabel="Abbrechen"
+        confirmClassName="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+        onCancel={() => setOpenWorkingFileConfirmOpen(false)}
+        onConfirm={handleConfirmOpenWorkingFile}
+      />
+      <ConfirmDialog
         open={pendingBoardImport !== null}
-        title="Gesamten Stand ersetzen?"
+        title="Backup einspielen?"
         message={
           pendingBoardImport
-            ? `Alle Karten, Drill-Pfad, Ebenen-Namen und Einstellungen werden ersetzt (${pendingBoardImport.roots.length} Wurzelkarten) — aus Datei oder Textfeld. Der Vorgang kann nicht rückgängig gemacht werden.`
+            ? `Alle Karten, Drill-Pfad, Ebenen-Namen und Einstellungen werden ersetzt (${pendingBoardImport.roots.length} Wurzelkarten). Weder Server noch Arbeitsdatei werden automatisch angepasst — danach können Sie ein Speicherziel wählen. Nicht rückgängig machbar.`
             : ""
         }
-        confirmLabel="Ersetzen"
+        confirmLabel="Einspielen"
         cancelLabel="Abbrechen"
         confirmClassName="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
         onCancel={() => setPendingBoardImport(null)}
@@ -689,6 +1195,70 @@ export function TaskBoard() {
           if (!snap) return;
           replaceBoardFromImport(boardSnapshotToReplacePayload(snap));
           closeEditor();
+          setPostImportSaveOpen(true);
+        }}
+      />
+      <PostImportSaveDialog
+        open={postImportSaveOpen}
+        workingFileAvailable={fsAccessSupportedForUi}
+        serverConfigured={Boolean(serverSession?.configured)}
+        onSaveToWorkingFile={() => void handlePostImportSaveToFile()}
+        onSyncToServer={() => void handlePostImportSyncServer()}
+        onKeepLocalOnly={() => setPostImportSaveOpen(false)}
+      />
+      <DataStoragePanel
+        open={dataStoragePanelOpen}
+        onClose={() => setDataStoragePanelOpen(false)}
+        autoSaveTarget={autoSaveTarget}
+        fsAccessSupported={fsAccessSupportedForUi}
+        workingFileUiReady={workingFileUiReady}
+        workingFileUnavailableTooltip={fileSystemAccessUnavailableTooltip()}
+        workingFileLabel={workingFileLabel}
+        workingFileDirty={workingFileDirty}
+        workingFileSaving={workingFileSaving}
+        serverSession={serverSession}
+        serverBoardEnabled={serverBoardEnabled}
+        serverBoardDirty={serverBoardDirty}
+        serverBoardSaving={serverBoardSaving}
+        serverOfflinePending={serverOfflinePending}
+        serverBoardAutoPaused={serverBoardAutoPaused}
+        localMirrorHint={localMirrorHint}
+        busy={storagePanelBusy}
+        onSelectTarget={(target) => void handleSelectAutoSaveTarget(target)}
+        onAttachWorkingFile={(createNew) => beginAttachWorkingFile(createNew)}
+        onDetachWorkingFile={() => {
+          setStoragePanelBusy(true);
+          void detachWorkingFileWithSave().finally(() => setStoragePanelBusy(false));
+        }}
+        onConnectServer={() => {
+          setStoragePanelBusy(true);
+          void connectServerBoardLink().finally(() => setStoragePanelBusy(false));
+        }}
+        onDisconnectServer={() => {
+          setStoragePanelBusy(true);
+          void disconnectServerBoardLink({ offline: true }).finally(() => setStoragePanelBusy(false));
+        }}
+        onLogoutServer={() => {
+          setStoragePanelBusy(true);
+          void handleServerLogout().finally(() => setStoragePanelBusy(false));
+        }}
+        onCreateBackup={() => {
+          handleExportFullBoard();
+        }}
+        onRestoreBackupFile={() => {
+          setDataStoragePanelOpen(false);
+          importFileRef.current?.click();
+        }}
+        onRestoreBackupPaste={() => {
+          setDataStoragePanelOpen(false);
+          setPasteImportOpen(true);
+        }}
+        onExportMindmap={() => {
+          handleExportMindmapMm();
+        }}
+        onShowJsonCopy={() => {
+          setDataStoragePanelOpen(false);
+          setBoardJsonExportOpen(true);
         }}
       />
       <LevelNamesSetupDialog
@@ -702,19 +1272,41 @@ export function TaskBoard() {
         open={cardFieldsOpen}
         value={cardFieldVisibility}
         effortOnTasksEnabled={effortOnTasksEnabled}
+        completedTag={completedTag}
         onClose={() => setCardFieldsOpen(false)}
-        onApply={(next, effortOn) => {
+        onApply={(next, effortOn, doneTag) => {
           applyCardFieldVisibility(next);
           setEffortOnTasksEnabled(effortOn);
+          setCompletedTag(doneTag);
         }}
+      />
+      <ServerLoginDialog
+        open={serverLoginOpen}
+        defaultUsername={serverSession?.username ?? "admin"}
+        onClose={() => setServerLoginOpen(false)}
+        onLogin={handleServerLogin}
       />
       <TaskEditorDialog
         open={editorOpen}
         nodeId={editorNodeId}
         onClose={closeEditor}
-        onSave={(id, fields) => {
+        onSave={(id, fields, meta) => {
           updateCard(id, fields);
+          if (meta?.addSiblingAfter) {
+            const newId = addCardAfterSibling(id);
+            if (newId) {
+              setEditorNodeId(newId);
+              setScrollToNodeId(newId);
+            }
+          }
         }}
+        onRequestDelete={
+          editorNodeId
+            ? () => {
+                handleRequestDelete(editorNodeId);
+              }
+            : undefined
+        }
       />
       <ConfirmDialog
         open={pendingDeleteId !== null}

@@ -1,10 +1,22 @@
 /** Kartenfelder außer Titel — steuern nur die Anzeige in Liste und Detail; Export/Import der Knotendaten bleibt unverändert. */
-export const CARD_FIELD_KEYS = ["description", "tags", "effort", "dueDate", "reminderDate"] as const;
+export const CARD_FIELD_KEYS = [
+  "completedCheck",
+  "id",
+  "description",
+  "link",
+  "tags",
+  "effort",
+  "dueDate",
+  "reminderDate",
+] as const;
 export type CardFieldKey = (typeof CARD_FIELD_KEYS)[number];
 export type CardFieldVisibility = Record<CardFieldKey, boolean>;
 
 export const DEFAULT_CARD_FIELD_VISIBILITY: CardFieldVisibility = {
+  completedCheck: true,
+  id: true,
   description: true,
+  link: true,
   tags: true,
   effort: true,
   dueDate: true,
@@ -12,7 +24,10 @@ export const DEFAULT_CARD_FIELD_VISIBILITY: CardFieldVisibility = {
 };
 
 export const CARD_FIELD_LABELS: Record<CardFieldKey, string> = {
+  completedCheck: "Erledigt-Schalter (Kreis auf der Karte)",
+  id: "Karten-ID (Lox)",
   description: "Beschreibung",
+  link: "Link (Titel öffnet URL)",
   tags: "Tags",
   effort: "Aufwand (inkl. Σ)",
   dueDate: "Fälligkeit / nächster Termin",

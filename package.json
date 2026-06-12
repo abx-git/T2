@@ -2,6 +2,7 @@
   "name": "hierarchical-task-manager",
   "version": "0.1.0",
   "private": true,
+  "homepage": "https://abx-git.github.io/T2/",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

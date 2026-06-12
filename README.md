@@ -1,5 +1,11 @@
 # T2
 
+> **Diese Seite ist nur die Dokumentation** (GitHub-Quellcode).
+>
+> **Die App öffnen:** **[https://abx-git.github.io/T2/](https://abx-git.github.io/T2/)**
+>
+> Nicht `github.com/abx-git/T2` — das ist das Repo mit diesem Text. Die App läuft unter **`github.io`**.
+
 Hierarchische Aufgaben als Board / Mindmap — wie **diagrams.net**: App im Browser, Daten auf Ihrem Rechner.
 
 ## Sofort loslegen

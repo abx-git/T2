@@ -21,7 +21,7 @@ import {
 import { HardDrive, Settings2, SlidersHorizontal, Rows3 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 
-import { resolveColumnDisplayTitle } from "@/lib/column-titles";
+import { defaultLoxIdService } from "@/lib/lox-id";
 import type { BoardSnapshotV1 } from "@/lib/task-tree-json";
 import {
   boardSnapshotToReplacePayload,
@@ -509,11 +509,18 @@ export function TaskBoard() {
         );
         return false;
       }
+      const canonical = defaultLoxIdService.canonicalId(loxId);
+      if (!canonical) {
+        window.alert("Ungültige LOX-ID — Format BRD-XXXX-XXXX.");
+        return false;
+      }
       const detached = await detachWorkingFileWithSave();
       if (!detached) return false;
-      writeVaultLoxId(loxId);
-      setVaultLoxId(loxId);
-      setLinkedVaultLoxId(loxId);
+      detachServerBoard();
+      setServerSaveError(null);
+      writeVaultLoxId(canonical);
+      setVaultLoxId(canonical);
+      setLinkedVaultLoxId(canonical);
       setServerBoardAutoPaused(false);
       setServerBoardEnabled(true);
       return true;

@@ -10,12 +10,9 @@ export function parseVaultAuthHeader(header: string | null | undefined): string 
 }
 
 export function normalizeVaultLoxId(raw: string): string | null {
-  const normalized = defaultLoxIdService.normalizeId(raw.trim());
-  if (!defaultLoxIdService.validateId(normalized)) return null;
-  return normalized;
+  return defaultLoxIdService.canonicalId(raw);
 }
 
 export function vaultStorageKeyForLoxId(loxId: string): string | null {
-  const normalized = normalizeVaultLoxId(loxId);
-  return normalized;
+  return normalizeVaultLoxId(loxId);
 }

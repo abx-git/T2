@@ -2,7 +2,7 @@
  * Client-seitige Verschlüsselung für LOX-Vault (Zero-Knowledge).
  */
 
-import { defaultLoxIdService } from "@/lib/lox-id";
+import { canonicalBoardLoxId, defaultLoxIdService } from "@/lib/lox-id";
 
 const VAULT_MAGIC = new Uint8Array([0x54, 0x32, 0x56, 0x31]); // "T2V1"
 const VAULT_SALT = new TextEncoder().encode("t2-vault-v1");
@@ -16,7 +16,7 @@ export class VaultDecryptError extends Error {
 }
 
 async function deriveVaultKey(loxId: string): Promise<CryptoKey> {
-  const normalized = defaultLoxIdService.normalizeId(loxId);
+  const normalized = canonicalBoardLoxId(loxId) ?? defaultLoxIdService.normalizeId(loxId);
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(normalized),

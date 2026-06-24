@@ -38,12 +38,17 @@ export function LoxVaultDialog({ open, mode, onClose, onCreate, onConnect }: Lox
   };
 
   const handleConnect = () => {
-    const normalized = defaultLoxIdService.normalizeId(input.trim());
-    if (!defaultLoxIdService.validateId(normalized)) {
+    const trimmed = input.trim();
+    if (!defaultLoxIdService.validateId(trimmed)) {
       window.alert("Ungültige LOX-ID — Format BRD-XXXX-XXXX.");
       return;
     }
-    onConnect(normalized);
+    const canonical = defaultLoxIdService.canonicalId(trimmed);
+    if (!canonical) {
+      window.alert("Ungültige LOX-ID — Format BRD-XXXX-XXXX.");
+      return;
+    }
+    onConnect(canonical);
     setInput("");
   };
 

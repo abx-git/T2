@@ -65,6 +65,24 @@ export class LoxIdService {
     return `${core.slice(0, 4)}-${core.slice(4)}`;
   }
 
+  /**
+   * Kanonische Form für Vault-IDs — Prefix (z. B. BRD) bleibt erhalten.
+   * `normalizeId` allein zerstört Prefix-IDs (BRD-XXXX-XXXX).
+   */
+  canonicalId(input: string): string | null {
+    const upper = input.trim().toUpperCase();
+    if (!this.validateId(upper)) return null;
+    const parts = upper.split("-").filter((p) => p.length > 0);
+    if (parts.length >= 3) {
+      const prefix = parts.slice(0, -2).join("-");
+      const core = `${parts[parts.length - 2]!}-${parts[parts.length - 1]!}`;
+      const normCore = this.normalizeId(core);
+      if (!this.validateId(normCore)) return null;
+      return `${prefix}-${normCore}`;
+    }
+    return this.normalizeId(upper);
+  }
+
   parseIdFromScanPayload(raw: string): string | null {
     const upper = raw.toUpperCase();
     const re = /[0-9A-Z\-]{8,}/g;
@@ -107,4 +125,9 @@ export const defaultLoxIdService = new LoxIdService();
 
 export function isLoxTaskId(id: string): boolean {
   return defaultLoxIdService.validateId(id);
+}
+
+/** Kanonische Board-/Vault-LOX-ID (mit Prefix BRD-…). */
+export function canonicalBoardLoxId(raw: string): string | null {
+  return defaultLoxIdService.canonicalId(raw);
 }

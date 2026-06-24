@@ -13,6 +13,14 @@ describe("vault-crypto", () => {
     expect(out).toBe(json);
   });
 
+  it("roundtrips with BRD-prefixed vault id", async () => {
+    const id = defaultLoxIdService.generateId("BRD");
+    const json = '{"roots":[{"id":"a","title":"t"}]}';
+    const blob = await encryptBoardJson(id, json);
+    const out = await decryptBoardBlob(id, blob);
+    expect(out).toBe(json);
+  });
+
   it("fails decrypt with wrong id", async () => {
     const blob = await encryptBoardJson(LOX_ID, '{"roots":[]}');
     await expect(decryptBoardBlob("BRD-WXYZ-1234", blob)).rejects.toBeInstanceOf(VaultDecryptError);

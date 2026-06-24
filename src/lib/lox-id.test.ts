@@ -32,4 +32,15 @@ describe("LoxIdService", () => {
     const id = svc.generateId();
     expect(svc.parseIdFromScanPayload(`foo ${id} bar`)).toBe(id);
   });
+
+  it("canonicalId preserves BRD prefix for vault boards", () => {
+    const id = svc.generateId("BRD");
+    expect(id.startsWith("BRD-")).toBe(true);
+    expect(svc.validateId(id)).toBe(true);
+    const canonical = svc.canonicalId(id);
+    expect(canonical).toBe(id);
+    expect(svc.canonicalId(id.toLowerCase())).toBe(id);
+    // normalizeId alone would corrupt prefixed ids
+    expect(svc.normalizeId(id)).not.toBe(id);
+  });
 });

@@ -12,55 +12,28 @@ import {
 import {
   boardExportTextsEquivalent,
   boardImportPayloadFromExportText,
-  isBoardSnapshot,
-  parseExportedDocument,
 } from "@/lib/task-tree-json";
-import { getPendingBoardOps } from "@/lib/board-ops/queue";
 import {
   getLastSyncedBoardJson,
   markServerBoardSynced,
   writeBoardToServer,
   type BoardFetchResult,
 } from "@/lib/server-board";
-import { fetchBoardOpsFromServer } from "@/lib/server-board-ops";
-import { getReconcileBaseline, reconcileServerBoardWithOps } from "@/lib/server-board-ops-reconcile";
+import { VaultDecryptError } from "@/lib/vault-crypto";
 
 export type ReconcileResult =
   | { ok: true; plan: ReconcilePlan }
-  | { ok: false; reason: "parse_error" | "write_failed" | "cancelled" };
+  | { ok: false; reason: "parse_error" | "write_failed" | "cancelled" | "decrypt_error" };
 
 function isEmptyBoardJson(json: string): boolean {
   const payload = boardImportPayloadFromExportText(json);
   return !payload || payload.roots.length === 0;
 }
 
-async function tryOpsReconcile(): Promise<ReconcileResult | null> {
-  const pause = readOfflinePauseState();
-  const pending = getPendingBoardOps();
-  if (!pause && pending.length === 0) {
-    try {
-      const { baselineSeq } = getReconcileBaseline();
-      const remote = await fetchBoardOpsFromServer(baselineSeq);
-      if (!remote?.ops.length) return null;
-    } catch {
-      return null;
-    }
-  }
-
-  const result = await reconcileServerBoardWithOps();
-  if (result.ok) {
-    return { ok: true, plan: { action: "merge_ops", appliedOps: result.appliedOps } };
-  }
-  return null;
-}
-
 export async function reconcileAndApplyServerBoard(
   localJson: string,
   remote: BoardFetchResult,
 ): Promise<ReconcileResult> {
-  const opsResult = await tryOpsReconcile();
-  if (opsResult) return opsResult;
-
   const pause = readOfflinePauseState();
   const baselineJson = pause?.baselineJson ?? getLastSyncedBoardJson() ?? localJson;
   const plan = planServerBoardReconcile(localJson, remote.text, baselineJson);
@@ -81,8 +54,6 @@ export async function reconcileAndApplyServerBoard(
   }
 
   if (plan.action === "push_local") {
-    const opsRetry = await tryOpsReconcile();
-    if (opsRetry) return opsRetry;
     try {
       await writeBoardToServer(localJson, remote.etag);
     } catch (e) {
@@ -95,8 +66,6 @@ export async function reconcileAndApplyServerBoard(
     return { ok: true, plan };
   }
 
-  const opsConflict = await tryOpsReconcile();
-  if (opsConflict) return opsConflict;
   return resolveConflict(localJson, remote);
 }
 
@@ -104,9 +73,6 @@ async function resolveConflict(
   localJson: string,
   remote: BoardFetchResult,
 ): Promise<ReconcileResult> {
-  const opsResult = await tryOpsReconcile();
-  if (opsResult) return opsResult;
-
   const keepLocal = window.confirm(
     "Lokal und Server unterscheiden sich.\n\nOK = Ihre lokale Version auf den Server speichern\nAbbrechen = Server-Version laden (lokale Änderungen verwerfen)",
   );
@@ -137,16 +103,18 @@ async function resolveConflict(
 /** Erster Connect ohne Offline-Pause. */
 export async function reconcileInitialServerBoard(
   localJson: string,
-  remote: BoardFetchResult,
+  remote: BoardFetchResult | null,
 ): Promise<ReconcileResult> {
   if (readOfflinePauseState()) {
+    if (!remote) return { ok: false, reason: "write_failed" };
     return reconcileAndApplyServerBoard(localJson, remote);
   }
 
-  if (!remote.text.trim()) {
+  if (!remote || !remote.text.trim()) {
     try {
-      await writeBoardToServer(localJson, remote.etag);
-    } catch {
+      await writeBoardToServer(localJson, remote?.etag ?? null);
+    } catch (e) {
+      if (e instanceof VaultDecryptError) return { ok: false, reason: "decrypt_error" };
       return { ok: false, reason: "write_failed" };
     }
     return { ok: true, plan: { action: "push_local" } };

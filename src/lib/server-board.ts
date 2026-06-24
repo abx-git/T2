@@ -1,30 +1,51 @@
 /**
- * Client-Helfer für Server-Board (JSON-Datei auf dem Server, Login per Session-Cookie).
+ * Client-Helfer für LOX-Vault (verschlüsseltes Board auf dem Server).
  */
 
 import { boardExportTextsEquivalent } from "@/lib/task-tree-json";
+import { vaultApiUrl } from "@/lib/lox-vault-config";
+import { decryptBoardBlob, encryptBoardJson, VaultDecryptError } from "@/lib/vault-crypto";
+import { defaultLoxIdService } from "@/lib/lox-id";
 
-export interface AuthSessionInfo {
+export { VaultDecryptError };
+
+export interface VaultStatusInfo {
   configured: boolean;
-  authenticated: boolean;
-  username?: string;
 }
 
 export interface BoardFetchResult {
   text: string;
-  etag: string;
+  etag: string | null;
   lastModified: number;
 }
 
+let linkedLoxId: string | null = null;
 let lastSyncedBoardJson: string | null = null;
 let lastKnownEtag: string | null = null;
 let suppressExternalPollUntil = 0;
 
-/** Nach eigenem PUT: externes Polling unterdrücken (länger als Poll-Intervall). */
 const EXTERNAL_POLL_SUPPRESS_MS = 6000;
+const VAULT_AUTH_SCHEME = "Vault";
+
+export function generateBoardLoxId(): string {
+  return defaultLoxIdService.generateId("BRD");
+}
+
+function vaultAuthHeader(loxId: string): string {
+  return `${VAULT_AUTH_SCHEME} ${loxId}`;
+}
+
+export function setLinkedVaultLoxId(loxId: string | null): void {
+  linkedLoxId = loxId;
+  if (!loxId) detachServerBoard();
+}
+
+export function getLinkedVaultLoxId(): string | null {
+  return linkedLoxId;
+}
 
 export function isServerBoardLinked(): boolean {
-  return lastKnownEtag !== null || lastSyncedBoardJson !== null;
+  return Boolean(linkedLoxId) && (lastKnownEtag !== null || lastSyncedBoardJson !== null);
 }
 
 export function getLastSyncedBoardJson(): string | null {
@@ -35,7 +56,7 @@ export function getLastKnownEtag(): string | null {
   return lastKnownEtag;
 }
 
-export function markServerBoardSynced(json: string, etag: string): void {
+export function markServerBoardSynced(json: string, etag: string | null): void {
   lastSyncedBoardJson = json;
   lastKnownEtag = etag;
 }
@@ -60,33 +81,16 @@ export function isServerBoardDirty(currentJson: string): boolean {
   return !boardExportTextsEquivalent(currentJson, lastSyncedBoardJson);
 }
 
-export async function fetchAuthSession(): Promise<AuthSessionInfo> {
-  const res = await fetch("/api/auth/session", { credentials: "include" });
-  if (!res.ok) return { configured: false, authenticated: false };
-  return (await res.json()) as AuthSessionInfo;
-}
-
-export async function loginServerBoard(username: string, password: string): Promise<void> {
-  const res = await fetch("/api/auth/login", {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
-  if (res.status === 503) {
-    throw new Error("Server-Board ist auf diesem Host nicht konfiguriert.");
+export async function fetchVaultStatus(): Promise<VaultStatusInfo> {
+  try {
+    const res = await fetch(vaultApiUrl("/api/vault/status"), { cache: "no-store" });
+    if (res.status === 503) return { configured: false };
+    if (!res.ok) return { configured: false };
+    const data = (await res.json()) as VaultStatusInfo;
+    return { configured: Boolean(data.configured) };
+  } catch {
+    return { configured: false };
   }
-  if (res.status === 401) {
-    throw new Error("Benutzername oder Passwort ist falsch.");
-  }
-  if (!res.ok) {
-    throw new Error("Anmeldung fehlgeschlagen.");
-  }
-}
-
-export async function logoutServerBoard(): Promise<void> {
-  await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
-  detachServerBoard();
 }
 
 function readBoardResponseMeta(res: Response): { etag: string; lastModified: number } {
@@ -96,43 +100,62 @@ function readBoardResponseMeta(res: Response): { etag: string; lastModified: num
   return { etag, lastModified: Number.isFinite(lastModified) ? lastModified : Date.now() };
 }
 
-/** Nur ETag prüfen (kein JSON-Body) — für Polling. */
 export async function fetchBoardEtagFromServer(): Promise<{ etag: string; lastModified: number } | null> {
-  const res = await fetch("/api/board", {
+  if (!linkedLoxId) return null;
+  const res = await fetch(vaultApiUrl("/api/vault"), {
     method: "HEAD",
-    credentials: "include",
+    headers: { Authorization: vaultAuthHeader(linkedLoxId) },
     cache: "no-store",
   });
-  if (res.status === 401) return null;
-  if (!res.ok) throw new Error(`Board-Status fehlgeschlagen (${res.status}).`);
+  if (res.status === 401 || res.status === 404) return null;
+  if (!res.ok) throw new Error(`Vault-Status fehlgeschlagen (${res.status}).`);
   return readBoardResponseMeta(res);
 }
 
 export async function fetchBoardFromServer(): Promise<BoardFetchResult | null> {
-  const res = await fetch("/api/board", { credentials: "include", cache: "no-store" });
+  if (!linkedLoxId) return null;
+  const res = await fetch(vaultApiUrl("/api/vault"), {
+    method: "GET",
+    headers: { Authorization: vaultAuthHeader(linkedLoxId) },
+    cache: "no-store",
+  });
   if (res.status === 401) return null;
-  if (!res.ok) throw new Error(`Board laden fehlgeschlagen (${res.status}).`);
+  if (res.status === 404) {
+    return { text: "", etag: null, lastModified: 0 };
+  }
+  if (!res.ok) throw new Error(`Vault laden fehlgeschlagen (${res.status}).`);
+
   const { etag, lastModified } = readBoardResponseMeta(res);
-  const text = await res.text();
-  return { text, etag, lastModified };
+  const blob = await res.arrayBuffer();
+  try {
+    const text = await decryptBoardBlob(linkedLoxId, blob);
+    return { text, etag, lastModified };
+  } catch (e) {
+    if (e instanceof VaultDecryptError) throw e;
+    throw new VaultDecryptError();
+  }
 }
 
 export async function writeBoardToServer(json: string, etag: string | null): Promise<string | null> {
-  const headers: Record<string, string> = { "Content-Type": "application/json; charset=utf-8" };
+  if (!linkedLoxId) return null;
+  const encrypted = await encryptBoardJson(linkedLoxId, json);
+  const headers: Record<string, string> = {
+    Authorization: vaultAuthHeader(linkedLoxId),
+    "Content-Type": "application/octet-stream",
+  };
   if (etag) headers["If-Match"] = etag;
 
-  const res = await fetch("/api/board", {
+  const res = await fetch(vaultApiUrl("/api/vault"), {
     method: "PUT",
-    credentials: "include",
     headers,
-    body: json,
+    body: encrypted,
   });
 
   if (res.status === 401) return null;
   if (res.status === 412) {
     throw new Error("precondition_failed");
   }
-  if (!res.ok) throw new Error(`Board speichern fehlgeschlagen (${res.status}).`);
+  if (!res.ok) throw new Error(`Vault speichern fehlgeschlagen (${res.status}).`);
 
   const newEtag = res.headers.get("etag");
   if (newEtag) {

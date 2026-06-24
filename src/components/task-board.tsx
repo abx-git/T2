@@ -61,7 +61,7 @@ import {
   rootsForMindmapDisplay,
   type TreeDragOverKind,
 } from "@/lib/tree-utils";
-import type { AuthSessionInfo } from "@/lib/server-board";
+import type { VaultStatusInfo } from "@/lib/server-board";
 import { flushLocalBoardMirror, readLocalBoardMirror } from "@/lib/board-local-mirror";
 import {
   deriveStorageDisplayStatus,
@@ -69,21 +69,20 @@ import {
   formatStorageStatusTooltip,
   resolveAutoSaveTarget,
 } from "@/lib/storage-coordinator";
-import { getLastKnownOpsSeq } from "@/lib/board-ops/queue";
 import {
   clearOfflinePauseState,
   hasOfflinePauseState,
   hasOfflinePendingChanges,
   pauseServerBoardOffline,
 } from "@/lib/server-board-offline";
+import { clearVaultLoxId, readVaultLoxId, writeVaultLoxId } from "@/lib/lox-vault-session";
 import {
   detachServerBoard,
-  fetchAuthSession,
+  fetchVaultStatus,
   getLastKnownEtag,
   getLastSyncedBoardJson,
   isServerBoardDirty,
-  loginServerBoard,
-  logoutServerBoard,
+  setLinkedVaultLoxId,
   writeBoardToServer,
 } from "@/lib/server-board";
 import { useTaskTreeStore } from "@/store/task-tree-store";
@@ -104,7 +103,7 @@ import { LevelNamesSetupDialog } from "./level-names-setup-dialog";
 import { ServerBoardNetworkSync } from "./server-board-network-sync";
 import { ServerBoardOfflineSync } from "./server-board-offline-sync";
 import { ServerBoardSync } from "./server-board-sync";
-import { ServerLoginDialog } from "./server-login-dialog";
+import { LoxVaultDialog, type LoxVaultDialogMode } from "./lox-vault-dialog";
 import { WorkingFileSync } from "./working-file-sync";
 import { DataStoragePanel } from "./data-storage-panel";
 import { PostImportSaveDialog } from "./post-import-save-dialog";
@@ -246,11 +245,13 @@ export function TaskBoard() {
   const [fsAccessSupportedForUi, setFsAccessSupportedForUi] = useState(false);
   /** Nach useEffect: dynamische Tooltips (UA/Brave) erst clientseitig. */
   const [workingFileUiReady, setWorkingFileUiReady] = useState(false);
-  const [serverSession, setServerSession] = useState<AuthSessionInfo | null>(null);
+  const [vaultStatus, setVaultStatus] = useState<VaultStatusInfo | null>(null);
+  const [vaultLoxId, setVaultLoxId] = useState<string | null>(null);
   const [serverBoardEnabled, setServerBoardEnabled] = useState(false);
   const [serverBoardDirty, setServerBoardDirty] = useState(false);
   const [serverBoardSaving, setServerBoardSaving] = useState(false);
-  const [serverLoginOpen, setServerLoginOpen] = useState(false);
+  const [vaultDialogOpen, setVaultDialogOpen] = useState(false);
+  const [vaultDialogMode, setVaultDialogMode] = useState<LoxVaultDialogMode>("connect");
   const [serverOfflinePending, setServerOfflinePending] = useState(false);
   const [serverBoardAutoPaused, setServerBoardAutoPaused] = useState(false);
   const [titleEditNodeId, setTitleEditNodeId] = useState<string | null>(null);
@@ -296,10 +297,14 @@ export function TaskBoard() {
 
   useEffect(() => {
     void (async () => {
-      const s = await fetchAuthSession();
-      setServerSession(s);
-      if (!s.configured || !s.authenticated || hasOfflinePauseState()) return;
-      // diagrams.net-Modell: gespeicherte lokale Arbeitsdatei hat Vorrang vor Server-Board.
+      const status = await fetchVaultStatus();
+      setVaultStatus(status);
+      const storedLoxId = readVaultLoxId();
+      if (storedLoxId) {
+        setVaultLoxId(storedLoxId);
+        setLinkedVaultLoxId(storedLoxId);
+      }
+      if (!status.configured || !storedLoxId || hasOfflinePauseState()) return;
       if (isWorkingFileSupported()) {
         const handle = await restoreWorkingFileFromDisk();
         if (handle) return;
@@ -430,7 +435,6 @@ export function TaskBoard() {
         baselineEtag: getLastKnownEtag(),
         currentJson: json,
         autoPaused: options?.auto ?? false,
-        baselineSeq: getLastKnownOpsSeq(),
       });
       detachServerBoard();
       setServerBoardEnabled(false);
@@ -443,10 +447,10 @@ export function TaskBoard() {
   );
 
   const reconnectServerBoard = useCallback(() => {
-    if (!serverSession?.authenticated) return;
+    if (!vaultLoxId) return;
     setServerBoardAutoPaused(false);
     setServerBoardEnabled(true);
-  }, [serverSession?.authenticated]);
+  }, [vaultLoxId]);
 
   const detachWorkingFileWithSave = useCallback(async (): Promise<boolean> => {
     if (!isWorkingFileAttached()) return true;
@@ -496,23 +500,40 @@ export function TaskBoard() {
     [boardSnapshotTextFromStore, enterServerBoardOfflineMode, serverBoardEnabled],
   );
 
+  const beginVaultLink = useCallback(
+    async (loxId: string) => {
+      if (!vaultStatus?.configured) {
+        window.alert(
+          "LOX-Vault ist nicht verfügbar. Auf dem Host T2_VAULT_ENABLED setzen oder NEXT_PUBLIC_T2_VAULT_API_URL konfigurieren.",
+        );
+        return false;
+      }
+      const detached = await detachWorkingFileWithSave();
+      if (!detached) return false;
+      writeVaultLoxId(loxId);
+      setVaultLoxId(loxId);
+      setLinkedVaultLoxId(loxId);
+      setServerBoardAutoPaused(false);
+      setServerBoardEnabled(true);
+      return true;
+    },
+    [detachWorkingFileWithSave, vaultStatus?.configured],
+  );
+
   const connectServerBoardLink = useCallback(async () => {
-    if (!serverSession?.configured) {
+    if (!vaultStatus?.configured) {
       window.alert(
-        "Server-Board ist nicht konfiguriert. Auf dem Host T2_SESSION_SECRET und T2_AUTH_PASSWORD setzen.",
+        "LOX-Vault ist nicht verfügbar. Auf dem Host T2_VAULT_ENABLED setzen oder NEXT_PUBLIC_T2_VAULT_API_URL konfigurieren.",
       );
       return false;
     }
-    if (!serverSession.authenticated) {
-      setServerLoginOpen(true);
-      return false;
+    if (vaultLoxId) {
+      return beginVaultLink(vaultLoxId);
     }
-    const detached = await detachWorkingFileWithSave();
-    if (!detached) return false;
-    setServerBoardAutoPaused(false);
-    setServerBoardEnabled(true);
-    return true;
-  }, [detachWorkingFileWithSave, serverSession?.authenticated, serverSession?.configured]);
+    setVaultDialogMode("connect");
+    setVaultDialogOpen(true);
+    return false;
+  }, [beginVaultLink, vaultLoxId, vaultStatus?.configured]);
 
   const attachWorkingFileLink = useCallback(
     async (createNew: boolean) => {
@@ -622,16 +643,18 @@ export function TaskBoard() {
 
   const handlePostImportSyncServer = useCallback(async () => {
     setPostImportSaveOpen(false);
-    if (!serverSession?.configured) {
-      setServerLoginOpen(true);
+    if (!vaultStatus?.configured) {
+      setVaultDialogMode("connect");
+      setVaultDialogOpen(true);
       return;
     }
-    if (!serverSession.authenticated) {
-      setServerLoginOpen(true);
+    if (!vaultLoxId) {
+      setVaultDialogMode("connect");
+      setVaultDialogOpen(true);
       return;
     }
     await detachWorkingFileWithSave();
-    setServerBoardEnabled(true);
+    await beginVaultLink(vaultLoxId);
     const json = boardSnapshotTextFromStore();
     try {
       await writeBoardToServer(json, getLastKnownEtag());
@@ -639,7 +662,7 @@ export function TaskBoard() {
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "Speichern auf den Server ist fehlgeschlagen.");
     }
-  }, [boardSnapshotTextFromStore, detachWorkingFileWithSave, serverSession?.authenticated, serverSession?.configured]);
+  }, [beginVaultLink, boardSnapshotTextFromStore, detachWorkingFileWithSave, vaultLoxId, vaultStatus?.configured]);
 
   const openEditor = (id: string) => {
     setEditorNodeId(id);
@@ -780,35 +803,31 @@ export function TaskBoard() {
     }
   };
 
-  const handleServerLogout = useCallback(async () => {
-    if (!serverSession?.authenticated) return;
-    if (serverBoardEnabled) {
-      const json = boardSnapshotTextFromStore();
-      if (isServerBoardDirty(json)) {
-        try {
-          await writeBoardToServer(json, getLastKnownEtag());
-        } catch {
-          window.alert("Abmelden nicht möglich: letzter Schreibvorgang auf den Server ist fehlgeschlagen.");
-          return;
-        }
-      }
-      setServerBoardEnabled(false);
-    }
-    await logoutServerBoard();
-    clearOfflinePauseState();
-    setServerSession({ configured: serverSession.configured, authenticated: false });
-    setServerBoardDirty(false);
-    setServerOfflinePending(false);
-    setServerBoardAutoPaused(false);
-  }, [boardSnapshotTextFromStore, serverBoardEnabled, serverSession]);
+  const handleVaultCreate = useCallback(
+    (loxId: string) => {
+      setVaultDialogOpen(false);
+      void beginVaultLink(loxId);
+    },
+    [beginVaultLink],
+  );
 
-  const handleServerLogin = async (username: string, password: string) => {
-    await loginServerBoard(username, password);
-    const s = await fetchAuthSession();
-    setServerSession(s);
-    const detached = await detachWorkingFileWithSave();
-    if (detached) setServerBoardEnabled(true);
-  };
+  const handleVaultConnect = useCallback(
+    (loxId: string) => {
+      setVaultDialogOpen(false);
+      void beginVaultLink(loxId);
+    },
+    [beginVaultLink],
+  );
+
+  const openCreateVaultDialog = useCallback(() => {
+    setVaultDialogMode("create");
+    setVaultDialogOpen(true);
+  }, []);
+
+  const openConnectVaultDialog = useCallback(() => {
+    setVaultDialogMode("connect");
+    setVaultDialogOpen(true);
+  }, []);
 
   const handleImportFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -969,7 +988,7 @@ export function TaskBoard() {
       />
       <ServerBoardNetworkSync
         serverBoardEnabled={serverBoardEnabled}
-        authenticated={Boolean(serverSession?.authenticated)}
+        vaultLinked={Boolean(vaultLoxId)}
         onAutoOffline={() => enterServerBoardOfflineMode({ auto: true })}
         onAutoReconnect={reconnectServerBoard}
         onAutoPausedChange={setServerBoardAutoPaused}
@@ -1201,7 +1220,7 @@ export function TaskBoard() {
       <PostImportSaveDialog
         open={postImportSaveOpen}
         workingFileAvailable={fsAccessSupportedForUi}
-        serverConfigured={Boolean(serverSession?.configured)}
+        serverConfigured={Boolean(vaultStatus?.configured)}
         onSaveToWorkingFile={() => void handlePostImportSaveToFile()}
         onSyncToServer={() => void handlePostImportSyncServer()}
         onKeepLocalOnly={() => setPostImportSaveOpen(false)}
@@ -1216,7 +1235,8 @@ export function TaskBoard() {
         workingFileLabel={workingFileLabel}
         workingFileDirty={workingFileDirty}
         workingFileSaving={workingFileSaving}
-        serverSession={serverSession}
+        vaultStatus={vaultStatus}
+        vaultLoxId={vaultLoxId}
         serverBoardEnabled={serverBoardEnabled}
         serverBoardDirty={serverBoardDirty}
         serverBoardSaving={serverBoardSaving}
@@ -1230,17 +1250,14 @@ export function TaskBoard() {
           setStoragePanelBusy(true);
           void detachWorkingFileWithSave().finally(() => setStoragePanelBusy(false));
         }}
-        onConnectServer={() => {
+        onCreateVault={openCreateVaultDialog}
+        onConnectVault={() => {
           setStoragePanelBusy(true);
           void connectServerBoardLink().finally(() => setStoragePanelBusy(false));
         }}
         onDisconnectServer={() => {
           setStoragePanelBusy(true);
           void disconnectServerBoardLink({ offline: true }).finally(() => setStoragePanelBusy(false));
-        }}
-        onLogoutServer={() => {
-          setStoragePanelBusy(true);
-          void handleServerLogout().finally(() => setStoragePanelBusy(false));
         }}
         onCreateBackup={() => {
           handleExportFullBoard();
@@ -1280,11 +1297,12 @@ export function TaskBoard() {
           setCompletedTag(doneTag);
         }}
       />
-      <ServerLoginDialog
-        open={serverLoginOpen}
-        defaultUsername={serverSession?.username ?? "admin"}
-        onClose={() => setServerLoginOpen(false)}
-        onLogin={handleServerLogin}
+      <LoxVaultDialog
+        open={vaultDialogOpen}
+        mode={vaultDialogMode}
+        onClose={() => setVaultDialogOpen(false)}
+        onCreate={handleVaultCreate}
+        onConnect={handleVaultConnect}
       />
       <TaskEditorDialog
         open={editorOpen}

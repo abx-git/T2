@@ -6,10 +6,8 @@ services:
     environment:
       HOSTNAME: 0.0.0.0
       PORT: "3000"
-      T2_SESSION_SECRET: ${T2_SESSION_SECRET:-}
-      T2_AUTH_USERNAME: ${T2_AUTH_USERNAME:-admin}
-      T2_AUTH_PASSWORD: ${T2_AUTH_PASSWORD:-}
-      T2_BOARD_FILE_PATH: ${T2_BOARD_FILE_PATH:-./data/t2-board.json}
+      T2_VAULT_ENABLED: ${T2_VAULT_ENABLED:-1}
+      T2_VAULT_DIR_PATH: ${T2_VAULT_DIR_PATH:-./data/vaults}
     volumes:
       - t2-data:/app/data
     restart: unless-stopped

@@ -19,9 +19,7 @@ import { DEFAULT_CARD_FIELD_VISIBILITY, mergeCardFieldVisibility, type CardField
 import { compactColumnTitleOverrides } from "@/lib/column-titles";
 import { refreshCalculatedEffortsInTree } from "@/lib/task-effort";
 import { generateUniqueTaskId } from "@/lib/task-id";
-import { recordBoardOp } from "@/lib/board-ops/record";
-import { serializeCardUpdateFields } from "@/lib/board-ops/serialize";
-import { remapTaskNodeIds, taskNodeToJson } from "@/lib/task-tree-json";
+import { remapTaskNodeIds } from "@/lib/task-tree-json";
 import { pruneEmptyUxLeavesInFocusSubtree } from "@/lib/focus-mode-outline";
 import { DEFAULT_COMPLETED_TAG, normalizeCompletedTag, normalizeTagLabel, tagKey } from "@/lib/task-tags";
 import type { TaskCardEditableFields, TaskNode } from "@/types/task-node";
@@ -142,13 +140,6 @@ function insertCardAtIndex(
     );
     return { roots: nextRoots, pathIds: normalizePathIds(nextRoots, s.pathIds) };
   });
-  recordBoardOp({
-    type: "card.add",
-    nodeId: id,
-    parentId,
-    index,
-    card: taskNodeToJson(newNode),
-  });
   return id;
 }
 
@@ -163,7 +154,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
 
   setHideCompletedTasks: (hide) => {
     set({ hideCompletedTasks: hide });
-    recordBoardOp({ type: "board.settings", patch: { hideCompletedTasks: hide } });
   },
 
   completedTag: DEFAULT_COMPLETED_TAG,
@@ -171,7 +161,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
   setCompletedTag: (tag) => {
     const completedTag = normalizeCompletedTag(tag);
     set({ completedTag });
-    recordBoardOp({ type: "board.settings", patch: { completedTag } });
   },
 
   filterTags: [],
@@ -182,7 +171,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
       .filter(Boolean)
       .filter((t, i, arr) => arr.findIndex((x) => tagKey(x) === tagKey(t)) === i);
     set({ filterTags });
-    recordBoardOp({ type: "board.settings", patch: { filterTags } });
   },
 
   addFilterTag: (tag) => {
@@ -191,7 +179,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
     set((s) => {
       if (s.filterTags.some((t) => tagKey(t) === tagKey(label))) return {};
       const filterTags = [...s.filterTags, label];
-      recordBoardOp({ type: "board.settings", patch: { filterTags } });
       return { filterTags };
     });
   },
@@ -200,7 +187,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
     const k = tagKey(tag);
     set((s) => {
       const filterTags = s.filterTags.filter((t) => tagKey(t) !== k);
-      recordBoardOp({ type: "board.settings", patch: { filterTags } });
       return { filterTags };
     });
   },
@@ -210,14 +196,12 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
   applyCardFieldVisibility: (next) => {
     const cardFieldVisibility = mergeCardFieldVisibility(next);
     set({ cardFieldVisibility });
-    recordBoardOp({ type: "board.settings", patch: { cardFieldVisibility } });
   },
 
   effortOnTasksEnabled: true,
 
   setEffortOnTasksEnabled: (on) => {
     set({ effortOnTasksEnabled: on });
-    recordBoardOp({ type: "board.settings", patch: { effortOnTasksEnabled: on } });
   },
 
   columnTitleOverrides: {},
@@ -229,7 +213,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
     for (const [k, v] of Object.entries(columnTitleOverrides)) {
       co[String(k)] = v;
     }
-    recordBoardOp({ type: "board.settings", patch: { columnTitleOverrides: co } });
   },
 
   toggleNodeCollapsed: (nodeId) => {
@@ -238,7 +221,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
       const collapsedIds = has
         ? s.collapsedIds.filter((id) => id !== nodeId)
         : [...s.collapsedIds, nodeId];
-      recordBoardOp({ type: "board.settings", patch: { collapsedIds } });
       return { collapsedIds };
     });
   },
@@ -251,10 +233,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
       const collapsedIds = isCollapsed
         ? s.collapsedIds.filter((id) => id !== nodeId)
         : [...s.collapsedIds, nodeId];
-      recordBoardOp({
-        type: "board.settings",
-        patch: { collapsedIds },
-      });
       return { collapsedIds };
     });
   },
@@ -266,10 +244,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
       const open = new Set(path);
       const collapsedIds = s.collapsedIds.filter((id) => !open.has(id));
       if (collapsedIds.length === s.collapsedIds.length) return {};
-      recordBoardOp({
-        type: "board.settings",
-        patch: { collapsedIds },
-      });
       return { collapsedIds };
     });
   },
@@ -282,10 +256,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
       const open = new Set(path);
       const collapsedIds = s.collapsedIds.filter((id) => !open.has(id));
       if (collapsedIds.length !== s.collapsedIds.length) {
-        recordBoardOp({
-          type: "board.settings",
-          patch: { collapsedIds },
-        });
       }
       return { focusNodeId: nodeId, collapsedIds };
     });
@@ -299,7 +269,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
         s.focusNodeId,
       );
       for (const nodeId of removedIds) {
-        recordBoardOp({ type: "card.remove", nodeId });
       }
       if (removedIds.length === 0) return { focusNodeId: null };
       const nextRoots = refreshCalculatedEffortsInTree(prunedRoots, s.completedTag);
@@ -319,7 +288,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
     );
     const nextPath = pathIdsAfterNodeMove(nextRoots, activeId, pathIds);
     set({ roots: nextRoots, pathIds: nextPath });
-    recordBoardOp({ type: "card.move", activeId, overKind });
   },
 
   addCardAfter: (parentId) => {
@@ -345,7 +313,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
       );
       return { roots: nextRoots, pathIds: normalizePathIds(nextRoots, s.pathIds) };
     });
-    recordBoardOp({ type: "card.update", nodeId, fields: serializeCardUpdateFields(fields) });
   },
 
   removeCard: (nodeId) => {
@@ -364,7 +331,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
         focusNodeId: nextFocus,
       };
     });
-    recordBoardOp({ type: "card.remove", nodeId });
   },
 
   replaceBoardFromImport: (payload) => {
@@ -423,7 +389,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
       return { roots: nextRoots, pathIds: normalizePathIds(nextRoots, s.pathIds) };
     });
     if (applied) {
-      recordBoardOp({ type: "subtree.import", parentId, root: taskNodeToJson(fresh) });
     }
   },
 }));

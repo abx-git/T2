@@ -73,7 +73,7 @@ describe("formatStorageStatusTooltip", () => {
       localMirrorSavedAt: new Date().toISOString(),
     });
     const tip = formatStorageStatusTooltip(status);
-    expect(tip).toContain("Gespeichert — Server");
+    expect(tip).toContain("Gespeichert — Server (LOX-Vault)");
     expect(tip).toContain("Notfall-Kopie");
     expect(tip).toContain("Klick:");
   });

@@ -17,18 +17,16 @@ Oder: `node server.js`
 
 Browser: **http://localhost:3000** (anderer Port: `PORT=8080 ./start.sh`)
 
-## Server-Board (optional)
+## LOX-Vault (optional)
 
 1. `.env` anlegen:
    ```bash
    cp .env.example .env
    ```
-2. In `.env` mindestens setzen:
-   - `T2_SESSION_SECRET` — langer Zufallsstring
-   - `T2_AUTH_PASSWORD` — Login-Passwort
-3. Server neu starten.
+2. Standard: `T2_VAULT_ENABLED=1` — verschlüsselte Boards unter `./data/vaults/`
+3. Nur App ausliefern (ohne Server-Speicher): `T2_VAULT_ENABLED=0`
 
-Board-Daten liegen standardmäßig unter `./data/` (im ZIP-Ordner, beim Start automatisch angelegt).
+Im Browser: **Daten** → **Server (LOX-ID)** → neues Board anlegen oder mit bestehender Board-LOX-ID verbinden.
 
 ## Umgebungsvariablen
 
@@ -36,10 +34,10 @@ Board-Daten liegen standardmäßig unter `./data/` (im ZIP-Ordner, beim Start au
 | -------- | --------- |
 | `PORT` | HTTP-Port (Standard: 3000) |
 | `HOSTNAME` | Bind-Adresse (Standard: 0.0.0.0 — erreichbar im LAN) |
-| `T2_SESSION_SECRET` | Session-Cookie (Server-Board) |
-| `T2_AUTH_USERNAME` | Login-Benutzer (Standard: admin) |
-| `T2_AUTH_PASSWORD` | Login-Passwort |
-| `T2_BOARD_FILE_PATH` | Pfad zur Board-JSON (Standard: ./data/t2-board.json) |
+| `T2_VAULT_ENABLED` | `1` = Vault-API aktiv (Standard), `0` = nur App |
+| `T2_VAULT_DIR_PATH` | Speicherordner für verschlüsselte Blobs (Standard: ./data/vaults) |
+| `T2_VAULT_MAX_BYTES` | Maximale Blob-Größe in Bytes (Standard: 8 MiB) |
+| `T2_VAULT_CORS_ORIGINS` | Kommagetrennte Origins für Cross-Origin-Zugriff |
 
 ## Plattform
 

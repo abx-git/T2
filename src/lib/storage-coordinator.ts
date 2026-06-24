@@ -78,7 +78,7 @@ export function deriveStorageDisplayStatus(input: StorageCoordinatorInput): Stor
     }
     return {
       tone: "saved",
-      primaryLine: "Gespeichert — Server",
+      primaryLine: "Gespeichert — Server (LOX-Vault)",
       secondaryLine: mirrorHint ? `Notfall-Kopie im Browser ${mirrorHint}` : null,
       showFlushAction: false,
     };

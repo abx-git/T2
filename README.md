@@ -40,7 +40,7 @@ Hierarchische Aufgaben als Board / Mindmap — wie **diagrams.net**: App im Brow
 | ---- | --------- |
 | Nur in diesem Browser | Entwurf + Notfall-Kopie in `localStorage` |
 | Arbeitsdatei | Auto-Save in verknüpfte JSON (Chrome/Edge) |
-| Server | Nur bei Selbst-Hosting mit Login — **nicht** auf der öffentlichen URL |
+| Server | Verschlüsseltes Board auf dem Host — Zugriff nur mit Board-LOX-ID (nie in der URL) |
 
 **Sicherung:**
 
@@ -59,14 +59,28 @@ Die öffentliche URL wird per **GitHub Pages** ausgeliefert (statischer Build, k
 
 ### GitHub Pages deployen
 
+**Ausführliche Anleitung:** [docs/GITHUB-PAGES.md](docs/GITHUB-PAGES.md) (Pages einrichten, optional LOX-Vault mit Render).
+
 Repository: [github.com/abx-git/T2](https://github.com/abx-git/T2) · Workflow: `.github/workflows/deploy-github-pages.yml`
 
-**Wenn nur dieses README erscheint:** Pages-Quelle ist falsch (oft `main` / root). So einstellen:
+**Kurz:**
 
-1. **Settings → Pages → Build and deployment**
-2. **Source:** Deploy from a branch
-3. **Branch:** `gh-pages` · **Folder:** `/ (root)` · Save
-4. Push auf `main` → Workflow schreibt die App in den Branch `gh-pages`
+1. **Settings → Pages** → Branch `gh-pages`, Folder `/ (root)`
+2. Push auf `main` → Workflow baut `out/` und publiziert nach `gh-pages`
+3. App-URL: `https://<user>.github.io/<repo>/` (bei Repo `T2`: [abx-git.github.io/T2](https://abx-git.github.io/T2/))
+
+**Optional Server-Speicher (LOX-Vault):**
+
+1. Vault-Host deployen (z. B. `render.yaml` → Render Blueprint)
+2. GitHub **Settings → Actions → Variables:** `NEXT_PUBLIC_T2_VAULT_API_URL` = Vault-URL
+3. Erneut deployen (Push oder Workflow manuell)
+
+| Variable | Bedeutung |
+| -------- | --------- |
+| `NEXT_PUBLIC_T2_VAULT_API_URL` | Vault-API für den Pages-Build |
+| `NEXT_PUBLIC_BASE_PATH` | Optional; Standard `/<repo-name>` |
+
+**Wenn nur dieses README erscheint:** Pages-Quelle ist falsch (oft `main` / root). Branch `gh-pages` wählen.
 
 Lokal testen:
 
@@ -104,15 +118,19 @@ Docker: `docker compose up -d --build`
 Wie diagrams.net Embed: Host liefert nur die Web-App, Board liegt in **Arbeitsdatei** auf dem Client.
 
 ```bash
-# .env — kein zentrales Board auf dem Host
-T2_SERVER_BOARD_ENABLED=0
+# .env — kein zentrales Board auf dem Host (nur App ausliefern)
+T2_VAULT_ENABLED=0
 ```
 
 HTTPS nötig für Arbeitsdatei (außer `localhost`).
 
-### Server-Board (optional)
+### LOX-Vault (Server-Speicher)
 
-JSON auf dem Host, Login per Session. Konfiguration in `.env.example` (`T2_SESSION_SECRET`, `T2_AUTH_PASSWORD`, …). Multi-Client-Sync über Operations-Log.
+Boards werden **clientseitig verschlüsselt** auf dem Host gespeichert. Zugriff nur mit **Board-LOX-ID** (`BRD-XXXX-XXXX`) im `Authorization`-Header — **nie** in der URL. Kein Username/Passwort.
+
+Konfiguration in [`.env.example`](.env.example) (`T2_VAULT_ENABLED`, `T2_VAULT_DIR_PATH`, optional `NEXT_PUBLIC_T2_VAULT_API_URL` für GitHub Pages).
+
+**Wichtig:** LOX-ID verlieren = Datenverlust. ID sicher aufbewahren.
 
 ### Nützliche Befehle
 

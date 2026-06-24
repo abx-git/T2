@@ -7,15 +7,12 @@ import {
   readLocalBoardMirror,
   writeLocalBoardMirror,
 } from "@/lib/board-local-mirror";
-import { getPendingBoardOps } from "@/lib/board-ops/queue";
 import {
   applyBoardJsonToStore,
   boardJsonFromTaskTreeState,
   hasOfflinePauseState,
-  readOfflinePauseState,
   updateOfflineDraftJson,
 } from "@/lib/server-board-offline";
-import { fetchAuthSession } from "@/lib/server-board";
 import { useTaskTreeStore } from "@/store/task-tree-store";
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -45,30 +42,12 @@ export function BoardLocalPersist() {
 
     if (hasOfflinePauseState()) return;
 
-    const pending = getPendingBoardOps();
     const mirror = readLocalBoardMirror();
     if (!mirror?.json.trim()) return;
-
-    if (pending.length > 0) {
-      applyBoardJsonToStore(mirror.json);
-      return;
-    }
 
     if (useTaskTreeStore.getState().roots.length === 0) {
       applyBoardJsonToStore(mirror.json);
     }
-  }, []);
-
-  useEffect(() => {
-    void fetchAuthSession().then((session) => {
-      if (hasOfflinePauseState()) return;
-      if (session.configured && session.authenticated && getPendingBoardOps().length === 0) {
-        return;
-      }
-      const mirror = readLocalBoardMirror();
-      if (!mirror?.json.trim()) return;
-      applyBoardJsonToStore(mirror.json);
-    });
   }, []);
 
   useEffect(() => {

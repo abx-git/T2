@@ -26,6 +26,13 @@ mv "$ROOT/src/app/api" "$API_STASH/api"
 export T2_BUILD_TARGET=static
 export NEXT_PUBLIC_BASE_PATH="${NEXT_PUBLIC_BASE_PATH:-/T2}"
 
+if [[ -n "${NEXT_PUBLIC_T2_VAULT_API_URL:-}" ]]; then
+  echo "→ Vault-API (Build-Zeit): ${NEXT_PUBLIC_T2_VAULT_API_URL}"
+else
+  echo "→ Kein NEXT_PUBLIC_T2_VAULT_API_URL — Server-Option in der App deaktiviert."
+  echo "  Für LOX-Vault: Variable in GitHub Actions setzen oder export NEXT_PUBLIC_T2_VAULT_API_URL=…"
+fi
+
 echo "→ Statischer Build (basePath=${NEXT_PUBLIC_BASE_PATH}) …"
 npx next build
 

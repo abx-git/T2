@@ -1,0 +1,35 @@
+# Render Blueprint: LOX-Vault-API für GitHub-Pages-App
+# Dashboard: https://dashboard.render.com → New → Blueprint → dieses Repo
+#
+# Nach dem Deploy:
+#   1. Öffentliche URL notieren (z. B. https://t2-vault.onrender.com)
+#   2. In GitHub: Settings → Actions → Variables
+#      NEXT_PUBLIC_T2_VAULT_API_URL = diese URL
+#   3. T2_VAULT_CORS_ORIGINS unten anpassen (Ihre Pages-URL)
+#   4. main pushen oder Workflow „Deploy GitHub Pages“ manuell starten
+
+services:
+  - type: web
+    name: t2-vault
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/vault/status
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOSTNAME
+        value: 0.0.0.0
+      - key: PORT
+        value: "3000"
+      - key: T2_VAULT_ENABLED
+        value: "1"
+      - key: T2_VAULT_DIR_PATH
+        value: ./data/vaults
+      # Anpassen: https://<github-user>.github.io (kommagetrennt für mehrere Origins)
+      - key: T2_VAULT_CORS_ORIGINS
+        value: https://abx-git.github.io,http://localhost:3000
+    disk:
+      name: t2-vault-data
+      mountPath: /app/data
+      sizeGB: 1

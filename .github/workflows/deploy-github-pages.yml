@@ -1,11 +1,22 @@
-# Statische App nach gh-pages — nicht README aus main/ rendern.
-# GitHub: Settings → Pages → Source: Deploy from branch → gh-pages → / (root)
+# Statische App → Branch gh-pages (Project Pages: https://<user>.github.io/<repo>/)
+#
+# Einrichtung:
+#   Settings → Pages → Deploy from branch → gh-pages → / (root)
+# Optional (LOX-Vault):
+#   Settings → Secrets and variables → Actions → Variables
+#   NEXT_PUBLIC_T2_VAULT_API_URL = https://<vault-host>  (ohne Slash am Ende)
+#   NEXT_PUBLIC_BASE_PATH = /MeinRepo  (nur bei abweichendem Pfad, sonst automatisch)
 name: Deploy GitHub Pages
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      vault_api_url:
+        description: "Vault-API-URL (optional, überschreibt Repo-Variable)"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -17,6 +28,10 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      REPO_NAME: ${{ github.event.repository.name }}
+      BASE_PATH: ${{ vars.NEXT_PUBLIC_BASE_PATH || format('/{0}', github.event.repository.name) }}
+      VAULT_API_URL: ${{ inputs.vault_api_url || vars.NEXT_PUBLIC_T2_VAULT_API_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,7 +45,21 @@ jobs:
       - name: Static export
         run: npm run build:static
         env:
-          NEXT_PUBLIC_BASE_PATH: /T2
+          NEXT_PUBLIC_BASE_PATH: ${{ env.BASE_PATH }}
+          NEXT_PUBLIC_T2_VAULT_API_URL: ${{ env.VAULT_API_URL }}
+
+      - name: Verify build output
+        run: |
+          set -euo pipefail
+          test -f out/.nojekyll || (echo "Fehlt: out/.nojekyll" && exit 1)
+          test -f out/index.html || (echo "Fehlt: out/index.html" && exit 1)
+          test -f out/sw.js || (echo "Fehlt: out/sw.js (PWA)" && exit 1)
+          echo "Build OK — basePath=${BASE_PATH} (Assets unter ${BASE_PATH}/ auf GitHub Pages)"
+          if [[ -n "${VAULT_API_URL:-}" ]]; then
+            echo "Vault-API eingebunden: ${VAULT_API_URL}"
+          else
+            echo "Hinweis: Keine Vault-URL — Server-Option in der App ausgeblendet."
+          fi
 
       - name: Publish to gh-pages branch
         uses: JamesIves/github-pages-deploy-action@v4
@@ -39,4 +68,4 @@ jobs:
           branch: gh-pages
           clean: true
           single-commit: true
-          commit-message: "Deploy T2 app"
+          commit-message: "Deploy T2 app (${{ github.sha }})"

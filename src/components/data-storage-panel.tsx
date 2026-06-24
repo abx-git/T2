@@ -15,7 +15,8 @@ import {
 } from "lucide-react";
 
 import type { AutoSaveTarget } from "@/lib/storage-coordinator";
-import type { AuthSessionInfo } from "@/lib/server-board";
+import type { VaultStatusInfo } from "@/lib/server-board";
+import { formatTaskIdForDisplay } from "@/lib/task-id";
 
 export interface DataStoragePanelProps {
   open: boolean;
@@ -27,7 +28,8 @@ export interface DataStoragePanelProps {
   workingFileLabel: string | null;
   workingFileDirty: boolean;
   workingFileSaving: boolean;
-  serverSession: AuthSessionInfo | null;
+  vaultStatus: VaultStatusInfo | null;
+  vaultLoxId: string | null;
   serverBoardEnabled: boolean;
   serverBoardDirty: boolean;
   serverBoardSaving: boolean;
@@ -37,9 +39,9 @@ export interface DataStoragePanelProps {
   onSelectTarget: (target: AutoSaveTarget) => void;
   onAttachWorkingFile: (createNew: boolean) => void;
   onDetachWorkingFile: () => void;
-  onConnectServer: () => void;
+  onCreateVault: () => void;
+  onConnectVault: () => void;
   onDisconnectServer: () => void;
-  onLogoutServer: () => void;
   onCreateBackup: () => void;
   onRestoreBackupFile: () => void;
   onRestoreBackupPaste: () => void;
@@ -106,7 +108,8 @@ export function DataStoragePanel({
   workingFileLabel,
   workingFileDirty,
   workingFileSaving,
-  serverSession,
+  vaultStatus,
+  vaultLoxId,
   serverBoardEnabled,
   serverBoardDirty,
   serverBoardSaving,
@@ -116,9 +119,9 @@ export function DataStoragePanel({
   onSelectTarget,
   onAttachWorkingFile,
   onDetachWorkingFile,
-  onConnectServer,
+  onCreateVault,
+  onConnectVault,
   onDisconnectServer,
-  onLogoutServer,
   onCreateBackup,
   onRestoreBackupFile,
   onRestoreBackupPaste,
@@ -128,8 +131,7 @@ export function DataStoragePanel({
 }: DataStoragePanelProps) {
   if (!open) return null;
 
-  const serverConfigured = Boolean(serverSession?.configured);
-  const serverAuthenticated = Boolean(serverSession?.authenticated);
+  const vaultConfigured = Boolean(vaultStatus?.configured);
 
   const layer = (
     <div
@@ -152,8 +154,8 @@ export function DataStoragePanel({
               Daten &amp; Speicher
             </h2>
             <p className="mt-1 text-xs text-slate-600">
-              {serverConfigured
-                ? "Ein Ziel für automatisches Speichern. Backups ersetzen bewusst den gesamten Stand."
+              {vaultConfigured
+                ? "Ein Ziel für automatisches Speichern. Server-Boards sind verschlüsselt und nur mit Ihrer LOX-ID zugänglich."
                 : "Der Server liefert nur die App — Ihre Board-JSON bleibt auf Ihrem Rechner (Arbeitsdatei). Backups ersetzen bewusst den gesamten Stand."}
             </p>
           </div>
@@ -258,24 +260,28 @@ export function DataStoragePanel({
                 id="storage-target-server"
                 name="auto-save-target"
                 checked={autoSaveTarget === "server"}
-                disabled={!serverConfigured}
+                disabled={!vaultConfigured}
                 onChange={() => onSelectTarget("server")}
-                title="Server"
+                title="Server (LOX-ID)"
                 description={
-                  serverConfigured
-                    ? "Board-JSON auf dem Host — mehrere Geräte über Operations-Log."
-                    : "Nicht konfiguriert (T2_SESSION_SECRET, T2_AUTH_PASSWORD auf dem Host)."
+                  vaultConfigured
+                    ? "Verschlüsseltes Board auf dem Server — Zugriff nur mit Board-LOX-ID (nie in der URL)."
+                    : "Nicht verfügbar (Vault-API auf dem Host oder NEXT_PUBLIC_T2_VAULT_API_URL)."
                 }
               >
-                {serverConfigured ? (
+                {vaultConfigured ? (
                   autoSaveTarget === "server" ? (
                     <>
                       <span className="w-full text-xs text-slate-600">
+                        {vaultLoxId
+                          ? `LOX-ID ${formatTaskIdForDisplay(vaultLoxId)}`
+                          : "Keine LOX-ID"}
+                        {" — "}
                         {serverBoardSaving
-                          ? "Speichert …"
+                          ? "speichert …"
                           : serverBoardDirty
-                            ? "Ungespeichert"
-                            : "Synchron mit Server"}
+                            ? "ungespeichert"
+                            : "synchron"}
                       </span>
                       <button
                         type="button"
@@ -288,19 +294,6 @@ export function DataStoragePanel({
                       >
                         Vom Server trennen
                       </button>
-                      {serverAuthenticated ? (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            onLogoutServer();
-                          }}
-                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          Abmelden
-                        </button>
-                      ) : null}
                     </>
                   ) : serverOfflinePending ? (
                     <>
@@ -311,10 +304,10 @@ export function DataStoragePanel({
                       </span>
                       <button
                         type="button"
-                        disabled={busy || !serverAuthenticated}
+                        disabled={busy || !vaultLoxId}
                         onClick={(e) => {
                           e.preventDefault();
-                          onConnectServer();
+                          onConnectVault();
                         }}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-900 hover:bg-sky-100"
                       >
@@ -323,18 +316,31 @@ export function DataStoragePanel({
                       </button>
                     </>
                   ) : (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        onConnectServer();
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-900 hover:bg-sky-100"
-                    >
-                      <Cloud className="h-3.5 w-3.5" aria-hidden />
-                      {serverAuthenticated ? "Mit Server verbinden" : "Anmelden & verbinden"}
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onCreateVault();
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-900 hover:bg-sky-100"
+                      >
+                        <Cloud className="h-3.5 w-3.5" aria-hidden />
+                        Neues Board
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onConnectVault();
+                        }}
+                        className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Mit LOX-ID verbinden
+                      </button>
+                    </div>
                   )
                 ) : null}
               </TargetOption>

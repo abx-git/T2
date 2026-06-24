@@ -2,12 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
-import { filterUnappliedBoardOps, markBoardOpsApplied } from "@/lib/board-ops/applied";
-import { applyStoredBoardOpsToStore } from "@/lib/board-ops/apply-to-store";
-import { getLastKnownOpsSeq, getPendingBoardOps, setLastKnownOpsSeq } from "@/lib/board-ops/queue";
 import { applyBoardJsonToStore } from "@/lib/server-board-offline";
 import { reconcileInitialServerBoard } from "@/lib/server-board-reconcile";
-import { fetchBoardOpsFromServer, flushPendingBoardOps } from "@/lib/server-board-ops";
 import {
   boardExportTextsEquivalent,
   buildBoardSnapshot,
@@ -27,7 +23,6 @@ import { isBrowserNetworkOnline, isFetchNetworkError } from "@/lib/server-board-
 import { useTaskTreeStore } from "@/store/task-tree-store";
 
 const AUTO_SAVE_DEBOUNCE_MS = 700;
-/** Seltener pollen — weniger Ping-Pong bei zwei geöffneten Clients. */
 const EXTERNAL_POLL_MS = 5000;
 
 function boardJsonFromStore(): string {
@@ -51,15 +46,10 @@ export interface ServerBoardSyncProps {
   enabled: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
-  /** Abgleich abgebrochen oder fehlgeschlagen — Verknüpfung wieder aus. */
   onConnectFailed?: () => void;
-  /** Kein Netz / Server nicht erreichbar — Offline-Modus (Entwurf lokal). */
   onNetworkUnavailable?: () => void;
 }
 
-/**
- * Lädt/speichert das Board auf dem Server (nach Login), analog zur lokalen Arbeitsdatei.
- */
 export function ServerBoardSync({
   enabled,
   onDirtyChange,
@@ -99,28 +89,6 @@ export function ServerBoardSync({
       onNetworkUnavailableRef.current?.();
     };
 
-    const applyRemoteOps = async () => {
-      if (!enabled || !isBrowserNetworkOnline()) return;
-      if (saveInFlightRef.current || saveTimerRef.current) return;
-      try {
-        const fetched = await fetchBoardOpsFromServer(getLastKnownOpsSeq());
-        if (!fetched?.ops.length || !mountedRef.current) return;
-        const fresh = filterUnappliedBoardOps(fetched.ops);
-        if (!fresh.length) {
-          setLastKnownOpsSeq(fetched.headSeq);
-          return;
-        }
-        if (!applyStoredBoardOpsToStore(fresh)) return;
-        markBoardOpsApplied(fresh);
-        setLastKnownOpsSeq(fetched.headSeq);
-        const snap = await fetchBoardFromServer();
-        if (snap) markServerBoardSynced(boardJsonFromStore(), snap.etag);
-        syncDirty();
-      } catch (e) {
-        if (isFetchNetworkError(e)) enterOfflineFromNetwork();
-      }
-    };
-
     const flushAutoSave = async () => {
       if (!enabled || saveInFlightRef.current) return;
       if (!isBrowserNetworkOnline()) {
@@ -128,26 +96,13 @@ export function ServerBoardSync({
         return;
       }
       const json = boardJsonFromStore();
-      if (!isServerBoardDirty(json) && !getPendingBoardOps().length) {
+      if (!isServerBoardDirty(json)) {
         syncDirty();
         return;
       }
       saveInFlightRef.current = true;
       onSavingChangeRef.current?.(true);
       try {
-        const pushed = await flushPendingBoardOps();
-        if (pushed > 0) {
-          const snap = await fetchBoardFromServer();
-          if (snap && mountedRef.current) {
-            markServerBoardSynced(snap.text, snap.etag);
-          }
-          syncDirty();
-          return;
-        }
-        if (!isServerBoardDirty(json)) {
-          syncDirty();
-          return;
-        }
         const etag = getLastKnownEtag();
         await writeBoardToServer(json, etag);
         if (!mountedRef.current) return;
@@ -178,7 +133,7 @@ export function ServerBoardSync({
           markServerBoardSynced(remote.text, remote.etag);
           syncDirty();
         } else {
-          console.error("Auto-Save Server-Board:", e);
+          console.error("Auto-Save Vault:", e);
         }
       } finally {
         saveInFlightRef.current = false;
@@ -233,11 +188,10 @@ export function ServerBoardSync({
         return;
       }
 
-      const localDirty = isServerBoardDirty(currentJson);
-      if (localDirty) return;
+      if (isServerBoardDirty(currentJson)) return;
 
       if (snap.text.trim() && !applyBoardJsonToStore(snap.text)) {
-        console.error("Server-Board einlesen: ungültiges JSON");
+        console.error("Vault einlesen: ungültiges JSON");
         return;
       }
 
@@ -248,15 +202,17 @@ export function ServerBoardSync({
     const loadInitial = async () => {
       try {
         const snap = await fetchBoardFromServer();
-        if (!snap || !mountedRef.current) return;
+        if (!mountedRef.current) return;
 
         const localJson = boardJsonFromStore();
-        const result = await reconcileInitialServerBoard(localJson, snap);
+        const result = await reconcileInitialServerBoard(localJson, snap ?? { text: "", etag: '""', lastModified: 0 });
         if (!mountedRef.current) return;
 
         if (!result.ok) {
           if (result.reason === "cancelled") {
             window.alert("Server-Verknüpfung nicht hergestellt — Abgleich abgebrochen.");
+          } else if (result.reason === "decrypt_error") {
+            window.alert("Entschlüsselung fehlgeschlagen — LOX-ID prüfen.");
           } else {
             window.alert("Abgleich mit dem Server ist fehlgeschlagen.");
           }
@@ -265,12 +221,11 @@ export function ServerBoardSync({
         }
 
         initialLoadDoneRef.current = true;
-        const opsHead = await fetchBoardOpsFromServer(0);
-        if (opsHead) setLastKnownOpsSeq(opsHead.headSeq);
         onDirtyChangeRef.current?.(false);
         syncDirty();
       } catch (e) {
-        console.error("Server-Board beim Start:", e);
+        console.error("Vault beim Start:", e);
+        onConnectFailedRef.current?.();
       }
     };
 
@@ -286,7 +241,6 @@ export function ServerBoardSync({
 
       pollTimer = setInterval(() => {
         if (document.visibilityState === "hidden") return;
-        void applyRemoteOps();
         void applyExternalBoard();
       }, EXTERNAL_POLL_MS);
     })();

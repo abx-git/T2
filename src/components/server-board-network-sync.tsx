@@ -7,7 +7,7 @@ import { isBrowserNetworkOnline, subscribeNetworkStatus } from "@/lib/server-boa
 
 export interface ServerBoardNetworkSyncProps {
   serverBoardEnabled: boolean;
-  authenticated: boolean;
+  vaultLinked: boolean;
   /** Netz weg oder Speichern nicht erreichbar — Offline-Entwurf anlegen. */
   onAutoOffline: () => void;
   /** Nach Netz-Wiederkehr (nur bei autoPaused) Server wieder verbinden. */
@@ -20,7 +20,7 @@ export interface ServerBoardNetworkSyncProps {
  */
 export function ServerBoardNetworkSync({
   serverBoardEnabled,
-  authenticated,
+  vaultLinked,
   onAutoOffline,
   onAutoReconnect,
   onAutoPausedChange,
@@ -35,16 +35,16 @@ export function ServerBoardNetworkSync({
   const serverBoardEnabledRef = useRef(serverBoardEnabled);
   serverBoardEnabledRef.current = serverBoardEnabled;
 
-  const authenticatedRef = useRef(authenticated);
-  authenticatedRef.current = authenticated;
+  const vaultLinkedRef = useRef(vaultLinked);
+  vaultLinkedRef.current = vaultLinked;
 
   useEffect(() => {
     onAutoPausedChangeRef.current?.(isAutoPausedOffline());
-  }, [serverBoardEnabled, authenticated]);
+  }, [serverBoardEnabled, vaultLinked]);
 
   useEffect(() => {
     const tryReconnect = () => {
-      if (!authenticatedRef.current || serverBoardEnabledRef.current) return;
+      if (!vaultLinkedRef.current || serverBoardEnabledRef.current) return;
       const pause = readOfflinePauseState();
       if (!pause?.autoPaused || !isBrowserNetworkOnline()) return;
       onAutoReconnectRef.current();
@@ -55,7 +55,7 @@ export function ServerBoardNetworkSync({
     return subscribeNetworkStatus((online) => {
       onAutoPausedChangeRef.current?.(isAutoPausedOffline());
       if (!online) {
-        if (serverBoardEnabledRef.current && authenticatedRef.current) {
+        if (serverBoardEnabledRef.current && vaultLinkedRef.current) {
           onAutoOfflineRef.current();
         }
         return;

@@ -1,32 +1,53 @@
 import { NextResponse } from "next/server";
 
-import { getSessionUserFromRequest } from "@/lib/server/auth";
-import { isServerBoardConfigured } from "@/lib/server/env";
+import { isVaultConfigured } from "@/lib/server/env";
+import {
+  normalizeVaultLoxId,
+  parseVaultAuthHeader,
+  vaultStorageKeyForLoxId,
+} from "@/lib/server/vault-validation";
+import { checkVaultRateLimit } from "@/lib/server/vault-rate-limit";
 
-export function notConfiguredResponse(): NextResponse {
+export function vaultNotConfiguredResponse(): NextResponse {
   return NextResponse.json(
     {
-      error: "server_board_not_configured",
-      message:
-        "Server-Board ist nicht konfiguriert. T2_SESSION_SECRET, T2_AUTH_PASSWORD und optional T2_BOARD_FILE_PATH setzen.",
+      error: "vault_not_configured",
+      message: "LOX-Vault ist auf diesem Host nicht aktiv (T2_VAULT_ENABLED=0).",
     },
     { status: 503 },
   );
 }
 
-export function requireServerBoardConfigured(): NextResponse | null {
-  if (!isServerBoardConfigured()) return notConfiguredResponse();
+export function requireVaultConfigured(): NextResponse | null {
+  if (!isVaultConfigured()) return vaultNotConfiguredResponse();
   return null;
 }
 
-export function unauthorizedResponse(): NextResponse {
+export function vaultUnauthorizedResponse(): NextResponse {
   return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 }
 
-export function requireSessionUser(req: Request): string | NextResponse {
-  const cfg = requireServerBoardConfigured();
+export function vaultRateLimitedResponse(): NextResponse {
+  return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+}
+
+export function requireVaultLoxId(req: Request): string | NextResponse {
+  const cfg = requireVaultConfigured();
   if (cfg) return cfg;
-  const user = getSessionUserFromRequest(req);
-  if (!user) return unauthorizedResponse();
-  return user;
+
+  const raw = parseVaultAuthHeader(req.headers.get("authorization"));
+  if (!raw) return vaultUnauthorizedResponse();
+
+  const storageKey = vaultStorageKeyForLoxId(raw);
+  if (!storageKey) return vaultUnauthorizedResponse();
+
+  if (!checkVaultRateLimit(req, storageKey)) return vaultRateLimitedResponse();
+
+  return storageKey;
+}
+
+export function normalizeVaultLoxIdFromRequest(req: Request): string | null {
+  const raw = parseVaultAuthHeader(req.headers.get("authorization"));
+  if (!raw) return null;
+  return normalizeVaultLoxId(raw);
 }

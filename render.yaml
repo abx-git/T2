@@ -1,19 +1,22 @@
-# Render Blueprint: LOX-Vault-API für GitHub-Pages-App
-# Dashboard: https://dashboard.render.com → New → Blueprint → dieses Repo
+# Render Blueprint — LOX-Vault für T2 (abx-git)
+# App: https://abx-git.github.io/T2/
+#
+# Deploy: https://dashboard.render.com → New → Blueprint → Repo abx-git/T2
 #
 # Nach dem Deploy:
-#   1. Öffentliche URL notieren (z. B. https://t2-vault.onrender.com)
-#   2. In GitHub: Settings → Actions → Variables
-#      NEXT_PUBLIC_T2_VAULT_API_URL = diese URL
-#   3. T2_VAULT_CORS_ORIGINS unten anpassen (Ihre Pages-URL)
-#   4. main pushen oder Workflow „Deploy GitHub Pages“ manuell starten
+#   1. Öffentliche URL notieren (z. B. https://t2-vault-abx-git.onrender.com)
+#   2. GitHub → Settings → Actions → Variables:
+#      NEXT_PUBLIC_T2_VAULT_API_URL = <diese URL>
+#   3. main pushen oder Workflow „Deploy GitHub Pages“ manuell starten
 
 services:
   - type: web
-    name: t2-vault
+    name: t2-vault-abx-git
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
+    branch: main
+    autoDeploy: true
     healthCheckPath: /api/vault/status
     envVars:
       - key: NODE_ENV
@@ -26,10 +29,10 @@ services:
         value: "1"
       - key: T2_VAULT_DIR_PATH
         value: ./data/vaults
-      # Anpassen: https://<github-user>.github.io (kommagetrennt für mehrere Origins)
       - key: T2_VAULT_CORS_ORIGINS
         value: https://abx-git.github.io,http://localhost:3000
-    disk:
-      name: t2-vault-data
-      mountPath: /app/data
-      sizeGB: 1
+    # Persistente Daten: plan auf „starter“ setzen und disk aktivieren (Free = flüchtig bei Redeploy)
+    # disk:
+    #   name: t2-vault-data
+    #   mountPath: /app/data
+    #   sizeGB: 1

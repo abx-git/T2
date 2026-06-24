@@ -302,6 +302,7 @@ export function TaskBoard() {
       setVaultStatus(status);
       const storedLoxId = readVaultLoxId();
       if (storedLoxId) {
+        detachServerBoard();
         setVaultLoxId(storedLoxId);
         setLinkedVaultLoxId(storedLoxId);
       }

@@ -17,7 +17,7 @@ import {
 
 import type { AutoSaveTarget } from "@/lib/storage-coordinator";
 import type { VaultStatusInfo } from "@/lib/server-board";
-import { formatTaskIdForDisplay } from "@/lib/task-id";
+import { formatVaultLoxIdForDisplay } from "@/lib/task-id";
 
 export interface DataStoragePanelProps {
   open: boolean;
@@ -279,7 +279,7 @@ export function DataStoragePanel({
                     <>
                       <span className="w-full text-xs text-slate-600">
                         {vaultLoxId
-                          ? `LOX-ID ${formatTaskIdForDisplay(vaultLoxId)}`
+                          ? `LOX-ID ${formatVaultLoxIdForDisplay(vaultLoxId)}`
                           : "Keine LOX-ID"}
                         {" — "}
                         {serverBoardSaving

@@ -43,6 +43,7 @@ export function ServerBoardSync({
   onSaveError,
 }: ServerBoardSyncProps) {
   const mountedRef = useRef(true);
+  const loadGenerationRef = useRef(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveInFlightRef = useRef(false);
   const initialLoadDoneRef = useRef(false);
@@ -73,6 +74,7 @@ export function ServerBoardSync({
     }
 
     mountedRef.current = true;
+    const generation = ++loadGenerationRef.current;
     let storeUnsub: (() => void) | undefined;
     let pollTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -167,14 +169,14 @@ export function ServerBoardSync({
     const loadInitial = async () => {
       try {
         const snap = await fetchBoardFromServer();
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || generation !== loadGenerationRef.current) return;
 
         const localJson = boardJsonFromTaskTreeStore();
         const result = await reconcileInitialServerBoard(
           localJson,
           snap ?? { text: "", etag: null, lastModified: 0 },
         );
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || generation !== loadGenerationRef.current) return;
 
         if (!result.ok) {
           if (result.reason === "cancelled") {
@@ -189,9 +191,14 @@ export function ServerBoardSync({
         }
 
         initialLoadDoneRef.current = true;
-        onDirtyChangeRef.current?.(false);
         syncDirty();
+        if (isServerBoardDirty(boardJsonFromTaskTreeStore())) {
+          await flushAutoSave();
+          if (!mountedRef.current || generation !== loadGenerationRef.current) return;
+          syncDirty();
+        }
       } catch (e) {
+        if (!mountedRef.current || generation !== loadGenerationRef.current) return;
         console.error("Vault beim Start:", e);
         onConnectFailedRef.current?.();
       }

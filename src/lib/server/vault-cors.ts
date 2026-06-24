@@ -14,6 +14,7 @@ export function vaultCorsHeaders(request: Request): HeadersInit {
     "Access-Control-Allow-Origin": match,
     "Access-Control-Allow-Methods": "GET, PUT, HEAD, OPTIONS",
     "Access-Control-Allow-Headers": "Authorization, If-Match, Content-Type",
+    "Access-Control-Expose-Headers": "ETag, Last-Modified",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };

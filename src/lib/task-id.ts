@@ -1,4 +1,4 @@
-import { defaultLoxIdService, isLoxTaskId } from "@/lib/lox-id";
+import { canonicalBoardLoxId, defaultLoxIdService, isLoxTaskId } from "@/lib/lox-id";
 import type { TaskNode } from "@/types/task-node";
 
 export { isLoxTaskId };
@@ -34,4 +34,11 @@ export function formatTaskIdForDisplay(id: string): string {
   const t = id.trim();
   if (t.length <= 13) return t;
   return `${t.slice(0, 8)}…`;
+}
+
+/** Board-/Vault-LOX-ID mit Prefix (BRD-…) — nicht `normalizeId` (zerstört Prefix). */
+export function formatVaultLoxIdForDisplay(id: string): string {
+  const canonical = canonicalBoardLoxId(id);
+  if (canonical) return canonical;
+  return id.trim().toUpperCase();
 }

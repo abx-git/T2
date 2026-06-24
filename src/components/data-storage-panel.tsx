@@ -10,6 +10,7 @@ import {
   Link,
   Loader2,
   Route,
+  Save,
   Upload,
   X,
 } from "lucide-react";
@@ -42,6 +43,8 @@ export interface DataStoragePanelProps {
   onCreateVault: () => void;
   onConnectVault: () => void;
   onDisconnectServer: () => void;
+  onSaveServer: () => void;
+  serverSaveError: string | null;
   onCreateBackup: () => void;
   onRestoreBackupFile: () => void;
   onRestoreBackupPaste: () => void;
@@ -122,6 +125,8 @@ export function DataStoragePanel({
   onCreateVault,
   onConnectVault,
   onDisconnectServer,
+  onSaveServer,
+  serverSaveError,
   onCreateBackup,
   onRestoreBackupFile,
   onRestoreBackupPaste,
@@ -283,6 +288,21 @@ export function DataStoragePanel({
                             ? "ungespeichert"
                             : "synchron"}
                       </span>
+                      {serverSaveError ? (
+                        <span className="w-full text-xs text-red-700">{serverSaveError}</span>
+                      ) : null}
+                      <button
+                        type="button"
+                        disabled={busy || serverBoardSaving || !serverBoardDirty}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onSaveServer();
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+                      >
+                        <Save className="h-3.5 w-3.5" aria-hidden />
+                        Speichern
+                      </button>
                       <button
                         type="button"
                         disabled={busy}

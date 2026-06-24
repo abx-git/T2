@@ -27,6 +27,13 @@ let suppressExternalPollUntil = 0;
 const EXTERNAL_POLL_SUPPRESS_MS = 6000;
 const VAULT_AUTH_SCHEME = "Vault";
 
+/** Nur echte ETags an den Server senden — nicht `""` oder null. */
+export function isUsableVaultEtag(etag: string | null | undefined): etag is string {
+  if (!etag) return false;
+  const t = etag.trim();
+  return t.length > 0 && t !== '""';
+}
+
 export function generateBoardLoxId(): string {
   return defaultLoxIdService.generateId("BRD");
 }
@@ -136,14 +143,16 @@ export async function fetchBoardFromServer(): Promise<BoardFetchResult | null> {
   }
 }
 
-export async function writeBoardToServer(json: string, etag: string | null): Promise<string | null> {
-  if (!linkedLoxId) return null;
+export async function writeBoardToServer(json: string, etag: string | null): Promise<string> {
+  if (!linkedLoxId) {
+    throw new Error("Keine LOX-ID — Server-Verbindung fehlt.");
+  }
   const encrypted = await encryptBoardJson(linkedLoxId, json);
   const headers: Record<string, string> = {
     Authorization: vaultAuthHeader(linkedLoxId),
     "Content-Type": "application/octet-stream",
   };
-  if (etag) headers["If-Match"] = etag;
+  if (isUsableVaultEtag(etag)) headers["If-Match"] = etag;
 
   const res = await fetch(vaultApiUrl("/api/vault"), {
     method: "PUT",
@@ -151,18 +160,25 @@ export async function writeBoardToServer(json: string, etag: string | null): Pro
     body: encrypted,
   });
 
-  if (res.status === 401) return null;
+  if (res.status === 401) {
+    throw new Error("Zugriff verweigert — LOX-ID prüfen.");
+  }
   if (res.status === 412) {
     throw new Error("precondition_failed");
   }
-  if (!res.ok) throw new Error(`Vault speichern fehlgeschlagen (${res.status}).`);
+  if (res.status === 413) {
+    throw new Error("Board ist zu groß für den Vault-Server.");
+  }
+  if (!res.ok) {
+    throw new Error(`Vault speichern fehlgeschlagen (HTTP ${res.status}).`);
+  }
 
   const newEtag = res.headers.get("etag");
-  if (newEtag) {
+  if (isUsableVaultEtag(newEtag)) {
     noteServerBoardWritten(newEtag);
     markServerBoardSynced(json, newEtag);
     return newEtag;
   }
-  markServerBoardSynced(json, etag ?? '""');
-  return etag;
+  markServerBoardSynced(json, null);
+  return "";
 }

@@ -102,7 +102,7 @@ import { BranchExportDialog, JsonExportPreviewDialog, JsonPasteImportDialog } fr
 import { LevelNamesSetupDialog } from "./level-names-setup-dialog";
 import { ServerBoardNetworkSync } from "./server-board-network-sync";
 import { ServerBoardOfflineSync } from "./server-board-offline-sync";
-import { ServerBoardSync } from "./server-board-sync";
+import { ServerBoardSync, saveServerBoardToVault } from "./server-board-sync";
 import { LoxVaultDialog, type LoxVaultDialogMode } from "./lox-vault-dialog";
 import { WorkingFileSync } from "./working-file-sync";
 import { DataStoragePanel } from "./data-storage-panel";
@@ -254,6 +254,7 @@ export function TaskBoard() {
   const [vaultDialogMode, setVaultDialogMode] = useState<LoxVaultDialogMode>("connect");
   const [serverOfflinePending, setServerOfflinePending] = useState(false);
   const [serverBoardAutoPaused, setServerBoardAutoPaused] = useState(false);
+  const [serverSaveError, setServerSaveError] = useState<string | null>(null);
   const [titleEditNodeId, setTitleEditNodeId] = useState<string | null>(null);
   const [compactCards, setCompactCards] = useState(false);
   const [boardJsonExportOpen, setBoardJsonExportOpen] = useState(false);
@@ -641,6 +642,24 @@ export function TaskBoard() {
     else setWorkingFileDirty(false);
   }, [beginAttachWorkingFile, boardSnapshotTextFromStore]);
 
+  const handleSaveServerBoard = useCallback(async () => {
+    setStoragePanelBusy(true);
+    setServerSaveError(null);
+    try {
+      const result = await saveServerBoardToVault();
+      if (!result.ok) {
+        setServerSaveError(result.error);
+        if (!result.offline) {
+          window.alert(result.error);
+        }
+      } else {
+        setServerBoardDirty(false);
+      }
+    } finally {
+      setStoragePanelBusy(false);
+    }
+  }, []);
+
   const handlePostImportSyncServer = useCallback(async () => {
     setPostImportSaveOpen(false);
     if (!vaultStatus?.configured) {
@@ -999,6 +1018,7 @@ export function TaskBoard() {
         onSavingChange={setServerBoardSaving}
         onConnectFailed={onServerBoardConnectFailed}
         onNetworkUnavailable={() => enterServerBoardOfflineMode({ auto: true })}
+        onSaveError={setServerSaveError}
       />
       {/* Header + Board in einer Spalte: Board kann den Header nicht überdecken (kein z-Index gegen Toolbar). */}
       <div className="flex min-h-0 flex-1 flex-col">
@@ -1259,6 +1279,8 @@ export function TaskBoard() {
           setStoragePanelBusy(true);
           void disconnectServerBoardLink({ offline: true }).finally(() => setStoragePanelBusy(false));
         }}
+        onSaveServer={() => void handleSaveServerBoard()}
+        serverSaveError={serverSaveError}
         onCreateBackup={() => {
           handleExportFullBoard();
         }}

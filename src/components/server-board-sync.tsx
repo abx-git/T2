@@ -5,11 +5,6 @@ import { useEffect, useRef } from "react";
 import { applyBoardJsonToStore } from "@/lib/server-board-offline";
 import { reconcileInitialServerBoard } from "@/lib/server-board-reconcile";
 import {
-  boardExportTextsEquivalent,
-  buildBoardSnapshot,
-  stringifyExportedDocument,
-} from "@/lib/task-tree-json";
-import {
   fetchBoardEtagFromServer,
   fetchBoardFromServer,
   getLastKnownEtag,
@@ -17,30 +12,18 @@ import {
   isServerBoardDirty,
   markServerBoardSynced,
   shouldSuppressExternalServerPoll,
-  writeBoardToServer,
 } from "@/lib/server-board";
-import { isBrowserNetworkOnline, isFetchNetworkError } from "@/lib/server-board-network";
+import {
+  boardJsonFromTaskTreeStore,
+  saveServerBoardToVault,
+  setServerBoardSaveCallbacks,
+} from "@/lib/server-board-save";
+import { isBrowserNetworkOnline } from "@/lib/server-board-network";
+import { boardExportTextsEquivalent } from "@/lib/task-tree-json";
 import { useTaskTreeStore } from "@/store/task-tree-store";
 
 const AUTO_SAVE_DEBOUNCE_MS = 700;
 const EXTERNAL_POLL_MS = 5000;
-
-function boardJsonFromStore(): string {
-  const s = useTaskTreeStore.getState();
-  return stringifyExportedDocument(
-    buildBoardSnapshot(
-      s.roots,
-      s.pathIds,
-      s.columnTitleOverrides,
-      s.cardFieldVisibility,
-      s.hideCompletedTasks,
-      s.effortOnTasksEnabled,
-      s.filterTags,
-      s.completedTag,
-      s.collapsedIds,
-    ),
-  );
-}
 
 export interface ServerBoardSyncProps {
   enabled: boolean;
@@ -48,6 +31,7 @@ export interface ServerBoardSyncProps {
   onSavingChange?: (saving: boolean) => void;
   onConnectFailed?: () => void;
   onNetworkUnavailable?: () => void;
+  onSaveError?: (message: string | null) => void;
 }
 
 export function ServerBoardSync({
@@ -56,6 +40,7 @@ export function ServerBoardSync({
   onSavingChange,
   onConnectFailed,
   onNetworkUnavailable,
+  onSaveError,
 }: ServerBoardSyncProps) {
   const mountedRef = useRef(true);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -66,10 +51,20 @@ export function ServerBoardSync({
   const onSavingChangeRef = useRef(onSavingChange);
   const onConnectFailedRef = useRef(onConnectFailed);
   const onNetworkUnavailableRef = useRef(onNetworkUnavailable);
+  const onSaveErrorRef = useRef(onSaveError);
   onDirtyChangeRef.current = onDirtyChange;
   onSavingChangeRef.current = onSavingChange;
   onConnectFailedRef.current = onConnectFailed;
   onNetworkUnavailableRef.current = onNetworkUnavailable;
+  onSaveErrorRef.current = onSaveError;
+
+  useEffect(() => {
+    setServerBoardSaveCallbacks({
+      onDirtyChange: (d) => onDirtyChangeRef.current?.(d),
+      onSavingChange: (s) => onSavingChangeRef.current?.(s),
+    });
+    return () => setServerBoardSaveCallbacks({});
+  }, []);
 
   useEffect(() => {
     if (!enabled) {
@@ -82,67 +77,37 @@ export function ServerBoardSync({
     let pollTimer: ReturnType<typeof setInterval> | undefined;
 
     const syncDirty = () => {
-      onDirtyChangeRef.current?.(isServerBoardDirty(boardJsonFromStore()));
+      onDirtyChangeRef.current?.(isServerBoardDirty(boardJsonFromTaskTreeStore()));
     };
 
-    const enterOfflineFromNetwork = () => {
-      onNetworkUnavailableRef.current?.();
+    const reportSaveResult = (result: Awaited<ReturnType<typeof saveServerBoardToVault>>) => {
+      if (result.ok) {
+        onSaveErrorRef.current?.(null);
+        return;
+      }
+      onSaveErrorRef.current?.(result.error);
+      if (result.offline) {
+        onNetworkUnavailableRef.current?.();
+      } else {
+        console.error("Vault speichern:", result.error);
+      }
     };
 
     const flushAutoSave = async () => {
       if (!enabled || saveInFlightRef.current) return;
-      if (!isBrowserNetworkOnline()) {
-        enterOfflineFromNetwork();
-        return;
-      }
-      const json = boardJsonFromStore();
-      if (!isServerBoardDirty(json)) {
-        syncDirty();
-        return;
-      }
       saveInFlightRef.current = true;
-      onSavingChangeRef.current?.(true);
       try {
-        const etag = getLastKnownEtag();
-        await writeBoardToServer(json, etag);
+        const result = await saveServerBoardToVault();
         if (!mountedRef.current) return;
+        reportSaveResult(result);
         syncDirty();
-      } catch (e) {
-        if (isFetchNetworkError(e)) {
-          enterOfflineFromNetwork();
-          return;
-        }
-        if (e instanceof Error && e.message === "precondition_failed") {
-          const remote = await fetchBoardFromServer();
-          if (!remote) return;
-          const localJson = boardJsonFromStore();
-          if (boardExportTextsEquivalent(remote.text, localJson)) {
-            markServerBoardSynced(localJson, remote.etag);
-            await writeBoardToServer(localJson, remote.etag);
-            syncDirty();
-            return;
-          }
-          const discard = window.confirm(
-            "Ein anderes Gerät hat das Board geändert. Lokale Änderungen verwerfen und die Server-Version laden?",
-          );
-          if (!discard) {
-            markServerBoardSynced(localJson, remote.etag);
-            return;
-          }
-          applyBoardJsonToStore(remote.text);
-          markServerBoardSynced(remote.text, remote.etag);
-          syncDirty();
-        } else {
-          console.error("Auto-Save Vault:", e);
-        }
       } finally {
         saveInFlightRef.current = false;
-        if (mountedRef.current) onSavingChangeRef.current?.(false);
       }
     };
 
     const scheduleAutoSave = () => {
-      if (!enabled || !isBrowserNetworkOnline()) return;
+      if (!enabled) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
         saveTimerRef.current = null;
@@ -161,7 +126,7 @@ export function ServerBoardSync({
         if (!head || !mountedRef.current) return;
         if (knownEtag && head.etag === knownEtag) return;
       } catch (e) {
-        if (isFetchNetworkError(e)) enterOfflineFromNetwork();
+        if (!isBrowserNetworkOnline()) onNetworkUnavailableRef.current?.();
         return;
       }
 
@@ -169,12 +134,12 @@ export function ServerBoardSync({
       try {
         snap = await fetchBoardFromServer();
       } catch (e) {
-        if (isFetchNetworkError(e)) enterOfflineFromNetwork();
+        if (!isBrowserNetworkOnline()) onNetworkUnavailableRef.current?.();
         return;
       }
       if (!snap || !mountedRef.current) return;
 
-      const currentJson = boardJsonFromStore();
+      const currentJson = boardJsonFromTaskTreeStore();
 
       if (boardExportTextsEquivalent(snap.text, currentJson)) {
         markServerBoardSynced(currentJson, snap.etag);
@@ -204,8 +169,11 @@ export function ServerBoardSync({
         const snap = await fetchBoardFromServer();
         if (!mountedRef.current) return;
 
-        const localJson = boardJsonFromStore();
-        const result = await reconcileInitialServerBoard(localJson, snap ?? { text: "", etag: '""', lastModified: 0 });
+        const localJson = boardJsonFromTaskTreeStore();
+        const result = await reconcileInitialServerBoard(
+          localJson,
+          snap ?? { text: "", etag: null, lastModified: 0 },
+        );
         if (!mountedRef.current) return;
 
         if (!result.ok) {
@@ -229,6 +197,14 @@ export function ServerBoardSync({
       }
     };
 
+    const onPageHide = () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      void flushAutoSave();
+    };
+
     void (async () => {
       await loadInitial();
       if (!mountedRef.current) return;
@@ -243,6 +219,11 @@ export function ServerBoardSync({
         if (document.visibilityState === "hidden") return;
         void applyExternalBoard();
       }, EXTERNAL_POLL_MS);
+
+      window.addEventListener("pagehide", onPageHide);
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") onPageHide();
+      });
     })();
 
     return () => {
@@ -250,8 +231,11 @@ export function ServerBoardSync({
       storeUnsub?.();
       if (pollTimer) clearInterval(pollTimer);
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      window.removeEventListener("pagehide", onPageHide);
     };
   }, [enabled]);
 
   return null;
 }
+
+export { saveServerBoardToVault } from "@/lib/server-board-save";

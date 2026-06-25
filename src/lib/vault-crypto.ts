@@ -15,11 +15,10 @@ export class VaultDecryptError extends Error {
   }
 }
 
-async function deriveVaultKey(loxId: string): Promise<CryptoKey> {
-  const normalized = canonicalBoardLoxId(loxId) ?? defaultLoxIdService.normalizeId(loxId);
+async function deriveVaultKeyFromMaterial(material: string): Promise<CryptoKey> {
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(normalized),
+    new TextEncoder().encode(material),
     "HKDF",
     false,
     ["deriveKey"],
@@ -36,6 +35,28 @@ async function deriveVaultKey(loxId: string): Promise<CryptoKey> {
     false,
     ["encrypt", "decrypt"],
   );
+}
+
+/** Schlüsselmaterial — kanonisch zuerst, Legacy-`normalizeId` für ältere Vaults. */
+function vaultKeyMaterials(loxId: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (value: string) => {
+    const v = value.trim();
+    if (!v || seen.has(v)) return;
+    seen.add(v);
+    out.push(v);
+  };
+  const canonical = canonicalBoardLoxId(loxId);
+  if (canonical) add(canonical);
+  add(defaultLoxIdService.normalizeId(loxId));
+  return out;
+}
+
+async function deriveVaultKey(loxId: string): Promise<CryptoKey> {
+  const [primary] = vaultKeyMaterials(loxId);
+  if (!primary) throw new VaultDecryptError();
+  return deriveVaultKeyFromMaterial(primary);
 }
 
 export async function encryptBoardJson(loxId: string, json: string): Promise<ArrayBuffer> {
@@ -63,11 +84,15 @@ export async function decryptBoardBlob(loxId: string, blob: ArrayBuffer): Promis
   }
   const iv = data.slice(VAULT_MAGIC.length, VAULT_MAGIC.length + IV_BYTES);
   const ciphertext = data.slice(VAULT_MAGIC.length + IV_BYTES);
-  const key = await deriveVaultKey(loxId);
-  try {
-    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
-    return new TextDecoder().decode(plain);
-  } catch {
-    throw new VaultDecryptError();
+  const materials = vaultKeyMaterials(loxId);
+  for (const material of materials) {
+    try {
+      const key = await deriveVaultKeyFromMaterial(material);
+      const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+      return new TextDecoder().decode(plain);
+    } catch {
+      /* nächstes Schlüsselmaterial (Legacy) */
+    }
   }
+  throw new VaultDecryptError();
 }

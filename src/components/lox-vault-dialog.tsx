@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { useState } from "react";
 import { Copy, KeyRound } from "lucide-react";
 
-import { defaultLoxIdService } from "@/lib/lox-id";
+import { parseBoardVaultLoxIdFromInput } from "@/lib/lox-id";
 import { generateBoardLoxId } from "@/lib/server-board";
 
 export type LoxVaultDialogMode = "create" | "connect";
@@ -38,17 +38,14 @@ export function LoxVaultDialog({ open, mode, onClose, onCreate, onConnect }: Lox
   };
 
   const handleConnect = () => {
-    const trimmed = input.trim();
-    if (!defaultLoxIdService.validateId(trimmed)) {
-      window.alert("Ungültige LOX-ID — Format BRD-XXXX-XXXX.");
+    const parsed = parseBoardVaultLoxIdFromInput(input);
+    if (!parsed) {
+      window.alert(
+        "Ungültige Board-LOX-ID.\n\nDie vollständige ID hat das Format BRD-XXXX-XXXX (z. B. BRD-VRW5-WXYZ).\nEine gekürzte Anzeige wie „BRDV-RW5W“ reicht nicht — auf dem ersten Gerät unter „Daten“ → „ID kopieren“.",
+      );
       return;
     }
-    const canonical = defaultLoxIdService.canonicalId(trimmed);
-    if (!canonical) {
-      window.alert("Ungültige LOX-ID — Format BRD-XXXX-XXXX.");
-      return;
-    }
-    onConnect(canonical);
+    onConnect(parsed);
     setInput("");
   };
 

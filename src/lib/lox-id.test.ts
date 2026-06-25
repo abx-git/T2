@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { LoxIdService } from "./lox-id";
+import { LoxIdService, parseBoardVaultLoxIdFromInput } from "./lox-id";
 
 describe("LoxIdService", () => {
   const svc = new LoxIdService();
@@ -42,5 +42,29 @@ describe("LoxIdService", () => {
     expect(svc.canonicalId(id.toLowerCase())).toBe(id);
     // normalizeId alone would corrupt prefixed ids
     expect(svc.normalizeId(id)).not.toBe(id);
+  });
+});
+
+describe("parseBoardVaultLoxIdFromInput", () => {
+  const boardSvc = new LoxIdService();
+
+  it("accepts BRD-prefixed ids in common input forms", () => {
+    const id = boardSvc.generateId("BRD");
+    expect(parseBoardVaultLoxIdFromInput(id)).toBe(id);
+    expect(parseBoardVaultLoxIdFromInput(id.toLowerCase())).toBe(id);
+    expect(parseBoardVaultLoxIdFromInput(id.replace(/-/g, " "))).toBe(id);
+    expect(parseBoardVaultLoxIdFromInput(id.replace(/-/g, ""))).toBe(id);
+  });
+
+  it("rejects shortened card-style display ids", () => {
+    const id = boardSvc.generateId("BRD");
+    const shortened = boardSvc.normalizeId(id);
+    expect(shortened).not.toBe(id);
+    expect(parseBoardVaultLoxIdFromInput(shortened)).toBeNull();
+    expect(parseBoardVaultLoxIdFromInput(`BRD-${shortened}`)).toBeNull();
+  });
+
+  it("rejects BRD prepended to corrupted display tokens", () => {
+    expect(parseBoardVaultLoxIdFromInput("BRD-BRDV-RW5W")).toBeNull();
   });
 });

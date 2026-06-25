@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useState } from "react";
 import {
   Cloud,
   Copy,
@@ -134,9 +135,23 @@ export function DataStoragePanel({
   onShowJsonCopy,
   busy,
 }: DataStoragePanelProps) {
+  const [vaultIdCopied, setVaultIdCopied] = useState(false);
+
   if (!open) return null;
 
   const vaultConfigured = Boolean(vaultStatus?.configured);
+  const vaultIdDisplay = vaultLoxId ? formatVaultLoxIdForDisplay(vaultLoxId) : null;
+
+  const copyVaultLoxId = async () => {
+    if (!vaultLoxId) return;
+    try {
+      await navigator.clipboard.writeText(vaultLoxId);
+      setVaultIdCopied(true);
+      window.setTimeout(() => setVaultIdCopied(false), 2000);
+    } catch {
+      window.alert("Kopieren fehlgeschlagen — ID bitte manuell notieren.");
+    }
+  };
 
   const layer = (
     <div
@@ -277,17 +292,35 @@ export function DataStoragePanel({
                 {vaultConfigured ? (
                   autoSaveTarget === "server" ? (
                     <>
-                      <span className="w-full text-xs text-slate-600">
-                        {vaultLoxId
-                          ? `LOX-ID ${formatVaultLoxIdForDisplay(vaultLoxId)}`
-                          : "Keine LOX-ID"}
-                        {" — "}
-                        {serverBoardSaving
-                          ? "speichert …"
-                          : serverBoardDirty
-                            ? "ungespeichert"
-                            : "synchron"}
-                      </span>
+                      <div className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                          Board-LOX-ID (vollständig)
+                        </p>
+                        <p className="mt-1 break-all font-mono text-sm font-semibold tracking-wide text-slate-900">
+                          {vaultIdDisplay ?? "Keine LOX-ID"}
+                        </p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
+                          {serverBoardSaving
+                            ? "Speichert auf Server …"
+                            : serverBoardDirty
+                              ? "Ungespeichert"
+                              : "Synchron"}
+                        </p>
+                      </div>
+                      {vaultLoxId ? (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            void copyVaultLoxId();
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          <Copy className="h-3.5 w-3.5" aria-hidden />
+                          {vaultIdCopied ? "Kopiert" : "ID kopieren"}
+                        </button>
+                      ) : null}
                       {serverSaveError ? (
                         <span className="w-full text-xs text-red-700">{serverSaveError}</span>
                       ) : null}

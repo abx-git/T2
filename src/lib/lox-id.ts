@@ -131,3 +131,45 @@ export function isLoxTaskId(id: string): boolean {
 export function canonicalBoardLoxId(raw: string): string | null {
   return defaultLoxIdService.canonicalId(raw);
 }
+
+export function isBoardVaultLoxId(id: string): boolean {
+  const canonical = canonicalBoardLoxId(id);
+  return Boolean(canonical?.startsWith("BRD-"));
+}
+
+/**
+ * Board-LOX-ID aus Benutzereingabe (Connect-Dialog).
+ * Akzeptiert BRD-XXXX-XXXX in verschiedenen Schreibweisen — nicht die verkürzte Karten-Anzeige.
+ */
+export function parseBoardVaultLoxIdFromInput(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const tryBoardId = (candidate: string): string | null => {
+    const upper = candidate.trim().toUpperCase();
+    const parts = upper.split("-").filter((p) => p.length > 0);
+    if (parts.length !== 3 || parts[0] !== "BRD" || parts[1]!.length !== 4 || parts[2]!.length !== 4) {
+      return null;
+    }
+    const id = defaultLoxIdService.canonicalId(upper);
+    if (id?.startsWith("BRD-")) return id;
+    return null;
+  };
+
+  let id = tryBoardId(trimmed);
+  if (id) return id;
+
+  const compact = trimmed.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (compact.startsWith("BRD") && compact.length >= 11) {
+    id = tryBoardId(`BRD-${compact.slice(3, 7)}-${compact.slice(7, 11)}`);
+    if (id) return id;
+  }
+
+  const scanned = defaultLoxIdService.parseIdFromScanPayload(trimmed);
+  if (scanned?.toUpperCase().startsWith("BRD-")) {
+    id = tryBoardId(scanned);
+    if (id) return id;
+  }
+
+  return null;
+}

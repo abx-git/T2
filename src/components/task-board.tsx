@@ -21,7 +21,7 @@ import {
 import { HardDrive, Settings2, SlidersHorizontal, Rows3 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 
-import { defaultLoxIdService } from "@/lib/lox-id";
+import { parseBoardVaultLoxIdFromInput } from "@/lib/lox-id";
 import type { BoardSnapshotV1 } from "@/lib/task-tree-json";
 import {
   boardSnapshotToReplacePayload,
@@ -510,9 +510,11 @@ export function TaskBoard() {
         );
         return false;
       }
-      const canonical = defaultLoxIdService.canonicalId(loxId);
+      const canonical = parseBoardVaultLoxIdFromInput(loxId);
       if (!canonical) {
-        window.alert("Ungültige LOX-ID — Format BRD-XXXX-XXXX.");
+        window.alert(
+          "Ungültige Board-LOX-ID — Format BRD-XXXX-XXXX.\nDie gekürzte Anzeige in „Daten“ reicht nicht zum Verbinden.",
+        );
         return false;
       }
       const detached = await detachWorkingFileWithSave();

@@ -16,7 +16,7 @@ export const MINDMAP_BOARD_PAD_Y = 8;
 /** Fester Mindestabstand unter Karten in derselben Spalte (1/3 von früher 10 px). */
 export const MINDMAP_CARD_GAP_PX = 3;
 /** Puffer gegen Rundungsfehler, Ring und Schatten innerhalb der Zeile. */
-const CELL_HEIGHT_BUFFER_PX = 8;
+const CELL_HEIGHT_BUFFER_PX = 4;
 
 export type MindmapCardPosition = {
   top: number;

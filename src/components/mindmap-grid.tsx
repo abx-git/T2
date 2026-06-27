@@ -8,12 +8,12 @@ import { resolveColumnDisplayTitle } from "@/lib/column-titles";
 import {
   computeCardPositions,
   columnLeftPx,
+  entriesInColumnTreeOrder,
   MINDMAP_BOARD_PAD_Y,
   MINDMAP_CARD_GAP_PX,
   MINDMAP_COL_GAP_PX,
   MINDMAP_COL_WIDTH_PX,
   mindmapBoardWidthPx,
-  rowTopPx,
   type MindmapBoardLayout,
 } from "@/lib/mindmap-layout";
 import {
@@ -240,7 +240,34 @@ export function MindmapGrid({
   );
   const showEmptyRootSlot = visibleRootEntries.length === 0;
 
+  const { prevInColumnByNodeId, nextInColumnByNodeId } = useMemo(() => {
+    const prevInColumnByNodeId = new Map<string, (typeof visibleEntries)[number] | null>();
+    const nextInColumnByNodeId = new Map<string, (typeof visibleEntries)[number] | null>();
+    for (let col = 0; col < columnCount; col++) {
+      const ordered = entriesInColumnTreeOrder(col, visibleEntries, roots);
+      for (let i = 0; i < ordered.length; i++) {
+        const entry = ordered[i]!;
+        prevInColumnByNodeId.set(entry.node.id, i > 0 ? ordered[i - 1]! : null);
+        nextInColumnByNodeId.set(
+          entry.node.id,
+          i < ordered.length - 1 ? ordered[i + 1]! : null,
+        );
+      }
+    }
+    return { prevInColumnByNodeId, nextInColumnByNodeId };
+  }, [visibleEntries, roots, columnCount]);
+
   const gapBand = Math.max(MINDMAP_CARD_GAP_PX, 6);
+
+  const gapTopCentered = (
+    prevBottom: number | null,
+    nextTop: number,
+    fallbackCenter: number,
+  ) => {
+    const center =
+      prevBottom != null ? (prevBottom + nextTop) / 2 : fallbackCenter;
+    return center - gapBand / 2;
+  };
 
   return (
     <div className="inline-block min-w-min">
@@ -303,9 +330,16 @@ export function MindmapGrid({
             const siblings = getSiblingsList(roots, e.listParentId);
             const isLastSibling = siblings[siblings.length - 1]?.id === e.node.id;
             const tailInsert = siblings.length;
-            const rowTop = MINDMAP_BOARD_PAD_Y + rowTopPx(e.ySlot, rowHeights);
-            const rowHeight = rowHeights[e.ySlot] ?? 0;
-            const gapTop = Math.max(MINDMAP_BOARD_PAD_Y, rowTop - gapBand / 2);
+            const prevEntry = prevInColumnByNodeId.get(e.node.id) ?? null;
+            const nextEntry = nextInColumnByNodeId.get(e.node.id) ?? null;
+            const prevPos = prevEntry ? positions.get(prevEntry.node.id) : null;
+            const nextPos = nextEntry ? positions.get(nextEntry.node.id) : null;
+            const prevBottom = prevPos ? prevPos.top + prevPos.height : null;
+            const gapTop = gapTopCentered(
+              prevBottom,
+              pos.top,
+              pos.top - MINDMAP_CARD_GAP_PX / 2,
+            );
 
             return (
               <div key={e.node.id}>
@@ -365,7 +399,11 @@ export function MindmapGrid({
                     highlightColumn={mainTailHighlight(e.column, tailInsert, e.listParentId)}
                     style={{
                       left: pos.left,
-                      top: rowTop + rowHeight - gapBand / 2,
+                      top: gapTopCentered(
+                        pos.top + pos.height,
+                        nextPos?.top ?? pos.top + pos.height + MINDMAP_CARD_GAP_PX,
+                        pos.top + pos.height + MINDMAP_CARD_GAP_PX / 2,
+                      ),
                       width: pos.width,
                       height: gapBand,
                     }}

@@ -163,18 +163,22 @@ export function MindmapGrid({
 
   const publishCardHeights = useCallback(() => {
     const elements = cardElementsRef.current;
-    if (elements.size === 0) return;
     setCardHeights((prev) => {
+      if (elements.size === 0) return prev.size === 0 ? prev : new Map();
       let changed = false;
-      const next = new Map(prev);
+      const next = new Map<string, number>();
       for (const [id, el] of elements) {
         const h = measureCardElement(el);
-        const prevH = next.get(id) ?? 0;
-        if (h > 0 && (prevH === 0 || Math.abs(prevH - h) >= 1)) {
+        const prevH = prev.get(id) ?? 0;
+        if (h <= 0) continue;
+        if (prevH === 0 || Math.abs(prevH - h) >= 4) {
           next.set(id, h);
-          changed = true;
+          if (prevH !== h) changed = true;
+        } else {
+          next.set(id, prevH);
         }
       }
+      if (next.size !== prev.size) changed = true;
       return changed ? next : prev;
     });
   }, [measureCardElement]);
@@ -184,27 +188,25 @@ export function MindmapGrid({
       if (cardElementsRef.current.get(nodeId) === el) return;
       cardElementsRef.current.set(nodeId, el);
       resizeObserverRef.current?.observe(el);
-      const h = measureCardElement(el);
-      if (h > 0) {
-        setCardHeights((prev) => {
-          if (prev.get(nodeId) === h) return prev;
-          const next = new Map(prev);
-          next.set(nodeId, h);
-          return next;
-        });
-      }
-    } else {
-      const prev = cardElementsRef.current.get(nodeId);
-      if (prev) resizeObserverRef.current?.unobserve(prev);
-      cardElementsRef.current.delete(nodeId);
-      setCardHeights((m) => {
-        if (!m.has(nodeId)) return m;
-        const next = new Map(m);
-        next.delete(nodeId);
-        return next;
-      });
+      return;
     }
-  }, [measureCardElement]);
+    const prev = cardElementsRef.current.get(nodeId);
+    if (!prev) return;
+    resizeObserverRef.current?.unobserve(prev);
+    cardElementsRef.current.delete(nodeId);
+  }, []);
+
+  const cardRefCallbacksRef = useRef(new Map<string, (el: HTMLDivElement | null) => void>());
+  const cardRef = useCallback(
+    (nodeId: string) => {
+      const cached = cardRefCallbacksRef.current.get(nodeId);
+      if (cached) return cached;
+      const fn = (el: HTMLDivElement | null) => observeCard(nodeId, el);
+      cardRefCallbacksRef.current.set(nodeId, fn);
+      return fn;
+    },
+    [observeCard],
+  );
 
   const { positions, rowHeights, boardHeight } = useMemo(
     () => computeCardPositions(visibleEntries, cardHeights, roots, compact),
@@ -259,14 +261,17 @@ export function MindmapGrid({
     );
   };
 
-  const mainTailHighlight = (columnIndex: number, insertIndex: number, gapLp: string | null) =>
-    columnIndex === 0 &&
-    gapLp === null &&
-    Boolean(
-      dropPreview?.intent === "column-end" &&
-        dropPreview.insertIndex === insertIndex &&
-        (dropPreview.gapListParentId === undefined || dropPreview.gapListParentId === null),
-    );
+  const isMainTailHighlight = useCallback(
+    (columnIndex: number, insertIndex: number, gapLp: string | null) =>
+      columnIndex === 0 &&
+      gapLp === null &&
+      Boolean(
+        dropPreview?.intent === "column-end" &&
+          dropPreview.insertIndex === insertIndex &&
+          (dropPreview.gapListParentId === undefined || dropPreview.gapListParentId === null),
+      ),
+    [dropPreview],
+  );
 
   const visibleRootEntries = useMemo(
     () => visibleEntries.filter((e) => e.column === 0),
@@ -302,7 +307,7 @@ export function MindmapGrid({
           left: columnLeftPx(0),
           width: MINDMAP_COL_WIDTH_PX,
           zone,
-          highlightColumn: mainTailHighlight(0, 0, null),
+          highlightColumn: isMainTailHighlight(0, 0, null),
         });
       }
     }
@@ -359,7 +364,7 @@ export function MindmapGrid({
         left: pos.left,
         width: pos.width,
         zone,
-        highlightColumn: mainTailHighlight(entry.column, tailInsert, entry.listParentId),
+        highlightColumn: isMainTailHighlight(entry.column, tailInsert, entry.listParentId),
       });
     }
 
@@ -374,6 +379,7 @@ export function MindmapGrid({
     compact,
     nextInColumnByNodeId,
     dropPreview,
+    isMainTailHighlight,
   ]);
 
   const cardRows = useMemo(() => {
@@ -421,7 +427,7 @@ export function MindmapGrid({
           {cardRows.map(({ entry: e, pos, previewHere }) => (
             <div
               key={e.node.id}
-              ref={(el) => observeCard(e.node.id, el)}
+              ref={cardRef(e.node.id)}
               className="absolute z-10 px-0.5"
               style={{
                 left: pos.left,

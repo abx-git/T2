@@ -236,10 +236,10 @@ export function cardContentHeight(
   cellHeights: ReadonlyMap<string, number>,
 ): number {
   const measured = cellHeights.get(e.node.id);
-  const estimateFloor = estimateMinCardHeight(e);
   if (measured != null && measured > 0) {
-    return Math.max(measured, estimateFloor);
+    return measured;
   }
+  const estimateFloor = estimateMinCardHeight(e);
   return Math.max(estimateFloor, e.rowSpan * MINDMAP_ROW_HEIGHT, MINDMAP_ROW_HEIGHT);
 }
 

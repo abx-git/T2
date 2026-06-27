@@ -169,7 +169,7 @@ export function MindmapGrid({
         const h = measureCardElement(el);
         const prevH = prev.get(id) ?? 0;
         if (h <= 0) continue;
-        if (prevH === 0 || Math.abs(prevH - h) >= 4) {
+        if (prevH === 0 || h <= prevH || Math.abs(prevH - h) >= 4) {
           next.set(id, h);
           if (prevH !== h) changed = true;
         } else {

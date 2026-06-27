@@ -151,6 +151,14 @@ describe("computeCardPositions", () => {
     );
   });
 
+  it("nutzt gemessene Höhe statt pauschaler Schätzung wenn kleiner", () => {
+    const roots = [{ ...node("A"), description: "Lange Beschreibung die extra Zeilenhöhe schätzen würde." }];
+    const layout = computeMindmapBoardLayout(roots);
+    const heights = new Map<string, number>([["A", 50]]);
+    const { positions } = computeCardPositions(layout.entries, heights, roots);
+    expect(positions.get("A")!.height).toBe(50 + 2);
+  });
+
   it("hält pauschalen Mindestabstand zwischen direkten Nachfolgern in einer Spalte", () => {
     const roots = [node("P", [node("A"), node("B")])];
     const layout = computeMindmapBoardLayout(roots);

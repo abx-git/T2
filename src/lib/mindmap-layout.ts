@@ -245,15 +245,16 @@ export function cardContentHeight(
   return Math.max(estimateFloor, e.rowSpan * MINDMAP_ROW_HEIGHT, MINDMAP_ROW_HEIGHT);
 }
 
-/** Untere Kante der sichtbaren Karte (ohne Zeilen-Puffer). */
+/** Untere Kante der sichtbaren Karte (DOM-Höhe, ohne Zeilen-Puffer). */
 export function visualCardBottomPx(
-  nodeId: string,
+  entry: MindmapLayoutEntry,
   pos: MindmapCardPosition,
   cellHeights: ReadonlyMap<string, number>,
+  compact: boolean,
 ): number {
-  const measured = cellHeights.get(nodeId);
+  const measured = cellHeights.get(entry.node.id);
   if (measured != null && measured > 0) return pos.top + measured;
-  return pos.top + Math.max(pos.height - MINDMAP_CELL_HEIGHT_BUFFER_PX, 1);
+  return pos.top + estimateMinCardHeight(entry, compact);
 }
 
 /** Höhe der Karte inkl. Puffer (Positionierung innerhalb der Zeile). */

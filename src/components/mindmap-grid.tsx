@@ -78,16 +78,28 @@ function GridInsertGap({
 
 const GAP_HIT_HEIGHT_PX = 12;
 
-/** Schmale Trefferzone mittig im sichtbaren Zwischenraum — ohne Kartenüberlappung. */
-function gapZoneBetween(zoneTop: number, zoneBottom: number): { top: number; height: number } {
+/** Trefferzone strikt zwischen zoneTop (Karte oben) und zoneBottom (Karte unten). */
+function gapZoneBetween(
+  zoneTop: number,
+  zoneBottom: number,
+): { top: number; height: number } | null {
   const span = zoneBottom - zoneTop;
-  if (span <= 0) {
-    return { top: zoneBottom - GAP_HIT_HEIGHT_PX / 2, height: GAP_HIT_HEIGHT_PX };
-  }
+  if (span < 2) return null;
   const height = Math.min(span, GAP_HIT_HEIGHT_PX);
-  const top = Math.max(zoneTop, zoneTop + span / 2 - height / 2);
+  const top = zoneTop + (span - height) / 2;
   return { top, height };
 }
+
+type GapSlot = {
+  key: string;
+  columnIndex: number;
+  insertIndex: number;
+  listParentId: string | null;
+  left: number;
+  width: number;
+  zone: { top: number; height: number };
+  highlightColumn: boolean;
+};
 
 export interface MindmapGridProps {
   layout: MindmapBoardLayout;
@@ -158,7 +170,7 @@ export function MindmapGrid({
       for (const [id, el] of elements) {
         const h = measureCardElement(el);
         const prevH = next.get(id) ?? 0;
-        if (h > 0 && Math.abs(prevH - h) >= 4) {
+        if (h > 0 && (prevH === 0 || Math.abs(prevH - h) >= 1)) {
           next.set(id, h);
           changed = true;
         }
@@ -172,6 +184,15 @@ export function MindmapGrid({
       if (cardElementsRef.current.get(nodeId) === el) return;
       cardElementsRef.current.set(nodeId, el);
       resizeObserverRef.current?.observe(el);
+      const h = measureCardElement(el);
+      if (h > 0) {
+        setCardHeights((prev) => {
+          if (prev.get(nodeId) === h) return prev;
+          const next = new Map(prev);
+          next.set(nodeId, h);
+          return next;
+        });
+      }
     } else {
       const prev = cardElementsRef.current.get(nodeId);
       if (prev) resizeObserverRef.current?.unobserve(prev);
@@ -183,7 +204,7 @@ export function MindmapGrid({
         return next;
       });
     }
-  }, []);
+  }, [measureCardElement]);
 
   const { positions, rowHeights, boardHeight } = useMemo(
     () => computeCardPositions(visibleEntries, cardHeights, roots, compact),
@@ -253,73 +274,117 @@ export function MindmapGrid({
   );
   const showEmptyRootSlot = visibleRootEntries.length === 0;
 
-  const { prevInColumnByNodeId, nextInColumnByNodeId } = useMemo(() => {
-    const prevInColumnByNodeId = new Map<string, (typeof visibleEntries)[number] | null>();
+  const nextInColumnByNodeId = useMemo(() => {
     const nextInColumnByNodeId = new Map<string, (typeof visibleEntries)[number] | null>();
     for (let col = 0; col < columnCount; col++) {
       const ordered = entriesInColumnTreeOrder(col, visibleEntries, roots);
       for (let i = 0; i < ordered.length; i++) {
-        const entry = ordered[i]!;
-        prevInColumnByNodeId.set(entry.node.id, i > 0 ? ordered[i - 1]! : null);
         nextInColumnByNodeId.set(
-          entry.node.id,
+          ordered[i]!.node.id,
           i < ordered.length - 1 ? ordered[i + 1]! : null,
         );
       }
     }
-    return { prevInColumnByNodeId, nextInColumnByNodeId };
+    return nextInColumnByNodeId;
   }, [visibleEntries, roots, columnCount]);
+
+  const gapSlots = useMemo((): GapSlot[] => {
+    const slots: GapSlot[] = [];
+
+    if (showEmptyRootSlot) {
+      const zone = gapZoneBetween(MINDMAP_BOARD_PAD_Y, MINDMAP_BOARD_PAD_Y + GAP_HIT_HEIGHT_PX);
+      if (zone) {
+        slots.push({
+          key: "empty-root",
+          columnIndex: 0,
+          insertIndex: 0,
+          listParentId: null,
+          left: columnLeftPx(0),
+          width: MINDMAP_COL_WIDTH_PX,
+          zone,
+          highlightColumn: mainTailHighlight(0, 0, null),
+        });
+      }
+    }
+
+    for (let col = 0; col < columnCount; col++) {
+      const ordered = entriesInColumnTreeOrder(col, visibleEntries, roots);
+      for (let i = 0; i < ordered.length; i++) {
+        const entry = ordered[i]!;
+        const pos = positions.get(entry.node.id);
+        if (!pos) continue;
+
+        const prev = i > 0 ? ordered[i - 1]! : null;
+        const prevPos = prev ? positions.get(prev.node.id) : null;
+        const zoneTop =
+          prev && prevPos
+            ? visualCardBottomPx(prev, prevPos, cardHeights, compact)
+            : MINDMAP_BOARD_PAD_Y;
+        const zone = gapZoneBetween(zoneTop, pos.top);
+        if (zone) {
+          slots.push({
+            key: `between-${prev?.node.id ?? "start"}-${entry.node.id}`,
+            columnIndex: col,
+            insertIndex: siblingInsertIndexBeforeCard(roots, entry.listParentId, entry.node.id),
+            listParentId: entry.listParentId,
+            left: pos.left,
+            width: pos.width,
+            zone,
+            highlightColumn: false,
+          });
+        }
+      }
+    }
+
+    for (const entry of visibleEntries) {
+      const siblings = getSiblingsList(roots, entry.listParentId);
+      if (siblings[siblings.length - 1]?.id !== entry.node.id) continue;
+
+      const pos = positions.get(entry.node.id);
+      if (!pos) continue;
+
+      const tailInsert = siblings.length;
+      const nextEntry = nextInColumnByNodeId.get(entry.node.id) ?? null;
+      const nextPos = nextEntry ? positions.get(nextEntry.node.id) : null;
+      const zoneTop = visualCardBottomPx(entry, pos, cardHeights, compact);
+      const zoneBottom = nextPos?.top ?? zoneTop + GAP_HIT_HEIGHT_PX + 2;
+      const zone = gapZoneBetween(zoneTop, zoneBottom);
+      if (!zone) continue;
+
+      slots.push({
+        key: `tail-${entry.node.id}`,
+        columnIndex: entry.column,
+        insertIndex: tailInsert,
+        listParentId: entry.listParentId,
+        left: pos.left,
+        width: pos.width,
+        zone,
+        highlightColumn: mainTailHighlight(entry.column, tailInsert, entry.listParentId),
+      });
+    }
+
+    return slots;
+  }, [
+    showEmptyRootSlot,
+    columnCount,
+    visibleEntries,
+    roots,
+    positions,
+    cardHeights,
+    compact,
+    nextInColumnByNodeId,
+    dropPreview,
+  ]);
 
   const cardRows = useMemo(() => {
     return visibleEntries.flatMap((e) => {
       const pos = positions.get(e.node.id);
       if (!pos) return [];
-
       const previewHere =
         dropPreview && dropPreview.toCol === e.column ? dropPreview : null;
-      const insertBefore = siblingInsertIndexBeforeCard(roots, e.listParentId, e.node.id);
-      const siblings = getSiblingsList(roots, e.listParentId);
-      const isLastSibling = siblings[siblings.length - 1]?.id === e.node.id;
-      const tailInsert = siblings.length;
-      const prevEntry = prevInColumnByNodeId.get(e.node.id) ?? null;
-      const nextEntry = nextInColumnByNodeId.get(e.node.id) ?? null;
-      const prevPos = prevEntry ? positions.get(prevEntry.node.id) : null;
-      const nextPos = nextEntry ? positions.get(nextEntry.node.id) : null;
-      const insertGapZone = gapZoneBetween(
-        prevEntry && prevPos
-          ? visualCardBottomPx(prevEntry.node.id, prevPos, cardHeights)
-          : MINDMAP_BOARD_PAD_Y,
-        pos.top,
-      );
-      const tailGapZone = gapZoneBetween(
-        visualCardBottomPx(e.node.id, pos, cardHeights),
-        nextPos
-          ? nextPos.top
-          : visualCardBottomPx(e.node.id, pos, cardHeights) + GAP_HIT_HEIGHT_PX,
-      );
-
-      return [
-        {
-          entry: e,
-          pos,
-          previewHere,
-          insertBefore,
-          isLastSibling,
-          tailInsert,
-          insertGapZone,
-          tailGapZone,
-        },
-      ];
+      return [{ entry: e, pos, previewHere }];
     });
-  }, [
-    visibleEntries,
-    positions,
-    dropPreview,
-    roots,
-    prevInColumnByNodeId,
-    nextInColumnByNodeId,
-    cardHeights,
-  ]);
+  }, [visibleEntries, positions, dropPreview]);
 
   return (
     <div className="inline-block min-w-min">
@@ -390,53 +455,21 @@ export function MindmapGrid({
               />
             </div>
           ))}
-          {cardRows.map(
-            ({ entry: e, pos, insertBefore, isLastSibling, tailInsert, insertGapZone, tailGapZone }) => (
-              <div key={`gaps-${e.node.id}`} aria-hidden>
-                <GridInsertGap
-                  columnIndex={e.column}
-                  insertIndex={insertBefore}
-                  listParentId={e.listParentId}
-                  showLine={gapLineAt(e.column, insertBefore, e.listParentId)}
-                  highlightColumn={false}
-                  style={{
-                    left: pos.left,
-                    ...insertGapZone,
-                    width: pos.width,
-                  }}
-                />
-                {isLastSibling ? (
-                  <GridInsertGap
-                    columnIndex={e.column}
-                    insertIndex={tailInsert}
-                    listParentId={e.listParentId}
-                    showLine={gapLineAt(e.column, tailInsert, e.listParentId)}
-                    highlightColumn={mainTailHighlight(e.column, tailInsert, e.listParentId)}
-                    style={{
-                      left: pos.left,
-                      ...tailGapZone,
-                      width: pos.width,
-                    }}
-                  />
-                ) : null}
-              </div>
-            ),
-          )}
-          {showEmptyRootSlot ? (
+          {gapSlots.map(({ key, columnIndex, insertIndex, listParentId, left, width, zone, highlightColumn }) => (
             <GridInsertGap
-              columnIndex={0}
-              insertIndex={0}
-              listParentId={null}
-              showLine={gapLineAt(0, 0, null)}
-              highlightColumn={mainTailHighlight(0, 0, null)}
+              key={key}
+              columnIndex={columnIndex}
+              insertIndex={insertIndex}
+              listParentId={listParentId}
+              showLine={gapLineAt(columnIndex, insertIndex, listParentId)}
+              highlightColumn={highlightColumn}
               style={{
-                left: columnLeftPx(0),
-                top: MINDMAP_BOARD_PAD_Y,
-                height: GAP_HIT_HEIGHT_PX,
-                width: MINDMAP_COL_WIDTH_PX,
+                left,
+                ...zone,
+                width,
               }}
             />
-          ) : null}
+          ))}
         </div>
       </div>
     </div>

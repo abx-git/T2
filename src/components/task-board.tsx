@@ -111,18 +111,18 @@ import { DataStoragePanel } from "./data-storage-panel";
 import { PostImportSaveDialog } from "./post-import-save-dialog";
 import { TaskEditorDialog } from "./task-editor-dialog";
 
-/** Karte vor Einfügelücke; auf Touch-Geräten zusätzlich Flächen-Treffer (pointerWithin allein reicht oft nicht). */
+/** Einfügelücke vor Karte; schmale Gap-Bänder liegen bewusst zwischen den Karten. */
 const mindmapCollisionDetection: CollisionDetection = (args) => {
   const activeId = String(args.active.id);
   const pickTarget = (hits: ReturnType<typeof pointerWithin>) => {
     if (hits.length === 0) return null;
+    const gapHit = hits.find((c) => String(c.id).startsWith(COLUMN_GAP_PREFIX));
+    if (gapHit) return [gapHit];
     const cardHit = hits.find((c) => {
       const id = String(c.id);
       return id !== activeId && !id.startsWith(COLUMN_GAP_PREFIX);
     });
-    if (cardHit) return [cardHit];
-    const gapHit = hits.find((c) => String(c.id).startsWith(COLUMN_GAP_PREFIX));
-    return gapHit ? [gapHit] : null;
+    return cardHit ? [cardHit] : null;
   };
 
   const pointerHits = pointerWithin(args);

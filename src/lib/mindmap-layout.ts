@@ -10,13 +10,10 @@ export const MINDMAP_BOARD_PAD_X = 4;
 /** Innenabstand des Karten-Canvas (vertikal, Anker für Verbindungslinien). */
 export const MINDMAP_BOARD_PAD_Y = 8;
 /**
- * Mindestabstand zwischen zwei Karten in derselben Spalte (untere Kante → nächste Zeile),
- * sofern der Abstand nicht durch aufgeklappte Unterkarten in tieferen Spalten größer sein muss.
+ * Fester vertikaler Abstand zwischen Karten (untere Kante → nächste Oberkante).
+ * Unabhängig von der Kartenhöhe; die Zeile reserviert nur max(Kartenhöhe) + Abstand.
  */
-/** Fester Mindestabstand unter Karten in derselben Spalte. */
-export const MINDMAP_CARD_GAP_PX = 1;
-/** Puffer gegen Rundungsfehler, Ring und Schatten innerhalb der Zeile. */
-export const MINDMAP_CELL_HEIGHT_BUFFER_PX = 2;
+export const MINDMAP_CARD_GAP_PX = 8;
 
 export type MindmapCardPosition = {
   top: number;
@@ -230,77 +227,39 @@ function estimateMinCardHeight(e: MindmapLayoutEntry): number {
   return h;
 }
 
-/** Sichtbare Kartenhöhe (ohne Zeilen-Abstand darunter). */
+/** Sichtbare Kartenhöhe aus DOM-Messung (Fallback vor erster Messung). */
 export function cardContentHeight(
   e: MindmapLayoutEntry,
   cellHeights: ReadonlyMap<string, number>,
 ): number {
   const measured = cellHeights.get(e.node.id);
-  if (measured != null && measured > 0) {
-    return measured;
-  }
-  const estimateFloor = estimateMinCardHeight(e);
-  return Math.max(estimateFloor, e.rowSpan * MINDMAP_ROW_HEIGHT, MINDMAP_ROW_HEIGHT);
+  if (measured != null && measured > 0) return measured;
+  return Math.max(estimateMinCardHeight(e), MINDMAP_ROW_HEIGHT);
 }
 
-/** Untere Kante der sichtbaren Karte (DOM-Höhe, ohne Zeilen-Puffer). */
+/** Untere Kante der sichtbaren Karte. */
 export function visualCardBottomPx(
   entry: MindmapLayoutEntry,
   pos: MindmapCardPosition,
   cellHeights: ReadonlyMap<string, number>,
 ): number {
-  const measured = cellHeights.get(entry.node.id);
-  if (measured != null && measured > 0) return pos.top + measured;
-  return pos.top + estimateMinCardHeight(entry);
+  return pos.top + cardContentHeight(entry, cellHeights);
 }
 
-/** Höhe der Karte inkl. Puffer (Positionierung innerhalb der Zeile). */
-function positionedCardHeight(
-  e: MindmapLayoutEntry,
-  cellHeights: ReadonlyMap<string, number>,
-): number {
-  return cardContentHeight(e, cellHeights) + MINDMAP_CELL_HEIGHT_BUFFER_PX;
-}
-
-/** Mindesthöhe einer Rasterzeile: Karte + Puffer + fester Abstand nach unten. */
-export function requiredRowHeightForEntry(
-  e: MindmapLayoutEntry,
-  cellHeights: ReadonlyMap<string, number>,
-): number {
-  return positionedCardHeight(e, cellHeights) + MINDMAP_CARD_GAP_PX;
-}
-
-function enforceAdjacentColumnCardGap(
+/** Zeilenhöhe = höchste Karte in der Zeile + fester Abstand. */
+export function computeRowHeightsPx(
   entries: readonly MindmapLayoutEntry[],
-  rows: number[],
   cellHeights: ReadonlyMap<string, number>,
-  roots: TaskNode[],
-): void {
-  const columns = [...new Set(entries.map((e) => e.column))].sort((a, b) => a - b);
-  for (const col of columns) {
-    const colEntries = entriesInColumnTreeOrder(col, entries, roots);
-    for (let i = 1; i < colEntries.length; i++) {
-      const prev = colEntries[i - 1]!;
-      const next = colEntries[i]!;
-      if (next.ySlot <= prev.ySlot) continue;
-
-      const prevRow = prev.ySlot;
-      const minPrevRow = requiredRowHeightForEntry(prev, cellHeights);
-      if (prevRow >= 0 && prevRow < rows.length) {
-        rows[prevRow] = Math.max(rows[prevRow]!, minPrevRow);
-      }
-
-      if (next.ySlot !== prev.ySlot + 1) continue;
-
-      const prevBottom =
-        rowTopPx(prev.ySlot, rows) + positionedCardHeight(prev, cellHeights);
-      const nextTop = rowTopPx(next.ySlot, rows);
-      const deficit = prevBottom + MINDMAP_CARD_GAP_PX - nextTop;
-      if (deficit > 0 && prevRow >= 0 && prevRow < rows.length) {
-        rows[prevRow]! += deficit;
-      }
-    }
+  totalRows: number,
+): number[] {
+  const rows = Array.from({ length: Math.max(totalRows, 1) }, () => MINDMAP_ROW_HEIGHT);
+  for (const e of entries) {
+    const r = e.ySlot;
+    if (r < 0 || r >= rows.length) continue;
+    const need = cardContentHeight(e, cellHeights) + MINDMAP_CARD_GAP_PX;
+    rows[r] = Math.max(rows[r]!, need);
   }
+  return rows;
 }
 
 /** Sichtbare Karten einer Spalte in Baumreihenfolge (Geschwister-Reihenfolge). */
@@ -332,7 +291,6 @@ export function entriesInColumnTreeOrder(
 export function computeCardPositions(
   entries: readonly MindmapLayoutEntry[],
   cellHeights: ReadonlyMap<string, number>,
-  roots: TaskNode[],
 ): {
   positions: Map<string, MindmapCardPosition>;
   rowHeights: number[];
@@ -340,11 +298,11 @@ export function computeCardPositions(
 } {
   const totalRows =
     entries.length === 0 ? 1 : Math.max(...entries.map((e) => e.slotEnd));
-  const rowHeights = computeRowHeightsPx(entries, cellHeights, totalRows, roots);
+  const rowHeights = computeRowHeightsPx(entries, cellHeights, totalRows);
 
   const positions = new Map<string, MindmapCardPosition>();
   for (const e of entries) {
-    const height = positionedCardHeight(e, cellHeights);
+    const height = cardContentHeight(e, cellHeights);
     positions.set(e.node.id, {
       top: MINDMAP_BOARD_PAD_Y + rowTopPx(e.ySlot, rowHeights),
       left: columnLeftPx(e.column),
@@ -371,64 +329,5 @@ export function rowTopPx(rowIndex: number, rowHeights: readonly number[]): numbe
 export function totalRowSpanHeightPx(rowHeights: readonly number[]): number {
   if (!rowHeights.length) return MINDMAP_ROW_HEIGHT;
   return rowHeights.reduce((sum, h) => sum + h, 0);
-}
-
-/**
- * Zeilenhöhen so, dass jede Karte in ihr `rowSpan` passt (kein Überlappen bei variabler Kartenhöhe).
- * `cellHeights`: gemessene Höhe der Grid-Zelle pro Knoten-ID (inkl. Einfüge-Schlitz).
- */
-function spanSum(rows: number[], slotStart: number, slotEnd: number): number {
-  let sum = 0;
-  for (let r = slotStart; r < slotEnd; r++) sum += rows[r] ?? MINDMAP_ROW_HEIGHT;
-  return sum;
-}
-
-function growSpanRows(rows: number[], slotStart: number, slotEnd: number, need: number): boolean {
-  const sum = spanSum(rows, slotStart, slotEnd);
-  if (need <= sum) return false;
-  const deficit = need - sum;
-  const span = Math.max(1, slotEnd - slotStart);
-  let remaining = deficit;
-  for (let r = slotStart; r < slotEnd; r++) {
-    const add = r === slotEnd - 1 ? remaining : Math.ceil(deficit / span);
-    rows[r]! += add;
-    remaining -= add;
-  }
-  return true;
-}
-
-export function computeRowHeightsPx(
-  entries: readonly MindmapLayoutEntry[],
-  cellHeights: ReadonlyMap<string, number>,
-  totalRows: number,
-  roots: TaskNode[],
-): number[] {
-  const rows = Array.from({ length: Math.max(totalRows, 1) }, () => MINDMAP_ROW_HEIGHT);
-  const sorted = [...entries].sort(
-    (a, b) =>
-      requiredRowHeightForEntry(b, cellHeights) -
-      requiredRowHeightForEntry(a, cellHeights),
-  );
-
-  for (let pass = 0; pass < 16; pass++) {
-    let changed = false;
-    for (const e of sorted) {
-      const need = requiredRowHeightForEntry(e, cellHeights);
-      if (e.rowSpan === 1) {
-        const r = e.slotStart;
-        if (r >= 0 && r < rows.length && need > rows[r]!) {
-          rows[r] = need;
-          changed = true;
-        }
-      } else if (growSpanRows(rows, e.slotStart, e.slotEnd, need)) {
-        changed = true;
-      }
-    }
-    if (!changed) break;
-  }
-
-  enforceAdjacentColumnCardGap(entries, rows, cellHeights, roots);
-
-  return rows;
 }
 

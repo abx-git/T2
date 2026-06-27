@@ -207,8 +207,8 @@ export function MindmapGrid({
   );
 
   const { positions, rowHeights, boardHeight } = useMemo(
-    () => computeCardPositions(visibleEntries, cardHeights, roots),
-    [visibleEntries, cardHeights, roots],
+    () => computeCardPositions(visibleEntries, cardHeights),
+    [visibleEntries, cardHeights],
   );
 
   const boardWidth = mindmapBoardWidthPx(columnCount);

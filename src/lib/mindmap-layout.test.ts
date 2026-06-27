@@ -101,7 +101,7 @@ describe("computeCardPositions", () => {
       ["A", 120],
       ["B", 80],
     ]);
-    const { positions, rowHeights } = computeCardPositions(layout.entries, heights, roots);
+    const { positions, rowHeights } = computeCardPositions(layout.entries, heights);
     const a = positions.get("A")!;
     const b = positions.get("B")!;
     const aRow = layout.byNodeId.get("A")!.ySlot;
@@ -115,7 +115,7 @@ describe("computeCardPositions", () => {
       ["P", 70],
       ["C", 90],
     ]);
-    const { positions } = computeCardPositions(layout.entries, heights, roots);
+    const { positions } = computeCardPositions(layout.entries, heights);
     expect(positions.get("C")!.top).toBe(positions.get("P")!.top);
   });
 
@@ -129,7 +129,7 @@ describe("computeCardPositions", () => {
       ["112", 48],
       ["12", 48],
     ]);
-    const { positions } = computeCardPositions(layout.entries, heights, roots);
+    const { positions } = computeCardPositions(layout.entries, heights);
     expect(positions.get("111")!.top).toBe(positions.get("11")!.top);
     expect(positions.get("12")!.top).toBeGreaterThan(positions.get("112")!.top);
   });
@@ -143,23 +143,23 @@ describe("computeCardPositions", () => {
       ["11", 48],
       ["12", 48],
     ]);
-    const expandedPos = computeCardPositions(expanded.entries, heights, roots);
-    const collapsedPos = computeCardPositions(collapsed.entries, heights, roots);
+    const expandedPos = computeCardPositions(expanded.entries, heights);
+    const collapsedPos = computeCardPositions(collapsed.entries, heights);
     expect(collapsedPos.rowHeights.length).toBeLessThan(expandedPos.rowHeights.length);
     expect(collapsedPos.positions.get("12")!.top).toBeLessThan(
       expandedPos.positions.get("12")!.top,
     );
   });
 
-  it("nutzt gemessene Höhe statt pauschaler Schätzung wenn kleiner", () => {
-    const roots = [{ ...node("A"), description: "Lange Beschreibung die extra Zeilenhöhe schätzen würde." }];
+  it("nutzt gemessene Kartenhöhe aus dem DOM", () => {
+    const roots = [{ ...node("A"), description: "Lange Beschreibung." }];
     const layout = computeMindmapBoardLayout(roots);
     const heights = new Map<string, number>([["A", 50]]);
-    const { positions } = computeCardPositions(layout.entries, heights, roots);
-    expect(positions.get("A")!.height).toBe(50 + 2);
+    const { positions } = computeCardPositions(layout.entries, heights);
+    expect(positions.get("A")!.height).toBe(50);
   });
 
-  it("hält pauschalen Mindestabstand zwischen direkten Nachfolgern in einer Spalte", () => {
+  it("hält konstanten Abstand zwischen direkten Nachfolgern in einer Spalte", () => {
     const roots = [node("P", [node("A"), node("B")])];
     const layout = computeMindmapBoardLayout(roots);
     const heights = new Map<string, number>([
@@ -167,12 +167,12 @@ describe("computeCardPositions", () => {
       ["A", 100],
       ["B", 80],
     ]);
-    const { positions, rowHeights } = computeCardPositions(layout.entries, heights, roots);
+    const { positions, rowHeights } = computeCardPositions(layout.entries, heights);
     const a = positions.get("A")!;
     const b = positions.get("B")!;
     const aRow = layout.byNodeId.get("A")!.ySlot;
     const gap = b.top - (a.top + a.height);
-    expect(gap).toBeGreaterThanOrEqual(MINDMAP_CARD_GAP_PX - 0.5);
-    expect(rowHeights[aRow]! - a.height).toBeGreaterThanOrEqual(MINDMAP_CARD_GAP_PX - 0.5);
+    expect(gap).toBeCloseTo(MINDMAP_CARD_GAP_PX, 0);
+    expect(rowHeights[aRow]! - a.height).toBeCloseTo(MINDMAP_CARD_GAP_PX, 0);
   });
 });

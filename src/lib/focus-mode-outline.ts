@@ -12,6 +12,25 @@ export interface FocusOutlineRow {
   isLastSibling: boolean;
 }
 
+/** Vertikale Hilfslinien-Spalten für die Baum-Darstellung in der Fokus-Outline. */
+export function computeFocusRowTreeGuides(
+  row: FocusOutlineRow,
+  rowsById: ReadonlyMap<string, FocusOutlineRow>,
+): boolean[] {
+  if (row.depth <= 1) return [];
+
+  const ancestors: FocusOutlineRow[] = [];
+  let current: FocusOutlineRow | undefined = row;
+  while (current && current.depth > 1) {
+    const parent = rowsById.get(current.listParentId);
+    if (!parent) break;
+    ancestors.unshift(parent);
+    current = parent;
+  }
+
+  return ancestors.slice(0, -1).map((ancestor) => !ancestor.isLastSibling);
+}
+
 /** Spaltenindex für Geschwisterliste unter `listParentId` (Mindmap-DnD). */
 export function columnIndexForSiblingList(roots: TaskNode[], listParentId: string | null): number {
   if (listParentId === null) return 0;

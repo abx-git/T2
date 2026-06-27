@@ -39,6 +39,7 @@ import {
 import {
   buildFocusOutlineRows,
   columnIndexForSiblingList,
+  computeFocusRowTreeGuides,
   countFocusSubtree,
   getFocusOutlineMaxDepth,
   type FocusOutlineRow,
@@ -65,6 +66,45 @@ import { DepthLevelsControl } from "./depth-levels-control";
 
 const focusActionBtnClass =
   "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition";
+
+/** Breite einer Baum-Einrückungsstufe in der Fokus-Outline. */
+const FOCUS_TREE_GUIDE_COL_REM = 1.375;
+
+function FocusTreeGuides({
+  ancestorContinues,
+  isLastSibling,
+}: {
+  ancestorContinues: boolean[];
+  isLastSibling: boolean;
+}) {
+  return (
+    <div className="flex shrink-0 self-stretch" aria-hidden>
+      {ancestorContinues.map((continues, i) => (
+        <div
+          key={`v-${i}`}
+          className="relative shrink-0"
+          style={{ width: `${FOCUS_TREE_GUIDE_COL_REM}rem` }}
+        >
+          {continues ? (
+            <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-slate-200/90" />
+          ) : null}
+        </div>
+      ))}
+      <div
+        className="relative shrink-0"
+        style={{ width: `${FOCUS_TREE_GUIDE_COL_REM}rem` }}
+      >
+        <span
+          className={[
+            "absolute left-1/2 w-px -translate-x-1/2 bg-slate-200/90",
+            isLastSibling ? "top-0 h-1/2" : "inset-y-0",
+          ].join(" ")}
+        />
+        <span className="absolute left-1/2 top-1/2 h-px w-[calc(50%+0.5px)] bg-slate-200/90" />
+      </div>
+    </div>
+  );
+}
 
 function FocusTagChips({
   tags,
@@ -159,6 +199,7 @@ function FocusDropGap({
 
 interface FocusRowProps {
   row: FocusOutlineRow;
+  treeGuides: boolean[];
   completedTag: string;
   fieldVisibility: CardFieldVisibility;
   isEditing: boolean;
@@ -179,6 +220,7 @@ interface FocusRowProps {
 
 function FocusRow({
   row,
+  treeGuides,
   completedTag,
   fieldVisibility,
   isEditing,
@@ -196,7 +238,7 @@ function FocusRow({
   onAddChild,
   onRequestDelete,
 }: FocusRowProps) {
-  const { node, depth } = row;
+  const { node } = row;
   const done = isTaskMarkedDone(node, completedTag);
   const hasChildren = node.children.length > 0;
   const inputRef = useRef<HTMLInputElement>(null);
@@ -241,10 +283,11 @@ function FocusRow({
     isDueOverdue(node.dueDate, isTaskMarkedDone(node, completedTag));
 
   return (
-    <div
-      className="relative"
-      style={{ paddingLeft: `${Math.max(0, depth - 1) * 1.25}rem` }}
-    >
+    <div className="relative flex min-w-0">
+      {row.depth > 1 ? (
+        <FocusTreeGuides ancestorContinues={treeGuides} isLastSibling={row.isLastSibling} />
+      ) : null}
+      <div className="relative min-w-0 flex-1">
       <FocusDropGap
         listParentId={row.listParentId}
         insertIndex={row.siblingIndex}
@@ -281,7 +324,9 @@ function FocusRow({
             <ChevronDown className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />
           )}
         </button>
-      ) : null}
+      ) : (
+        <span className="mt-0.5 h-7 w-7 shrink-0" aria-hidden />
+      )}
       <button
         type="button"
         className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-white hover:text-emerald-700"
@@ -410,6 +455,7 @@ function FocusRow({
           placement="after"
         />
       ) : null}
+      </div>
     </div>
   );
 }
@@ -473,6 +519,8 @@ export function FocusModeView({
       }),
     [roots, focusNodeId, hideCompletedTasks, completedTag, collapsedSet],
   );
+
+  const rowsById = useMemo(() => new Map(rows.map((row) => [row.node.id, row])), [rows]);
 
   const focusRootCollapsed = collapsedSet.has(focusNodeId);
   const focusRootHasChildren = Boolean(focusNode?.children.length);
@@ -914,7 +962,7 @@ export function FocusModeView({
             }}
           >
             <section
-              className="flex flex-col gap-3 rounded-xl border border-slate-200/80 bg-white/90 p-1.5 shadow-sm"
+              className="flex flex-col gap-1 rounded-xl border border-slate-200/80 bg-white/90 p-1.5 shadow-sm"
               aria-label="Unterpunkte"
             >
               {rows.length === 0 ? (
@@ -940,6 +988,7 @@ export function FocusModeView({
                   <FocusRow
                     key={row.node.id}
                     row={row}
+                    treeGuides={computeFocusRowTreeGuides(row, rowsById)}
                     completedTag={completedTag}
                     fieldVisibility={fieldVisibility}
                     isEditing={titleEditId === row.node.id}

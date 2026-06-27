@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildFocusOutlineRows,
   columnIndexForSiblingList,
+  computeFocusRowTreeGuides,
   countFocusSubtree,
   getFocusOutlineMaxDepth,
   pruneEmptyUxLeavesInFocusSubtree,
@@ -57,6 +58,30 @@ describe("buildFocusOutlineRows", () => {
       collapsedIds: new Set(["a"]),
     });
     expect(rows).toEqual([]);
+  });
+});
+
+describe("computeFocusRowTreeGuides", () => {
+  const roots = [
+    node("a", "A", [
+      node("b", "B", [node("c", "C"), node("d", "D")]),
+      node("e", "E"),
+    ]),
+  ];
+
+  it("liefert Vorfahren-Linien für tiefere Ebenen", () => {
+    const deepRoots = [
+      node("a", "A", [
+        node("b", "B", [node("c", "C", [node("f", "F")]), node("d", "D")]),
+        node("e", "E"),
+      ]),
+    ];
+    const rows = buildFocusOutlineRows(deepRoots, "a", false, "Erledigt");
+    const byId = new Map(rows.map((r) => [r.node.id, r]));
+    expect(computeFocusRowTreeGuides(byId.get("f")!, byId)).toEqual([true]);
+    expect(computeFocusRowTreeGuides(byId.get("c")!, byId)).toEqual([]);
+    expect(computeFocusRowTreeGuides(byId.get("e")!, byId)).toEqual([]);
+    expect(computeFocusRowTreeGuides(byId.get("b")!, byId)).toEqual([]);
   });
 });
 

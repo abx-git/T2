@@ -385,7 +385,7 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
     const pathIds = normalizePathIds(roots, incomingPath);
     const hadCollapsedInPayload = payload.collapsedIds !== undefined;
     const collapsedIds = hadCollapsedInPayload
-      ? payload.collapsedIds.filter((x): x is string => typeof x === "string")
+      ? (payload.collapsedIds ?? []).filter((x): x is string => typeof x === "string")
       : defaultBoardCollapsedIds(roots);
     set({
       roots,

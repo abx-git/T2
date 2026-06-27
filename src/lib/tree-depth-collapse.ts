@@ -102,10 +102,11 @@ export function collapsedIdsAfterFocusDepthAction(
     return currentCollapsedIds.filter((id) => !subtreeIds.has(id));
   }
 
+  const depthLimit = maxDepth;
   const toCollapse: string[] = [];
   function walk(node: TaskNode, depth: number) {
     if (node.children.length === 0) return;
-    if (depth >= maxDepth) {
+    if (depth >= depthLimit) {
       toCollapse.push(node.id);
       return;
     }

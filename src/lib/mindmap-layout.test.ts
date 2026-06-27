@@ -5,10 +5,9 @@ import type { TaskNode } from "@/types/task-node";
 import {
   computeCardPositions,
   computeMindmapBoardLayout,
+  entriesInColumnTreeOrder,
   measureSubtreeRows,
   MINDMAP_CARD_GAP_PX,
-  MINDMAP_ROW_HEIGHT,
-  rowTopPx,
 } from "./mindmap-layout";
 
 function node(id: string, children: TaskNode[] = []): TaskNode {
@@ -24,6 +23,7 @@ function node(id: string, children: TaskNode[] = []): TaskNode {
     children,
   };
 }
+
 
 /** Entspricht der Tabellen-Skizze (Karte 1 / 11 / 111 …). */
 function demoTree(): TaskNode[] {
@@ -93,7 +93,7 @@ describe("computeMindmapBoardLayout", () => {
 });
 
 describe("computeCardPositions", () => {
-  it("stapelt Geschwister in derselben Spalte ohne Überlappung", () => {
+  it("stapelt Geschwister in derselben Spalte mit konstantem Abstand", () => {
     const roots = [node("P", [node("A"), node("B")])];
     const layout = computeMindmapBoardLayout(roots);
     const heights = new Map<string, number>([
@@ -101,11 +101,10 @@ describe("computeCardPositions", () => {
       ["A", 120],
       ["B", 80],
     ]);
-    const { positions, rowHeights } = computeCardPositions(layout.entries, heights);
+    const { positions } = computeCardPositions(layout.entries, heights, roots);
     const a = positions.get("A")!;
     const b = positions.get("B")!;
-    const aRow = layout.byNodeId.get("A")!.ySlot;
-    expect(b.top).toBeGreaterThanOrEqual(a.top + rowHeights[aRow]!);
+    expect(b.top - (a.top + a.height)).toBeCloseTo(MINDMAP_CARD_GAP_PX, 0);
   });
 
   it("erstes Kind bündig mit Parent", () => {
@@ -115,7 +114,7 @@ describe("computeCardPositions", () => {
       ["P", 70],
       ["C", 90],
     ]);
-    const { positions } = computeCardPositions(layout.entries, heights);
+    const { positions } = computeCardPositions(layout.entries, heights, roots);
     expect(positions.get("C")!.top).toBe(positions.get("P")!.top);
   });
 
@@ -129,12 +128,12 @@ describe("computeCardPositions", () => {
       ["112", 48],
       ["12", 48],
     ]);
-    const { positions } = computeCardPositions(layout.entries, heights);
+    const { positions } = computeCardPositions(layout.entries, heights, roots);
     expect(positions.get("111")!.top).toBe(positions.get("11")!.top);
     expect(positions.get("12")!.top).toBeGreaterThan(positions.get("112")!.top);
   });
 
-  it("eingeklappt: weniger Zeilen, Geschwister rücken nach oben", () => {
+  it("eingeklappt: Geschwister rücken nach oben", () => {
     const roots = [node("1", [node("11", [node("111"), node("112")]), node("12")])];
     const expanded = computeMindmapBoardLayout(roots);
     const collapsed = computeMindmapBoardLayout(roots, new Set(["11"]));
@@ -143,9 +142,8 @@ describe("computeCardPositions", () => {
       ["11", 48],
       ["12", 48],
     ]);
-    const expandedPos = computeCardPositions(expanded.entries, heights);
-    const collapsedPos = computeCardPositions(collapsed.entries, heights);
-    expect(collapsedPos.rowHeights.length).toBeLessThan(expandedPos.rowHeights.length);
+    const expandedPos = computeCardPositions(expanded.entries, heights, roots);
+    const collapsedPos = computeCardPositions(collapsed.entries, heights, roots);
     expect(collapsedPos.positions.get("12")!.top).toBeLessThan(
       expandedPos.positions.get("12")!.top,
     );
@@ -155,11 +153,30 @@ describe("computeCardPositions", () => {
     const roots = [{ ...node("A"), description: "Lange Beschreibung." }];
     const layout = computeMindmapBoardLayout(roots);
     const heights = new Map<string, number>([["A", 50]]);
-    const { positions } = computeCardPositions(layout.entries, heights);
+    const { positions } = computeCardPositions(layout.entries, heights, roots);
     expect(positions.get("A")!.height).toBe(50);
   });
 
-  it("hält konstanten Abstand zwischen direkten Nachfolgern in einer Spalte", () => {
+  it("konstanter Abstand auch wenn Parent höher als Kind in derselben Zeile", () => {
+    const roots = [
+      {
+        ...node("P", [node("A"), node("B")]),
+        title: "Sehr langer mehrzeiliger Titel der die Karte deutlich höher macht",
+      },
+    ];
+    const layout = computeMindmapBoardLayout(roots);
+    const heights = new Map<string, number>([
+      ["P", 96],
+      ["A", 48],
+      ["B", 48],
+    ]);
+    const { positions } = computeCardPositions(layout.entries, heights, roots);
+    const a = positions.get("A")!;
+    const b = positions.get("B")!;
+    expect(b.top - (a.top + a.height)).toBeCloseTo(MINDMAP_CARD_GAP_PX, 0);
+  });
+
+  it("konstanter Abstand zwischen allen Nachfolgern in einer Spalte", () => {
     const roots = [node("P", [node("A"), node("B")])];
     const layout = computeMindmapBoardLayout(roots);
     const heights = new Map<string, number>([
@@ -167,12 +184,12 @@ describe("computeCardPositions", () => {
       ["A", 100],
       ["B", 80],
     ]);
-    const { positions, rowHeights } = computeCardPositions(layout.entries, heights);
-    const a = positions.get("A")!;
-    const b = positions.get("B")!;
-    const aRow = layout.byNodeId.get("A")!.ySlot;
-    const gap = b.top - (a.top + a.height);
-    expect(gap).toBeCloseTo(MINDMAP_CARD_GAP_PX, 0);
-    expect(rowHeights[aRow]! - a.height).toBeCloseTo(MINDMAP_CARD_GAP_PX, 0);
+    const { positions } = computeCardPositions(layout.entries, heights, roots);
+    const colEntries = entriesInColumnTreeOrder(1, layout.entries, roots);
+    for (let i = 1; i < colEntries.length; i++) {
+      const prev = positions.get(colEntries[i - 1]!.node.id)!;
+      const next = positions.get(colEntries[i]!.node.id)!;
+      expect(next.top - (prev.top + prev.height)).toBeCloseTo(MINDMAP_CARD_GAP_PX, 0);
+    }
   });
 });

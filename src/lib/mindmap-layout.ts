@@ -246,20 +246,12 @@ export function visualCardBottomPx(
   return pos.top + cardContentHeight(entry, cellHeights);
 }
 
-/** Zeilenhöhe = höchste Karte in der Zeile + fester Abstand. */
-export function computeRowHeightsPx(
-  entries: readonly MindmapLayoutEntry[],
+function cardBottomPx(
+  top: number,
+  entry: MindmapLayoutEntry,
   cellHeights: ReadonlyMap<string, number>,
-  totalRows: number,
-): number[] {
-  const rows = Array.from({ length: Math.max(totalRows, 1) }, () => MINDMAP_ROW_HEIGHT);
-  for (const e of entries) {
-    const r = e.ySlot;
-    if (r < 0 || r >= rows.length) continue;
-    const need = cardContentHeight(e, cellHeights) + MINDMAP_CARD_GAP_PX;
-    rows[r] = Math.max(rows[r]!, need);
-  }
-  return rows;
+): number {
+  return top + cardContentHeight(entry, cellHeights);
 }
 
 /** Sichtbare Karten einer Spalte in Baumreihenfolge (Geschwister-Reihenfolge). */
@@ -284,37 +276,95 @@ export function entriesInColumnTreeOrder(
 }
 
 /**
- * Positioniert Karten am globalen Zeilen-Raster (`ySlot` + `rowHeights`).
- * Geschwister in Spalte A rutschen unter aufgeklappte Teilbäume in Spalte B;
- * Zeilenhöhen wachsen/schrumpfen mit Kartenhöhe und Kollaps.
+ * Positioniert Karten per Baumlauf: erstes Kind bündig mit Parent,
+ * jedes folgende Geschwister mit konstantem Abstand unter dem vorherigen Teilbaum.
  */
-export function computeCardPositions(
-  entries: readonly MindmapLayoutEntry[],
+function positionForest(
+  nodes: readonly TaskNode[],
+  listParentId: string | null,
+  parentTop: number | null,
+  entryById: ReadonlyMap<string, MindmapLayoutEntry>,
   cellHeights: ReadonlyMap<string, number>,
-): {
-  positions: Map<string, MindmapCardPosition>;
-  rowHeights: number[];
-  boardHeight: number;
-} {
-  const totalRows =
-    entries.length === 0 ? 1 : Math.max(...entries.map((e) => e.slotEnd));
-  const rowHeights = computeRowHeightsPx(entries, cellHeights, totalRows);
+  positions: Map<string, MindmapCardPosition>,
+  subtreeBottoms: Map<string, number>,
+  lastRootBottom: { value: number | null },
+): void {
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i]!;
+    const entry = entryById.get(node.id);
+    if (!entry) continue;
 
-  const positions = new Map<string, MindmapCardPosition>();
-  for (const e of entries) {
-    const height = cardContentHeight(e, cellHeights);
-    positions.set(e.node.id, {
-      top: MINDMAP_BOARD_PAD_Y + rowTopPx(e.ySlot, rowHeights),
-      left: columnLeftPx(e.column),
+    let top: number;
+    if (listParentId === null) {
+      top =
+        lastRootBottom.value === null
+          ? MINDMAP_BOARD_PAD_Y
+          : lastRootBottom.value + MINDMAP_CARD_GAP_PX;
+    } else if (i === 0) {
+      top = parentTop ?? MINDMAP_BOARD_PAD_Y;
+    } else {
+      const prevSibling = nodes[i - 1]!;
+      top =
+        (subtreeBottoms.get(prevSibling.id) ?? MINDMAP_BOARD_PAD_Y) + MINDMAP_CARD_GAP_PX;
+    }
+
+    const height = cardContentHeight(entry, cellHeights);
+    positions.set(node.id, {
+      top,
+      left: columnLeftPx(entry.column),
       width: MINDMAP_COL_WIDTH_PX,
       height,
     });
+
+    let subtreeBottom = cardBottomPx(top, entry, cellHeights);
+    if (node.children.length > 0) {
+      positionForest(
+        node.children,
+        node.id,
+        top,
+        entryById,
+        cellHeights,
+        positions,
+        subtreeBottoms,
+        { value: null },
+      );
+      for (const ch of node.children) {
+        const childBottom = subtreeBottoms.get(ch.id);
+        if (childBottom != null) subtreeBottom = Math.max(subtreeBottom, childBottom);
+      }
+    }
+
+    subtreeBottoms.set(node.id, subtreeBottom);
+    if (listParentId === null) lastRootBottom.value = subtreeBottom;
   }
+}
+
+export function computeCardPositions(
+  entries: readonly MindmapLayoutEntry[],
+  cellHeights: ReadonlyMap<string, number>,
+  roots: TaskNode[],
+): {
+  positions: Map<string, MindmapCardPosition>;
+  boardHeight: number;
+} {
+  const entryById = new Map(entries.map((e) => [e.node.id, e]));
+  const positions = new Map<string, MindmapCardPosition>();
+  const subtreeBottoms = new Map<string, number>();
+
+  positionForest(
+    roots,
+    null,
+    null,
+    entryById,
+    cellHeights,
+    positions,
+    subtreeBottoms,
+    { value: null },
+  );
 
   return {
     positions,
-    rowHeights,
-    boardHeight: mindmapBoardHeightPx(rowHeights),
+    boardHeight: mindmapBoardHeightPxFromPositions(positions),
   };
 }
 

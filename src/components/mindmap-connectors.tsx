@@ -4,12 +4,11 @@ import { useMemo } from "react";
 
 import {
   columnLeftPx,
-  MINDMAP_BOARD_PAD_Y,
   MINDMAP_COL_WIDTH_PX,
-  mindmapBoardHeightPx,
+  mindmapBoardHeightPxFromPositions,
   mindmapBoardWidthPx,
-  rowTopPx,
   type MindmapBoardLayout,
+  type MindmapCardPosition,
 } from "@/lib/mindmap-layout";
 
 const CARD_ANCHOR_Y = 22;
@@ -34,10 +33,10 @@ function roundedElbowPath(x0: number, y0: number, x1: number, y1: number): strin
 
 export function MindmapConnectors({
   layout,
-  rowHeights,
+  positions,
 }: {
   layout: MindmapBoardLayout;
-  rowHeights: readonly number[];
+  positions: ReadonlyMap<string, MindmapCardPosition>;
 }) {
   const paths = useMemo(() => {
     const out: { key: string; d: string }[] = [];
@@ -45,10 +44,13 @@ export function MindmapConnectors({
       for (const ch of entry.node.children) {
         const childEntry = layout.byNodeId.get(ch.id);
         if (!childEntry) continue;
+        const parentPos = positions.get(entry.node.id);
+        const childPos = positions.get(ch.id);
+        if (!parentPos || !childPos) continue;
         const x0 = columnLeftPx(entry.column) + MINDMAP_COL_WIDTH_PX - 8;
-        const y0 = MINDMAP_BOARD_PAD_Y + rowTopPx(entry.ySlot, rowHeights) + CARD_ANCHOR_Y;
+        const y0 = parentPos.top + CARD_ANCHOR_Y;
         const x1 = columnLeftPx(childEntry.column) + 4;
-        const y1 = MINDMAP_BOARD_PAD_Y + rowTopPx(childEntry.ySlot, rowHeights) + CARD_ANCHOR_Y;
+        const y1 = childPos.top + CARD_ANCHOR_Y;
         out.push({
           key: `${entry.node.id}->${ch.id}`,
           d: roundedElbowPath(x0, y0, x1, y1),
@@ -56,10 +58,10 @@ export function MindmapConnectors({
       }
     }
     return out;
-  }, [layout, rowHeights]);
+  }, [layout, positions]);
 
   const width = mindmapBoardWidthPx(layout.columnCount);
-  const height = mindmapBoardHeightPx(rowHeights);
+  const height = mindmapBoardHeightPxFromPositions(positions);
 
   return (
     <svg

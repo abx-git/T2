@@ -206,9 +206,9 @@ export function MindmapGrid({
     [observeCard],
   );
 
-  const { positions, rowHeights, boardHeight } = useMemo(
-    () => computeCardPositions(visibleEntries, cardHeights),
-    [visibleEntries, cardHeights],
+  const { positions, boardHeight } = useMemo(
+    () => computeCardPositions(visibleEntries, cardHeights, roots),
+    [visibleEntries, cardHeights, roots],
   );
 
   const boardWidth = mindmapBoardWidthPx(columnCount);
@@ -416,7 +416,7 @@ export function MindmapGrid({
       </div>
 
       <div className="relative">
-        <MindmapConnectors layout={layout} rowHeights={rowHeights} />
+        <MindmapConnectors layout={layout} positions={positions} />
         <div
           className="relative z-10 rounded-lg bg-column/40 ring-1 ring-slate-200/50"
           style={{ width: boardWidth, height: Math.max(boardHeight, MINDMAP_BOARD_PAD_Y * 2 + 40) }}

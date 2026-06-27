@@ -4,6 +4,7 @@ import {
   buildFocusOutlineRows,
   columnIndexForSiblingList,
   countFocusSubtree,
+  getFocusOutlineMaxDepth,
   pruneEmptyUxLeavesInFocusSubtree,
 } from "@/lib/focus-mode-outline";
 import type { TaskNode } from "@/types/task-node";
@@ -42,6 +43,47 @@ describe("buildFocusOutlineRows", () => {
     expect(rows.map((r) => r.node.id)).toEqual(["b", "c", "e"]);
     expect(rows.find((r) => r.node.id === "c")?.siblingIndex).toBe(0);
     expect(rows.find((r) => r.node.id === "e")?.siblingIndex).toBe(1);
+  });
+
+  it("begrenzt sichtbare Ebenen relativ zum Fokus-Knoten", () => {
+    expect(buildFocusOutlineRows(roots, "a", false, "Erledigt", { maxDepth: 1 }).map((r) => r.node.id)).toEqual([
+      "b",
+      "e",
+    ]);
+    expect(buildFocusOutlineRows(roots, "a", false, "Erledigt", { maxDepth: 2 }).map((r) => r.node.id)).toEqual([
+      "b",
+      "c",
+      "d",
+      "e",
+    ]);
+  });
+
+  it("blendet Unterpunkte eingeklappter Knoten aus", () => {
+    const rows = buildFocusOutlineRows(roots, "a", false, "Erledigt", {
+      collapsedIds: new Set(["b"]),
+    });
+    expect(rows.map((r) => r.node.id)).toEqual(["b", "e"]);
+  });
+
+  it("blendet alle Unterpunkte aus, wenn der Fokus-Knoten eingeklappt ist", () => {
+    const rows = buildFocusOutlineRows(roots, "a", false, "Erledigt", {
+      collapsedIds: new Set(["a"]),
+    });
+    expect(rows).toEqual([]);
+  });
+});
+
+describe("getFocusOutlineMaxDepth", () => {
+  const roots = [
+    node("a", "A", [
+      node("b", "B", [node("c", "C")]),
+      node("e", "E"),
+    ]),
+  ];
+
+  it("liefert die tiefste sichtbare Ebene", () => {
+    expect(getFocusOutlineMaxDepth(roots, "a", false, "Erledigt")).toBe(2);
+    expect(getFocusOutlineMaxDepth(roots, "e", false, "Erledigt")).toBe(0);
   });
 });
 

@@ -15,6 +15,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import {
+  ChevronDown,
   ChevronRight,
   Circle,
   CircleCheck,
@@ -39,6 +40,7 @@ import {
   buildFocusOutlineRows,
   columnIndexForSiblingList,
   countFocusSubtree,
+  getFocusOutlineMaxDepth,
   type FocusOutlineRow,
 } from "@/lib/focus-mode-outline";
 import { findDirectParentId, findNodeById, pathFromRootToNode } from "@/lib/tree-utils";
@@ -162,6 +164,8 @@ interface FocusRowProps {
   isDragging: boolean;
   dropActive: boolean;
   isNestDropTarget: boolean;
+  isBranchCollapsed: boolean;
+  onToggleCollapsed: () => void;
   onToggleDone: () => void;
   onStartEdit: () => void;
   onSaveTitle: (title: string, addSiblingAfter?: boolean) => void;
@@ -180,6 +184,8 @@ function FocusRow({
   isDragging,
   dropActive,
   isNestDropTarget,
+  isBranchCollapsed,
+  onToggleCollapsed,
   onToggleDone,
   onStartEdit,
   onSaveTitle,
@@ -191,6 +197,7 @@ function FocusRow({
 }: FocusRowProps) {
   const { node, depth } = row;
   const done = isTaskMarkedDone(node, completedTag);
+  const hasChildren = node.children.length > 0;
   const inputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(node.title);
 
@@ -258,6 +265,22 @@ function FocusRow({
                 : "border-transparent bg-white hover:border-slate-200/80 hover:bg-slate-50/50",
         ].join(" ")}
       >
+      {hasChildren ? (
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-white hover:text-slate-700"
+          title={isBranchCollapsed ? "Unterpunkte anzeigen" : "Unterpunkte verstecken"}
+          aria-label={isBranchCollapsed ? "Unterpunkte anzeigen" : "Unterpunkte verstecken"}
+          aria-expanded={!isBranchCollapsed}
+        >
+          {isBranchCollapsed ? (
+            <ChevronRight className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />
+          )}
+        </button>
+      ) : null}
       <button
         type="button"
         className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-white hover:text-emerald-700"
@@ -414,10 +437,13 @@ export function FocusModeView({
   const addCardAfterSibling = useTaskTreeStore((s) => s.addCardAfterSibling);
   const removeCard = useTaskTreeStore((s) => s.removeCard);
   const applyTreeDrag = useTaskTreeStore((s) => s.applyTreeDrag);
+  const collapsedIds = useTaskTreeStore((s) => s.collapsedIds);
+  const toggleNodeCollapsed = useTaskTreeStore((s) => s.toggleNodeCollapsed);
 
   const [titleEditId, setTitleEditId] = useState<string | null>(null);
   const [focusRootEditing, setFocusRootEditing] = useState(false);
   const [focusRootDraft, setFocusRootDraft] = useState("");
+  const [maxVisibleDepth, setMaxVisibleDepth] = useState<number | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [nestDropTargetId, setNestDropTargetId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -432,10 +458,24 @@ export function FocusModeView({
     return path.slice(0, -1).map((id) => findNodeById(roots, id)).filter(Boolean) as TaskNode[];
   }, [roots, focusNodeId]);
 
-  const rows = useMemo(
-    () => buildFocusOutlineRows(roots, focusNodeId, hideCompletedTasks, completedTag),
+  const collapsedSet = useMemo(() => new Set(collapsedIds), [collapsedIds]);
+
+  const outlineMaxDepth = useMemo(
+    () => getFocusOutlineMaxDepth(roots, focusNodeId, hideCompletedTasks, completedTag),
     [roots, focusNodeId, hideCompletedTasks, completedTag],
   );
+
+  const rows = useMemo(
+    () =>
+      buildFocusOutlineRows(roots, focusNodeId, hideCompletedTasks, completedTag, {
+        maxDepth: maxVisibleDepth,
+        collapsedIds: collapsedSet,
+      }),
+    [roots, focusNodeId, hideCompletedTasks, completedTag, maxVisibleDepth, collapsedSet],
+  );
+
+  const focusRootCollapsed = collapsedSet.has(focusNodeId);
+  const focusRootHasChildren = Boolean(focusNode?.children.length);
 
   const stats = focusNode ? countFocusSubtree(focusNode, completedTag) : { total: 0, done: 0, open: 0 };
 
@@ -677,6 +717,50 @@ export function FocusModeView({
             </span>
           )}
 
+          {outlineMaxDepth > 0 ? (
+            <div
+              className="flex items-center gap-1 rounded-lg border border-slate-200/90 bg-slate-50/80 px-1 py-0.5"
+              role="group"
+              aria-label="Angezeigte Ebenen"
+            >
+              <span className="px-1 text-[10px] font-medium text-slate-500">Ebenen</span>
+              {Array.from({ length: outlineMaxDepth }, (_, i) => i + 1).map((depth) => {
+                const active = maxVisibleDepth === depth;
+                return (
+                  <button
+                    key={depth}
+                    type="button"
+                    onClick={() => setMaxVisibleDepth(depth)}
+                    className={[
+                      "min-w-[1.5rem] rounded-md px-1.5 py-0.5 text-[11px] font-medium tabular-nums transition",
+                      active
+                        ? "bg-violet-600 text-white shadow-sm"
+                        : "text-slate-600 hover:bg-white hover:text-slate-900",
+                    ].join(" ")}
+                    title={`${depth} Ebene${depth === 1 ? "" : "n"} anzeigen`}
+                    aria-pressed={active}
+                  >
+                    {depth}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => setMaxVisibleDepth(null)}
+                className={[
+                  "rounded-md px-1.5 py-0.5 text-[11px] font-medium transition",
+                  maxVisibleDepth === null
+                    ? "bg-violet-600 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-white hover:text-slate-900",
+                ].join(" ")}
+                title="Alle Ebenen anzeigen"
+                aria-pressed={maxVisibleDepth === null}
+              >
+                Alle
+              </button>
+            </div>
+          ) : null}
+
           <span
             className={[
               "rounded-full px-2.5 py-1 text-[11px] font-medium tabular-nums",
@@ -751,6 +835,22 @@ export function FocusModeView({
             ].join(" ")}
           >
             <div className="flex items-start gap-2">
+              {focusRootHasChildren ? (
+                <button
+                  type="button"
+                  onClick={() => toggleNodeCollapsed(focusNodeId)}
+                  className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-violet-50 hover:text-slate-700"
+                  title={focusRootCollapsed ? "Unterpunkte anzeigen" : "Unterpunkte verstecken"}
+                  aria-label={focusRootCollapsed ? "Unterpunkte anzeigen" : "Unterpunkte verstecken"}
+                  aria-expanded={!focusRootCollapsed}
+                >
+                  {focusRootCollapsed ? (
+                    <ChevronRight className="h-4 w-4" strokeWidth={2.25} aria-hidden />
+                  ) : (
+                    <ChevronDown className="h-4 w-4" strokeWidth={2.25} aria-hidden />
+                  )}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => toggleDone(focusNodeId, focusNode)}
@@ -806,9 +906,13 @@ export function FocusModeView({
                   show={fieldVisibility.tags && !focusRootEditing}
                 />
                 <p className="mt-1 text-[11px] text-slate-500">
-                  {rows.length === 0
+                  {focusNode.children.length === 0
                     ? "Noch keine Unterpunkte — unten anlegen."
-                    : `${rows.length} Unterpunkt${rows.length === 1 ? "" : "e"} sichtbar`}
+                    : focusRootCollapsed
+                      ? `${focusNode.children.length} Unterpunkt${focusNode.children.length === 1 ? "" : "e"} ausgeblendet`
+                      : rows.length === 0
+                        ? "Keine Unterpunkte sichtbar (Filter oder Ebenen)"
+                        : `${rows.length} Unterpunkt${rows.length === 1 ? "" : "e"} sichtbar`}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-0.5">
@@ -851,14 +955,20 @@ export function FocusModeView({
             >
               {rows.length === 0 ? (
                 <div className="relative px-1 py-2">
-                  <FocusDropGap
-                    listParentId={focusNodeId}
-                    insertIndex={0}
-                    active={Boolean(activeDragId)}
-                    placement="before"
-                  />
+                  {!focusRootCollapsed ? (
+                    <FocusDropGap
+                      listParentId={focusNodeId}
+                      insertIndex={0}
+                      active={Boolean(activeDragId)}
+                      placement="before"
+                    />
+                  ) : null}
                   <p className="px-2 py-4 text-center text-sm text-slate-400">
-                    Keine Unterpunkte — ideal zum schnellen Erfassen.
+                    {focusRootCollapsed
+                      ? "Unterpunkte ausgeblendet — oben aufklappen."
+                      : focusNode.children.length === 0
+                        ? "Keine Unterpunkte — ideal zum schnellen Erfassen."
+                        : "Keine Unterpunkte sichtbar — Ebenen oder Filter prüfen."}
                   </p>
                 </div>
               ) : (
@@ -872,6 +982,8 @@ export function FocusModeView({
                     isDragging={activeDragId === row.node.id}
                     dropActive={Boolean(activeDragId)}
                     isNestDropTarget={nestDropTargetId === row.node.id}
+                    isBranchCollapsed={collapsedSet.has(row.node.id)}
+                    onToggleCollapsed={() => toggleNodeCollapsed(row.node.id)}
                     onToggleDone={() => toggleDone(row.node.id, row.node)}
                     onStartEdit={() => setTitleEditId(row.node.id)}
                     onSaveTitle={(title, addSiblingAfter) =>

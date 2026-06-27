@@ -19,16 +19,26 @@ export function columnIndexForSiblingList(roots: TaskNode[], listParentId: strin
   return path ? path.length : 0;
 }
 
+export interface BuildFocusOutlineOptions {
+  /** Maximale Tiefe relativ zum Fokus-Knoten (1 = nur direkte Kinder); `null` = unbegrenzt. */
+  maxDepth?: number | null;
+  /** Eingeklappte Knoten — deren Unterpunkte werden ausgeblendet. */
+  collapsedIds?: ReadonlySet<string>;
+}
+
 function walkSubtree(
   nodes: TaskNode[],
   depth: number,
   listParentId: string,
   hideCompleted: boolean,
   completedTag: string,
+  options: BuildFocusOutlineOptions,
   out: FocusOutlineRow[],
 ): void {
+  const maxDepth = options.maxDepth ?? null;
   nodes.forEach((node, siblingIndex) => {
     if (hideCompleted && isTaskMarkedDone(node, completedTag)) return;
+    if (maxDepth !== null && depth > maxDepth) return;
     out.push({
       node,
       depth,
@@ -37,8 +47,20 @@ function walkSubtree(
       siblingCount: nodes.length,
       isLastSibling: siblingIndex === nodes.length - 1,
     });
-    if (node.children.length > 0) {
-      walkSubtree(node.children, depth + 1, node.id, hideCompleted, completedTag, out);
+    if (
+      node.children.length > 0 &&
+      !options.collapsedIds?.has(node.id) &&
+      (maxDepth === null || depth < maxDepth)
+    ) {
+      walkSubtree(
+        node.children,
+        depth + 1,
+        node.id,
+        hideCompleted,
+        completedTag,
+        options,
+        out,
+      );
     }
   });
 }
@@ -49,12 +71,25 @@ export function buildFocusOutlineRows(
   focusNodeId: string,
   hideCompleted: boolean,
   completedTag: string,
+  options: BuildFocusOutlineOptions = {},
 ): FocusOutlineRow[] {
   const focus = findNodeById(roots, focusNodeId);
   if (!focus) return [];
+  if (options.collapsedIds?.has(focusNodeId)) return [];
   const rows: FocusOutlineRow[] = [];
-  walkSubtree(focus.children, 1, focus.id, hideCompleted, completedTag, rows);
+  walkSubtree(focus.children, 1, focus.id, hideCompleted, completedTag, options, rows);
   return rows;
+}
+
+/** Maximale Tiefe im Fokus-Teilbaum (0 = keine Unterpunkte). */
+export function getFocusOutlineMaxDepth(
+  roots: TaskNode[],
+  focusNodeId: string,
+  hideCompleted: boolean,
+  completedTag: string,
+): number {
+  const rows = buildFocusOutlineRows(roots, focusNodeId, hideCompleted, completedTag);
+  return rows.reduce((max, row) => Math.max(max, row.depth), 0);
 }
 
 /**

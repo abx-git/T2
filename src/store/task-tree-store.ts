@@ -20,7 +20,12 @@ import { compactColumnTitleOverrides } from "@/lib/column-titles";
 import { refreshCalculatedEffortsInTree } from "@/lib/task-effort";
 import { generateUniqueTaskId } from "@/lib/task-id";
 import { remapTaskNodeIds } from "@/lib/task-tree-json";
-import { collapsedIdsAfterFocusDepthAction, pruneEmptyUxLeavesInFocusSubtree } from "@/lib/focus-mode-outline";
+import {
+  collapsedIdsAfterBoardDepthAction,
+  collapsedIdsAfterFocusDepthAction,
+  defaultBoardCollapsedIds,
+} from "@/lib/tree-depth-collapse";
+import { pruneEmptyUxLeavesInFocusSubtree } from "@/lib/focus-mode-outline";
 import { DEFAULT_COMPLETED_TAG, normalizeCompletedTag, normalizeTagLabel, tagKey } from "@/lib/task-tags";
 import type { TaskCardEditableFields, TaskNode } from "@/types/task-node";
 
@@ -33,6 +38,8 @@ export interface TaskTreeState {
   toggleNodeCollapsed: (nodeId: string) => void;
   /** Fokus-Ansicht: Teilbaum auf `maxDepth` Ebenen zu-/aufklappen (`null` = alles öffnen). */
   applyFocusDepthInView: (focusNodeId: string, maxDepth: number | null) => void;
+  /** Hauptansicht: Board auf `visibleLevels` Ebenen zu-/aufklappen (`null` = alles öffnen). */
+  applyBoardDepthInView: (visibleLevels: number | null) => void;
 
   /** Erledigte Karten in Spaltenansicht ausblenden (nur Anzeige). */
   hideCompletedTasks: boolean;
@@ -242,6 +249,20 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
     });
   },
 
+  applyBoardDepthInView: (visibleLevels) => {
+    set((s) => {
+      if (s.roots.length === 0) return {};
+      const collapsedIds = collapsedIdsAfterBoardDepthAction(s.collapsedIds, s.roots, visibleLevels);
+      if (
+        collapsedIds.length === s.collapsedIds.length &&
+        collapsedIds.every((id, i) => id === s.collapsedIds[i])
+      ) {
+        return {};
+      }
+      return { collapsedIds };
+    });
+  },
+
   activateNode: (nodeId) => {
     set((s) => {
       const node = findNodeById(s.roots, nodeId);
@@ -362,9 +383,10 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
       effortOnTasksEnabled: incomingEffort,
     } = payload;
     const pathIds = normalizePathIds(roots, incomingPath);
-    const collapsedIds = Array.isArray(payload.collapsedIds)
+    const hadCollapsedInPayload = payload.collapsedIds !== undefined;
+    const collapsedIds = hadCollapsedInPayload
       ? payload.collapsedIds.filter((x): x is string => typeof x === "string")
-      : [];
+      : defaultBoardCollapsedIds(roots);
     set({
       roots,
       pathIds,

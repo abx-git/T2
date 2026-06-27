@@ -73,57 +73,6 @@ export function buildFocusOutlineRows(
   return rows;
 }
 
-/** Alle Knoten-IDs im Fokus-Teilbaum (inkl. Fokus-Wurzel). */
-export function collectFocusSubtreeNodeIds(root: TaskNode): string[] {
-  const ids = [root.id];
-  function walk(nodes: TaskNode[]) {
-    for (const n of nodes) {
-      ids.push(n.id);
-      walk(n.children);
-    }
-  }
-  walk(root.children);
-  return ids;
-}
-
-/**
- * Setzt `collapsedIds` für den Fokus-Teilbaum nach Klick auf „Ebenen“ —
- * einmaliges Zu-/Aufklappen, kein dauerhafter Anzeige-Filter.
- * `maxDepth`: sichtbare Ebenen ab Fokus-Wurzel (1 = nur direkte Kinder); `null` = alles aufklappen.
- */
-export function collapsedIdsAfterFocusDepthAction(
-  currentCollapsedIds: readonly string[],
-  focusRoot: TaskNode,
-  maxDepth: number | null,
-): string[] {
-  const subtreeIds = new Set(collectFocusSubtreeNodeIds(focusRoot));
-  const next = currentCollapsedIds.filter((id) => !subtreeIds.has(id));
-
-  if (maxDepth === null) return next;
-
-  const toCollapse: string[] = [];
-  function walk(node: TaskNode, depth: number) {
-    if (node.children.length === 0) return;
-    if (depth >= maxDepth) {
-      toCollapse.push(node.id);
-      return;
-    }
-    for (const child of node.children) {
-      walk(child, depth + 1);
-    }
-  }
-  walk(focusRoot, 0);
-
-  const seen = new Set(next);
-  for (const id of toCollapse) {
-    if (!seen.has(id)) {
-      next.push(id);
-      seen.add(id);
-    }
-  }
-  return next;
-}
-
 /** Maximale Tiefe im Fokus-Teilbaum (0 = keine Unterpunkte). */
 export function getFocusOutlineMaxDepth(
   roots: TaskNode[],

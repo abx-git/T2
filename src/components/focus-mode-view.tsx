@@ -61,6 +61,7 @@ import { useTaskTreeStore } from "@/store/task-tree-store";
 import type { TaskNode } from "@/types/task-node";
 
 import { ConfirmDialog } from "./confirm-dialog";
+import { DepthLevelsControl } from "./depth-levels-control";
 
 const focusActionBtnClass =
   "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition";
@@ -717,32 +718,11 @@ export function FocusModeView({
           )}
 
           {outlineMaxDepth > 0 ? (
-            <div
-              className="flex items-center gap-1 rounded-lg border border-slate-200/90 bg-slate-50/80 px-1 py-0.5"
-              role="group"
-              aria-label="Ebenen zu- oder aufklappen"
-            >
-              <span className="px-1 text-[10px] font-medium text-slate-500">Ebenen</span>
-              {Array.from({ length: outlineMaxDepth }, (_, i) => i + 1).map((depth) => (
-                <button
-                  key={depth}
-                  type="button"
-                  onClick={() => applyFocusDepthInView(focusNodeId, depth)}
-                  className="min-w-[1.5rem] rounded-md px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-slate-600 transition hover:bg-white hover:text-slate-900"
-                  title={`Auf ${depth} Ebene${depth === 1 ? "" : "n"} einklappen`}
-                >
-                  {depth}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => applyFocusDepthInView(focusNodeId, null)}
-                className="rounded-md px-1.5 py-0.5 text-[11px] font-medium text-slate-600 transition hover:bg-white hover:text-slate-900"
-                title="Alle Ebenen aufklappen"
-              >
-                Alle
-              </button>
-            </div>
+            <DepthLevelsControl
+              maxLevel={outlineMaxDepth}
+              onApplyLevel={(depth) => applyFocusDepthInView(focusNodeId, depth)}
+              onExpandAll={() => applyFocusDepthInView(focusNodeId, null)}
+            />
           ) : null}
 
           <span

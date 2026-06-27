@@ -61,6 +61,7 @@ import {
   rootsForMindmapDisplay,
   type TreeDragOverKind,
 } from "@/lib/tree-utils";
+import { getBoardMaxVisibleLevels } from "@/lib/tree-depth-collapse";
 import type { VaultStatusInfo } from "@/lib/server-board";
 import { flushLocalBoardMirror, readLocalBoardMirror } from "@/lib/board-local-mirror";
 import {
@@ -96,6 +97,7 @@ import { MindmapGrid } from "./mindmap-grid";
 import { CardFieldVisibilityDialog } from "./card-field-visibility-dialog";
 import { ConfirmDialog } from "./confirm-dialog";
 import { FocusModeView } from "./focus-mode-view";
+import { DepthLevelsControl } from "./depth-levels-control";
 import { ImportSubtreeDialog } from "./import-subtree-dialog";
 import { AppointmentsListDialog } from "./appointments-list-dialog";
 import { BranchExportDialog, JsonExportPreviewDialog, JsonPasteImportDialog } from "./json-clipboard-dialog";
@@ -204,6 +206,7 @@ export function TaskBoard() {
   const pathIds = useTaskTreeStore((s) => s.pathIds);
   const collapsedIds = useTaskTreeStore((s) => s.collapsedIds);
   const toggleNodeCollapsed = useTaskTreeStore((s) => s.toggleNodeCollapsed);
+  const applyBoardDepthInView = useTaskTreeStore((s) => s.applyBoardDepthInView);
   const activateNode = useTaskTreeStore((s) => s.activateNode);
   const expandToNode = useTaskTreeStore((s) => s.expandToNode);
   const applyTreeDrag = useTaskTreeStore((s) => s.applyTreeDrag);
@@ -918,6 +921,11 @@ export function TaskBoard() {
 
   const collapsedSet = useMemo(() => new Set(collapsedIds), [collapsedIds]);
 
+  const boardMaxVisibleLevels = useMemo(
+    () => getBoardMaxVisibleLevels(roots),
+    [roots],
+  );
+
   const mindmapDisplayRoots = useMemo(
     () =>
       rootsForMindmapDisplay(roots, {
@@ -1037,6 +1045,13 @@ export function TaskBoard() {
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
             <h1 className="shrink-0 text-lg font-semibold text-slate-900">T2</h1>
             <TaskSearch onSelectNode={handleSearchSelect} />
+            {!focusNodeId && boardMaxVisibleLevels > 1 ? (
+              <DepthLevelsControl
+                maxLevel={boardMaxVisibleLevels}
+                onApplyLevel={(level) => applyBoardDepthInView(level)}
+                onExpandAll={() => applyBoardDepthInView(null)}
+              />
+            ) : null}
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <input

@@ -377,7 +377,7 @@ export function buildBoardSnapshot(
     scope: "board",
     roots: roots.map(taskNodeToJson),
     pathIds: [...pathIds],
-    ...(collapsedIds.length ? { collapsedIds: [...collapsedIds] } : {}),
+    collapsedIds: [...collapsedIds],
     columnTitleOverrides: co,
     showFullTree: false,
     cardFieldVisibility: mergeCardFieldVisibility(cardFieldVisibility),
@@ -449,7 +449,7 @@ export function boardSnapshotToReplacePayload(snap: BoardSnapshotV1): BoardImpor
   return {
     roots: snap.roots.map(taskNodeFromJson),
     pathIds: snap.pathIds,
-    ...(snap.collapsedIds?.length ? { collapsedIds: [...snap.collapsedIds] } : {}),
+    ...(snap.collapsedIds !== undefined ? { collapsedIds: [...snap.collapsedIds] } : {}),
     columnTitleOverrides: boardSnapshotToColumnOverrides(snap),
     cardFieldVisibility: snap.cardFieldVisibility,
     ...(snap.hideCompletedTasks === true ? { hideCompletedTasks: true } : {}),

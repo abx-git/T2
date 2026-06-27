@@ -122,7 +122,6 @@ export interface TaskCardProps {
   isNestDropTarget?: boolean;
   /** Sichtbare Kartenfelder (außer Titel). */
   fieldVisibility: CardFieldVisibility;
-  compact?: boolean;
   isTitleEditing?: boolean;
   onTitleSave?: (title: string, meta?: TaskTitleSaveMeta) => void;
   onTitleEditCancel?: () => void;
@@ -148,7 +147,6 @@ export function TaskCard({
   isSearchFocus = false,
   isNestDropTarget = false,
   fieldVisibility,
-  compact = false,
   isTitleEditing = false,
   onTitleSave,
   onTitleEditCancel,
@@ -309,7 +307,7 @@ export function TaskCard({
   const cardLink = taskLinkHref(node.link);
   const desc = node.description?.trim() ?? "";
   const hasDescription = Boolean(desc) && fieldVisibility.description;
-  const showLinkMeta = Boolean(cardLink) && fieldVisibility.link && !compact;
+  const showLinkMeta = Boolean(cardLink) && fieldVisibility.link;
   const hasMetaLine = hasVisibleMetaLine(
     fieldVisibility,
     node,
@@ -518,9 +516,8 @@ export function TaskCard({
             : "Doppelklick: Details · Griff (⋮⋮): Verschieben"
       }
       className={[
-        "group relative rounded-md border shadow-sm transition",
+        "group relative rounded-md border shadow-sm transition px-1.5 py-1",
         isTitleEditing ? "" : isDragging ? "cursor-grabbing" : "",
-        compact ? "px-1 py-0.5" : "px-1.5 py-1",
         isTitleEditing && !isNewTitleEdit ? "ring-2 ring-sky-300/80" : "",
         isNestDropTarget
           ? "border-violet-400/90 bg-violet-50/95 ring-2 ring-violet-300/80"
@@ -654,8 +651,7 @@ export function TaskCard({
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
                 className={[
-                  "min-w-0 break-words px-0.5 text-xs font-semibold leading-tight text-sky-800 underline-offset-2 hover:underline",
-                  compact ? "line-clamp-1" : "line-clamp-2",
+                  "min-w-0 break-words px-0.5 text-xs font-semibold leading-tight text-sky-800 underline-offset-2 hover:underline line-clamp-2",
                   nodeIsDone ? "text-slate-500 line-through decoration-slate-400/80" : "",
                 ].join(" ")}
                 title={cardLink}
@@ -686,9 +682,8 @@ export function TaskCard({
                     : undefined
                 }
                 className={[
-                  "min-w-0 break-words px-0.5 text-xs font-semibold leading-tight",
+                  "min-w-0 break-words px-0.5 text-xs font-semibold leading-tight line-clamp-2",
                   coarsePointer ? "cursor-pointer touch-manipulation" : "",
-                  compact ? "line-clamp-1" : "line-clamp-2",
                   nodeIsDone ? "text-slate-500 line-through decoration-slate-400/80" : "text-slate-900",
                 ].join(" ")}
               >
@@ -766,7 +761,7 @@ export function TaskCard({
         </div>
 
         <div className="flex min-w-0 flex-col gap-0.5 pl-7">
-          {fieldVisibility.id && !compact ? (
+          {fieldVisibility.id ? (
             <p
               className="font-mono text-[9px] leading-none tracking-wide text-slate-400"
               title={`Karten-ID: ${node.id}`}
@@ -775,7 +770,7 @@ export function TaskCard({
             </p>
           ) : null}
 
-          {fieldVisibility.tags && visibleTags.length > 0 && !compact ? (
+          {fieldVisibility.tags && visibleTags.length > 0 ? (
             <div className="flex flex-wrap gap-0.5">
               {visibleTags.map((t) => (
                 <span
@@ -800,8 +795,7 @@ export function TaskCard({
           {hasDescription ? (
             <p
               className={[
-                "overflow-hidden break-words text-[11px] leading-snug text-slate-500",
-                compact ? "line-clamp-1" : "line-clamp-2",
+                "overflow-hidden break-words text-[11px] leading-snug text-slate-500 line-clamp-2",
               ].join(" ")}
               title={desc}
             >
@@ -809,7 +803,7 @@ export function TaskCard({
             </p>
           ) : null}
 
-          {hasMetaLine && !compact ? (
+          {hasMetaLine ? (
             <div className="flex max-w-full flex-nowrap items-center gap-x-2 overflow-x-auto text-[10px] text-slate-500 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {showEffortMeta && showRollup && !effortTotalsIsEmpty(rollupTotals) ? (
                 <span

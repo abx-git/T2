@@ -83,7 +83,6 @@ export interface TaskColumnProps {
   titleEditNodeId: string | null;
   onTitleSave: (nodeId: string, title: string, meta?: import("./task-card").TaskTitleSaveMeta) => void;
   onTitleEditCancel: (nodeId: string) => void;
-  compact?: boolean;
   onActivateBranch: (nodeId: string) => void;
   dropPreview: BoardDropPreview | null;
   fieldVisibility: CardFieldVisibility;
@@ -107,7 +106,6 @@ export function TaskColumn({
   titleEditNodeId,
   onTitleSave,
   onTitleEditCancel,
-  compact = false,
   onActivateBranch,
   dropPreview,
   fieldVisibility,
@@ -198,7 +196,6 @@ export function TaskColumn({
             }
             isBranchCollapsed={collapsedIds.has(row.node.id)}
             onToggleCollapsed={() => onToggleCollapsed(row.node.id)}
-            compact={compact}
             isTitleEditing={titleEditNodeId === row.node.id}
             onTitleSave={(t, meta) => onTitleSave(row.node.id, t, meta)}
             onTitleEditCancel={() => onTitleEditCancel(row.node.id)}

@@ -101,7 +101,7 @@ describe("computeCardPositions", () => {
       ["A", 120],
       ["B", 80],
     ]);
-    const { positions, rowHeights } = computeCardPositions(layout.entries, heights, roots, false);
+    const { positions, rowHeights } = computeCardPositions(layout.entries, heights, roots);
     const a = positions.get("A")!;
     const b = positions.get("B")!;
     const aRow = layout.byNodeId.get("A")!.ySlot;
@@ -115,7 +115,7 @@ describe("computeCardPositions", () => {
       ["P", 70],
       ["C", 90],
     ]);
-    const { positions } = computeCardPositions(layout.entries, heights, roots, false);
+    const { positions } = computeCardPositions(layout.entries, heights, roots);
     expect(positions.get("C")!.top).toBe(positions.get("P")!.top);
   });
 
@@ -129,7 +129,7 @@ describe("computeCardPositions", () => {
       ["112", 48],
       ["12", 48],
     ]);
-    const { positions } = computeCardPositions(layout.entries, heights, roots, false);
+    const { positions } = computeCardPositions(layout.entries, heights, roots);
     expect(positions.get("111")!.top).toBe(positions.get("11")!.top);
     expect(positions.get("12")!.top).toBeGreaterThan(positions.get("112")!.top);
   });
@@ -143,8 +143,8 @@ describe("computeCardPositions", () => {
       ["11", 48],
       ["12", 48],
     ]);
-    const expandedPos = computeCardPositions(expanded.entries, heights, roots, false);
-    const collapsedPos = computeCardPositions(collapsed.entries, heights, roots, false);
+    const expandedPos = computeCardPositions(expanded.entries, heights, roots);
+    const collapsedPos = computeCardPositions(collapsed.entries, heights, roots);
     expect(collapsedPos.rowHeights.length).toBeLessThan(expandedPos.rowHeights.length);
     expect(collapsedPos.positions.get("12")!.top).toBeLessThan(
       expandedPos.positions.get("12")!.top,
@@ -159,7 +159,7 @@ describe("computeCardPositions", () => {
       ["A", 100],
       ["B", 80],
     ]);
-    const { positions, rowHeights } = computeCardPositions(layout.entries, heights, roots, false);
+    const { positions, rowHeights } = computeCardPositions(layout.entries, heights, roots);
     const a = positions.get("A")!;
     const b = positions.get("B")!;
     const aRow = layout.byNodeId.get("A")!.ySlot;

@@ -116,7 +116,6 @@ export interface MindmapGridProps {
   titleEditNodeId: string | null;
   onTitleSave: (nodeId: string, title: string, meta?: TaskTitleSaveMeta) => void;
   onTitleEditCancel: (nodeId: string) => void;
-  compact?: boolean;
   onActivateBranch: (nodeId: string) => void;
   dropPreview: BoardDropPreview | null;
   fieldVisibility: CardFieldVisibility;
@@ -139,7 +138,6 @@ export function MindmapGrid({
   titleEditNodeId,
   onTitleSave,
   onTitleEditCancel,
-  compact = false,
   onActivateBranch,
   dropPreview,
   fieldVisibility,
@@ -209,8 +207,8 @@ export function MindmapGrid({
   );
 
   const { positions, rowHeights, boardHeight } = useMemo(
-    () => computeCardPositions(visibleEntries, cardHeights, roots, compact),
-    [visibleEntries, cardHeights, roots, compact],
+    () => computeCardPositions(visibleEntries, cardHeights, roots),
+    [visibleEntries, cardHeights, roots],
   );
 
   const boardWidth = mindmapBoardWidthPx(columnCount);
@@ -235,7 +233,7 @@ export function MindmapGrid({
       ro.disconnect();
       resizeObserverRef.current = null;
     };
-  }, [publishCardHeights, visibleEntries, compact, fieldVisibility, titleEditNodeId]);
+  }, [publishCardHeights, visibleEntries, fieldVisibility, titleEditNodeId]);
 
   const headerGridStyle = useMemo(
     () => ({
@@ -323,7 +321,7 @@ export function MindmapGrid({
         const prevPos = prev ? positions.get(prev.node.id) : null;
         const zoneTop =
           prev && prevPos
-            ? visualCardBottomPx(prev, prevPos, cardHeights, compact)
+            ? visualCardBottomPx(prev, prevPos, cardHeights)
             : MINDMAP_BOARD_PAD_Y;
         const zone = gapZoneBetween(zoneTop, pos.top);
         if (zone) {
@@ -351,7 +349,7 @@ export function MindmapGrid({
       const tailInsert = siblings.length;
       const nextEntry = nextInColumnByNodeId.get(entry.node.id) ?? null;
       const nextPos = nextEntry ? positions.get(nextEntry.node.id) : null;
-      const zoneTop = visualCardBottomPx(entry, pos, cardHeights, compact);
+      const zoneTop = visualCardBottomPx(entry, pos, cardHeights);
       const zoneBottom = nextPos?.top ?? zoneTop + GAP_HIT_HEIGHT_PX + 2;
       const zone = gapZoneBetween(zoneTop, zoneBottom);
       if (!zone) continue;
@@ -376,7 +374,6 @@ export function MindmapGrid({
     roots,
     positions,
     cardHeights,
-    compact,
     nextInColumnByNodeId,
     dropPreview,
     isMainTailHighlight,
@@ -445,7 +442,6 @@ export function MindmapGrid({
                 }
                 isBranchCollapsed={collapsedIds.has(e.node.id)}
                 onToggleCollapsed={() => onToggleCollapsed(e.node.id)}
-                compact={compact}
                 isTitleEditing={titleEditNodeId === e.node.id}
                 onTitleSave={(t, meta) => onTitleSave(e.node.id, t, meta)}
                 onTitleEditCancel={() => onTitleEditCancel(e.node.id)}

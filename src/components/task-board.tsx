@@ -18,7 +18,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { HardDrive, Settings2, SlidersHorizontal, Rows3 } from "lucide-react";
+import { HardDrive, Settings2, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 
 import { parseBoardVaultLoxIdFromInput } from "@/lib/lox-id";
@@ -259,7 +259,6 @@ export function TaskBoard() {
   const [serverBoardAutoPaused, setServerBoardAutoPaused] = useState(false);
   const [serverSaveError, setServerSaveError] = useState<string | null>(null);
   const [titleEditNodeId, setTitleEditNodeId] = useState<string | null>(null);
-  const [compactCards, setCompactCards] = useState(false);
   const [boardJsonExportOpen, setBoardJsonExportOpen] = useState(false);
   const [pasteImportOpen, setPasteImportOpen] = useState(false);
   const [pasteSubtreeParentId, setPasteSubtreeParentId] = useState<string | null>(null);
@@ -1090,21 +1089,6 @@ export function TaskBoard() {
             >
               <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
             </button>
-            <button
-              type="button"
-              onClick={() => setCompactCards((c) => !c)}
-              className={[
-                "flex h-8 w-8 items-center justify-center rounded-lg border transition",
-                compactCards
-                  ? "border-sky-300/90 bg-sky-50 text-sky-900 ring-1 ring-sky-200/80 hover:bg-sky-100/80"
-                  : "border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900",
-              ].join(" ")}
-              title={compactCards ? "Kompakt-Modus aus" : "Kompakt-Modus — kürzere Karten, Beschreibung gekürzt"}
-              aria-label={compactCards ? "Kompakt-Modus deaktivieren" : "Kompakt-Modus aktivieren"}
-              aria-pressed={compactCards}
-            >
-              <Rows3 className="h-3.5 w-3.5" aria-hidden />
-            </button>
           </div>
         </div>
         <TagFilterBar onOpenAppointments={() => setAppointmentsListOpen(true)} />
@@ -1162,7 +1146,6 @@ export function TaskBoard() {
               titleEditNodeId={titleEditNodeId}
               onTitleSave={handleTitleSave}
               onTitleEditCancel={handleTitleEditCancel}
-              compact={compactCards}
               onActivateBranch={handleActivateBranch}
               dropPreview={dropPreview}
               fieldVisibility={cardFieldVisibility}

@@ -20,7 +20,7 @@ import { compactColumnTitleOverrides } from "@/lib/column-titles";
 import { refreshCalculatedEffortsInTree } from "@/lib/task-effort";
 import { generateUniqueTaskId } from "@/lib/task-id";
 import { remapTaskNodeIds } from "@/lib/task-tree-json";
-import { pruneEmptyUxLeavesInFocusSubtree } from "@/lib/focus-mode-outline";
+import { collapsedIdsAfterFocusDepthAction, pruneEmptyUxLeavesInFocusSubtree } from "@/lib/focus-mode-outline";
 import { DEFAULT_COMPLETED_TAG, normalizeCompletedTag, normalizeTagLabel, tagKey } from "@/lib/task-tags";
 import type { TaskCardEditableFields, TaskNode } from "@/types/task-node";
 
@@ -31,6 +31,8 @@ export interface TaskTreeState {
   /** Eingeklappte Knoten-IDs (Kinder ausgeblendet). */
   collapsedIds: string[];
   toggleNodeCollapsed: (nodeId: string) => void;
+  /** Fokus-Ansicht: Teilbaum auf `maxDepth` Ebenen zu-/aufklappen (`null` = alles öffnen). */
+  applyFocusDepthInView: (focusNodeId: string, maxDepth: number | null) => void;
 
   /** Erledigte Karten in Spaltenansicht ausblenden (nur Anzeige). */
   hideCompletedTasks: boolean;
@@ -221,6 +223,21 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
       const collapsedIds = has
         ? s.collapsedIds.filter((id) => id !== nodeId)
         : [...s.collapsedIds, nodeId];
+      return { collapsedIds };
+    });
+  },
+
+  applyFocusDepthInView: (focusNodeId, maxDepth) => {
+    set((s) => {
+      const focus = findNodeById(s.roots, focusNodeId);
+      if (!focus) return {};
+      const collapsedIds = collapsedIdsAfterFocusDepthAction(s.collapsedIds, focus, maxDepth);
+      if (
+        collapsedIds.length === s.collapsedIds.length &&
+        collapsedIds.every((id, i) => id === s.collapsedIds[i])
+      ) {
+        return {};
+      }
       return { collapsedIds };
     });
   },

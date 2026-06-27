@@ -439,11 +439,11 @@ export function FocusModeView({
   const applyTreeDrag = useTaskTreeStore((s) => s.applyTreeDrag);
   const collapsedIds = useTaskTreeStore((s) => s.collapsedIds);
   const toggleNodeCollapsed = useTaskTreeStore((s) => s.toggleNodeCollapsed);
+  const applyFocusDepthInView = useTaskTreeStore((s) => s.applyFocusDepthInView);
 
   const [titleEditId, setTitleEditId] = useState<string | null>(null);
   const [focusRootEditing, setFocusRootEditing] = useState(false);
   const [focusRootDraft, setFocusRootDraft] = useState("");
-  const [maxVisibleDepth, setMaxVisibleDepth] = useState<number | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [nestDropTargetId, setNestDropTargetId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -468,10 +468,9 @@ export function FocusModeView({
   const rows = useMemo(
     () =>
       buildFocusOutlineRows(roots, focusNodeId, hideCompletedTasks, completedTag, {
-        maxDepth: maxVisibleDepth,
         collapsedIds: collapsedSet,
       }),
-    [roots, focusNodeId, hideCompletedTasks, completedTag, maxVisibleDepth, collapsedSet],
+    [roots, focusNodeId, hideCompletedTasks, completedTag, collapsedSet],
   );
 
   const focusRootCollapsed = collapsedSet.has(focusNodeId);
@@ -721,40 +720,25 @@ export function FocusModeView({
             <div
               className="flex items-center gap-1 rounded-lg border border-slate-200/90 bg-slate-50/80 px-1 py-0.5"
               role="group"
-              aria-label="Angezeigte Ebenen"
+              aria-label="Ebenen zu- oder aufklappen"
             >
               <span className="px-1 text-[10px] font-medium text-slate-500">Ebenen</span>
-              {Array.from({ length: outlineMaxDepth }, (_, i) => i + 1).map((depth) => {
-                const active = maxVisibleDepth === depth;
-                return (
-                  <button
-                    key={depth}
-                    type="button"
-                    onClick={() => setMaxVisibleDepth(depth)}
-                    className={[
-                      "min-w-[1.5rem] rounded-md px-1.5 py-0.5 text-[11px] font-medium tabular-nums transition",
-                      active
-                        ? "bg-violet-600 text-white shadow-sm"
-                        : "text-slate-600 hover:bg-white hover:text-slate-900",
-                    ].join(" ")}
-                    title={`${depth} Ebene${depth === 1 ? "" : "n"} anzeigen`}
-                    aria-pressed={active}
-                  >
-                    {depth}
-                  </button>
-                );
-              })}
+              {Array.from({ length: outlineMaxDepth }, (_, i) => i + 1).map((depth) => (
+                <button
+                  key={depth}
+                  type="button"
+                  onClick={() => applyFocusDepthInView(focusNodeId, depth)}
+                  className="min-w-[1.5rem] rounded-md px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-slate-600 transition hover:bg-white hover:text-slate-900"
+                  title={`Auf ${depth} Ebene${depth === 1 ? "" : "n"} einklappen`}
+                >
+                  {depth}
+                </button>
+              ))}
               <button
                 type="button"
-                onClick={() => setMaxVisibleDepth(null)}
-                className={[
-                  "rounded-md px-1.5 py-0.5 text-[11px] font-medium transition",
-                  maxVisibleDepth === null
-                    ? "bg-violet-600 text-white shadow-sm"
-                    : "text-slate-600 hover:bg-white hover:text-slate-900",
-                ].join(" ")}
-                title="Alle Ebenen anzeigen"
-                aria-pressed={maxVisibleDepth === null}
+                onClick={() => applyFocusDepthInView(focusNodeId, null)}
+                className="rounded-md px-1.5 py-0.5 text-[11px] font-medium text-slate-600 transition hover:bg-white hover:text-slate-900"
+                title="Alle Ebenen aufklappen"
               >
                 Alle
               </button>
@@ -911,7 +895,7 @@ export function FocusModeView({
                     : focusRootCollapsed
                       ? `${focusNode.children.length} Unterpunkt${focusNode.children.length === 1 ? "" : "e"} ausgeblendet`
                       : rows.length === 0
-                        ? "Keine Unterpunkte sichtbar (Filter oder Ebenen)"
+                        ? "Keine Unterpunkte sichtbar (Filter oder eingeklappt)"
                         : `${rows.length} Unterpunkt${rows.length === 1 ? "" : "e"} sichtbar`}
                 </p>
               </div>
@@ -968,7 +952,7 @@ export function FocusModeView({
                       ? "Unterpunkte ausgeblendet — oben aufklappen."
                       : focusNode.children.length === 0
                         ? "Keine Unterpunkte — ideal zum schnellen Erfassen."
-                        : "Keine Unterpunkte sichtbar — Ebenen oder Filter prüfen."}
+                        : "Keine Unterpunkte sichtbar — Filter prüfen oder oben aufklappen."}
                   </p>
                 </div>
               ) : (

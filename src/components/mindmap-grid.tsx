@@ -14,6 +14,7 @@ import {
   MINDMAP_COL_GAP_PX,
   MINDMAP_COL_WIDTH_PX,
   mindmapBoardWidthPx,
+  visualCardBottomPx,
   type MindmapBoardLayout,
 } from "@/lib/mindmap-layout";
 import {
@@ -65,7 +66,7 @@ function GridInsertGap({
     <div
       ref={setNodeRef}
       className={[
-        "absolute z-20 min-h-[8px] rounded-md transition-colors",
+        "absolute z-20 flex min-h-[8px] rounded-md transition-colors",
         highlightColumn && isOver ? "bg-sky-100/90 ring-2 ring-sky-500" : "",
         !highlightColumn && isOver ? "bg-sky-50/80" : "",
       ].join(" ")}
@@ -74,6 +75,16 @@ function GridInsertGap({
       {showLine ? <DropSlotLine /> : null}
     </div>
   );
+}
+
+const GAP_ZONE_MIN_PX = 8;
+
+function gapZoneBetween(zoneTop: number, zoneBottom: number): { top: number; height: number } {
+  const span = zoneBottom - zoneTop;
+  if (span >= GAP_ZONE_MIN_PX) {
+    return { top: zoneTop, height: span };
+  }
+  return { top: zoneTop + span / 2 - GAP_ZONE_MIN_PX / 2, height: GAP_ZONE_MIN_PX };
 }
 
 export interface MindmapGridProps {
@@ -257,18 +268,6 @@ export function MindmapGrid({
     return { prevInColumnByNodeId, nextInColumnByNodeId };
   }, [visibleEntries, roots, columnCount]);
 
-  const gapBand = Math.max(MINDMAP_CARD_GAP_PX, 6);
-
-  const gapTopCentered = (
-    prevBottom: number | null,
-    nextTop: number,
-    fallbackCenter: number,
-  ) => {
-    const center =
-      prevBottom != null ? (prevBottom + nextTop) / 2 : fallbackCenter;
-    return center - gapBand / 2;
-  };
-
   return (
     <div className="inline-block min-w-min">
       <div className="mb-2 grid" style={headerGridStyle}>
@@ -310,9 +309,8 @@ export function MindmapGrid({
               highlightColumn={mainTailHighlight(0, 0, null)}
               style={{
                 left: columnLeftPx(0),
-                top: MINDMAP_BOARD_PAD_Y,
+                ...gapZoneBetween(MINDMAP_BOARD_PAD_Y, MINDMAP_BOARD_PAD_Y + GAP_ZONE_MIN_PX),
                 width: MINDMAP_COL_WIDTH_PX,
-                height: gapBand,
               }}
             />
           ) : null}
@@ -334,11 +332,18 @@ export function MindmapGrid({
             const nextEntry = nextInColumnByNodeId.get(e.node.id) ?? null;
             const prevPos = prevEntry ? positions.get(prevEntry.node.id) : null;
             const nextPos = nextEntry ? positions.get(nextEntry.node.id) : null;
-            const prevBottom = prevPos ? prevPos.top + prevPos.height : null;
-            const gapTop = gapTopCentered(
-              prevBottom,
+            const insertGapZone = gapZoneBetween(
+              prevEntry && prevPos
+                ? visualCardBottomPx(prevEntry.node.id, prevPos, cardHeights)
+                : MINDMAP_BOARD_PAD_Y,
               pos.top,
-              pos.top - MINDMAP_CARD_GAP_PX / 2,
+            );
+            const tailGapZone = gapZoneBetween(
+              visualCardBottomPx(e.node.id, pos, cardHeights),
+              nextPos
+                ? nextPos.top
+                : visualCardBottomPx(e.node.id, pos, cardHeights) +
+                    Math.max(MINDMAP_CARD_GAP_PX * 2, GAP_ZONE_MIN_PX),
             );
 
             return (
@@ -351,9 +356,8 @@ export function MindmapGrid({
                   highlightColumn={false}
                   style={{
                     left: pos.left,
-                    top: gapTop,
+                    ...insertGapZone,
                     width: pos.width,
-                    height: gapBand,
                   }}
                 />
                 <div
@@ -399,13 +403,8 @@ export function MindmapGrid({
                     highlightColumn={mainTailHighlight(e.column, tailInsert, e.listParentId)}
                     style={{
                       left: pos.left,
-                      top: gapTopCentered(
-                        pos.top + pos.height,
-                        nextPos?.top ?? pos.top + pos.height + MINDMAP_CARD_GAP_PX,
-                        pos.top + pos.height + MINDMAP_CARD_GAP_PX / 2,
-                      ),
+                      ...tailGapZone,
                       width: pos.width,
-                      height: gapBand,
                     }}
                   />
                 ) : null}

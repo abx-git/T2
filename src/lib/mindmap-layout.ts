@@ -13,10 +13,10 @@ export const MINDMAP_BOARD_PAD_Y = 8;
  * Mindestabstand zwischen zwei Karten in derselben Spalte (untere Kante → nächste Zeile),
  * sofern der Abstand nicht durch aufgeklappte Unterkarten in tieferen Spalten größer sein muss.
  */
-/** Fester Mindestabstand unter Karten in derselben Spalte (1/3 von früher 10 px). */
-export const MINDMAP_CARD_GAP_PX = 3;
+/** Fester Mindestabstand unter Karten in derselben Spalte. */
+export const MINDMAP_CARD_GAP_PX = 1;
 /** Puffer gegen Rundungsfehler, Ring und Schatten innerhalb der Zeile. */
-const CELL_HEIGHT_BUFFER_PX = 4;
+export const MINDMAP_CELL_HEIGHT_BUFFER_PX = 2;
 
 export type MindmapCardPosition = {
   top: number;
@@ -238,13 +238,22 @@ export function cardContentHeight(
   compact: boolean,
 ): number {
   const measured = cellHeights.get(e.node.id);
-  const floor = Math.max(
-    estimateMinCardHeight(e, compact),
-    e.rowSpan * MINDMAP_ROW_HEIGHT,
-    MINDMAP_ROW_HEIGHT,
-  );
-  if (measured != null && measured > 0) return Math.max(measured, floor);
-  return floor;
+  const estimateFloor = estimateMinCardHeight(e, compact);
+  if (measured != null && measured > 0) {
+    return Math.max(measured, estimateFloor);
+  }
+  return Math.max(estimateFloor, e.rowSpan * MINDMAP_ROW_HEIGHT, MINDMAP_ROW_HEIGHT);
+}
+
+/** Untere Kante der sichtbaren Karte (ohne Zeilen-Puffer). */
+export function visualCardBottomPx(
+  nodeId: string,
+  pos: MindmapCardPosition,
+  cellHeights: ReadonlyMap<string, number>,
+): number {
+  const measured = cellHeights.get(nodeId);
+  if (measured != null && measured > 0) return pos.top + measured;
+  return pos.top + Math.max(pos.height - MINDMAP_CELL_HEIGHT_BUFFER_PX, 1);
 }
 
 /** Höhe der Karte inkl. Puffer (Positionierung innerhalb der Zeile). */
@@ -253,7 +262,7 @@ function positionedCardHeight(
   cellHeights: ReadonlyMap<string, number>,
   compact: boolean,
 ): number {
-  return cardContentHeight(e, cellHeights, compact) + CELL_HEIGHT_BUFFER_PX;
+  return cardContentHeight(e, cellHeights, compact) + MINDMAP_CELL_HEIGHT_BUFFER_PX;
 }
 
 /** Mindesthöhe einer Rasterzeile: Karte + Puffer + fester Abstand nach unten. */

@@ -1134,8 +1134,7 @@ export function TaskBoard() {
             ].join(" ")}
           >
             <MindmapGrid
-              layout={mindmapLayout}
-              roots={roots}
+              roots={mindmapDisplayRoots}
               columnCount={columnCount}
               columnTitleOverrides={columnTitleOverrides}
               collapsedIds={collapsedSet}

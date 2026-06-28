@@ -6,23 +6,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 
 import { resolveColumnDisplayTitle } from "@/lib/column-titles";
 import {
-  computeCardPositions,
-  columnLeftPx,
-  entriesInColumnTreeOrder,
+  layoutMindmap,
   MINDMAP_BOARD_PAD_Y,
-  MINDMAP_CARD_GAP_PX,
-  MINDMAP_CARD_MARGIN_Y,
   MINDMAP_COL_GAP_PX,
   MINDMAP_COL_WIDTH_PX,
-  mindmapBoardWidthPx,
-  visualCardBottomPx,
-  type MindmapBoardLayout,
+  type MindmapDropGap,
 } from "@/lib/mindmap-layout";
-import {
-  columnGapId,
-  getSiblingsList,
-  siblingInsertIndexBeforeCard,
-} from "@/lib/tree-utils";
+import { columnGapId } from "@/lib/tree-utils";
 import type { CardFieldVisibility } from "@/lib/card-field-visibility";
 import type { BoardDropPreview } from "@/types/dnd-preview";
 import type { TaskNode } from "@/types/task-node";
@@ -39,29 +29,30 @@ function DropSlotLine() {
 }
 
 function GridInsertGap({
-  columnIndex,
-  insertIndex,
-  listParentId,
+  gap,
   showLine,
   highlightColumn,
-  style,
 }: {
-  columnIndex: number;
-  insertIndex: number;
-  listParentId: string | null;
+  gap: MindmapDropGap;
   showLine: boolean;
   highlightColumn: boolean;
-  style: CSSProperties;
 }) {
   const { setNodeRef, isOver } = useDroppable({
-    id: columnGapId(columnIndex, insertIndex, listParentId),
+    id: columnGapId(gap.columnIndex, gap.insertIndex, gap.listParentId),
     data: {
       kind: "columnGap" as const,
-      columnIndex,
-      insertIndex,
-      listParentId,
+      columnIndex: gap.columnIndex,
+      insertIndex: gap.insertIndex,
+      listParentId: gap.listParentId,
     },
   });
+
+  const style: CSSProperties = {
+    left: gap.left,
+    top: gap.top,
+    width: gap.width,
+    height: gap.height,
+  };
 
   return (
     <div
@@ -78,33 +69,7 @@ function GridInsertGap({
   );
 }
 
-const GAP_HIT_HEIGHT_PX = 12;
-
-/** Trefferzone strikt zwischen zoneTop (Karte oben) und zoneBottom (Karte unten). */
-function gapZoneBetween(
-  zoneTop: number,
-  zoneBottom: number,
-): { top: number; height: number } | null {
-  const span = zoneBottom - zoneTop;
-  if (span < 2) return null;
-  const height = Math.min(span, GAP_HIT_HEIGHT_PX);
-  const top = zoneTop + (span - height) / 2;
-  return { top, height };
-}
-
-type GapSlot = {
-  key: string;
-  columnIndex: number;
-  insertIndex: number;
-  listParentId: string | null;
-  left: number;
-  width: number;
-  zone: { top: number; height: number };
-  highlightColumn: boolean;
-};
-
 export interface MindmapGridProps {
-  layout: MindmapBoardLayout;
   roots: TaskNode[];
   columnCount: number;
   columnTitleOverrides: Record<number, string>;
@@ -126,7 +91,6 @@ export interface MindmapGridProps {
 }
 
 export function MindmapGrid({
-  layout,
   roots,
   columnCount,
   columnTitleOverrides,
@@ -146,49 +110,34 @@ export function MindmapGrid({
   onCopySubtree,
   onRequestDelete,
 }: MindmapGridProps) {
-  const visibleEntries = layout.entries;
-
   const [cardHeights, setCardHeights] = useState<Map<string, number>>(() => new Map());
   const cardElementsRef = useRef<Map<string, HTMLDivElement>>(new Map());
-  const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
   const measureCardElement = useCallback((el: HTMLDivElement): number => {
     const card = el.querySelector<HTMLElement>("[data-task-card-id]");
-    const cardH =
-      card?.offsetHeight ??
-      card?.getBoundingClientRect().height ??
-      el.getBoundingClientRect().height;
-    return Math.max(Math.ceil(cardH), 1);
+    const h = card?.offsetHeight ?? el.offsetHeight;
+    return Math.max(Math.ceil(h), 1);
   }, []);
 
   const publishCardHeights = useCallback(() => {
-    const elements = cardElementsRef.current;
+    const next = new Map<string, number>();
+    for (const [id, el] of cardElementsRef.current) {
+      next.set(id, measureCardElement(el));
+    }
     setCardHeights((prev) => {
-      if (elements.size === 0) return prev.size === 0 ? prev : new Map();
-      let changed = false;
-      const next = new Map<string, number>();
-      for (const [id, el] of elements) {
-        const h = measureCardElement(el);
-        if (h <= 0) continue;
-        next.set(id, h);
-        const prevH = prev.get(id);
-        if (prevH !== h) changed = true;
+      if (prev.size !== next.size) return next;
+      for (const [id, h] of next) {
+        if (prev.get(id) !== h) return next;
       }
-      if (next.size !== prev.size) changed = true;
-      return changed ? next : prev;
+      return prev;
     });
   }, [measureCardElement]);
 
   const observeCard = useCallback((nodeId: string, el: HTMLDivElement | null) => {
     if (el) {
-      if (cardElementsRef.current.get(nodeId) === el) return;
       cardElementsRef.current.set(nodeId, el);
-      resizeObserverRef.current?.observe(el);
       return;
     }
-    const prev = cardElementsRef.current.get(nodeId);
-    if (!prev) return;
-    resizeObserverRef.current?.unobserve(prev);
     cardElementsRef.current.delete(nodeId);
   }, []);
 
@@ -204,34 +153,19 @@ export function MindmapGrid({
     [observeCard],
   );
 
-  const { positions, boardHeight } = useMemo(
-    () => computeCardPositions(visibleEntries, cardHeights, roots, collapsedIds),
-    [visibleEntries, cardHeights, roots, collapsedIds],
+  const collapsedSet = useMemo(() => collapsedIds, [collapsedIds]);
+
+  const { layout, positions, dropGaps, boardHeight, boardWidth } = useMemo(
+    () => layoutMindmap(roots, collapsedSet, cardHeights),
+    [roots, collapsedSet, cardHeights],
   );
 
-  const boardWidth = mindmapBoardWidthPx(columnCount);
-
   useEffect(() => {
-    let raf2 = 0;
-    const raf1 = requestAnimationFrame(() => {
-      publishCardHeights();
-      raf2 = requestAnimationFrame(() => publishCardHeights());
-    });
-    let roRaf = 0;
-    const ro = new ResizeObserver(() => {
-      cancelAnimationFrame(roRaf);
-      roRaf = requestAnimationFrame(() => publishCardHeights());
-    });
-    resizeObserverRef.current = ro;
+    const ro = new ResizeObserver(() => publishCardHeights());
     for (const el of cardElementsRef.current.values()) ro.observe(el);
-    return () => {
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-      cancelAnimationFrame(roRaf);
-      ro.disconnect();
-      resizeObserverRef.current = null;
-    };
-  }, [publishCardHeights, visibleEntries, fieldVisibility, titleEditNodeId]);
+    publishCardHeights();
+    return () => ro.disconnect();
+  }, [publishCardHeights, layout.entries, fieldVisibility, titleEditNodeId]);
 
   const headerGridStyle = useMemo(
     () => ({
@@ -241,8 +175,8 @@ export function MindmapGrid({
     [columnCount],
   );
 
-  const gapLineAt = (columnIndex: number, insertIndex: number, gapLp: string | null) => {
-    if (!dropPreview || dropPreview.toCol !== columnIndex || dropPreview.targetMode !== "column") {
+  const gapLineAt = (gap: MindmapDropGap) => {
+    if (!dropPreview || dropPreview.toCol !== gap.columnIndex || dropPreview.targetMode !== "column") {
       return false;
     }
     const sortIntent =
@@ -252,141 +186,29 @@ export function MindmapGrid({
       dropPreview.intent === "root-sibling";
     if (!sortIntent) return false;
     return (
-      dropPreview.insertIndex === insertIndex &&
-      (dropPreview.gapListParentId === undefined || dropPreview.gapListParentId === gapLp)
+      dropPreview.insertIndex === gap.insertIndex &&
+      (dropPreview.gapListParentId === undefined || dropPreview.gapListParentId === gap.listParentId)
     );
   };
 
-  const isMainTailHighlight = useCallback(
-    (columnIndex: number, insertIndex: number, gapLp: string | null) =>
-      columnIndex === 0 &&
-      gapLp === null &&
-      Boolean(
-        dropPreview?.intent === "column-end" &&
-          dropPreview.insertIndex === insertIndex &&
-          (dropPreview.gapListParentId === undefined || dropPreview.gapListParentId === null),
-      ),
-    [dropPreview],
-  );
+  const isMainTailHighlight = (gap: MindmapDropGap) =>
+    gap.columnIndex === 0 &&
+    gap.listParentId === null &&
+    dropPreview?.intent === "column-end" &&
+    dropPreview.insertIndex === gap.insertIndex &&
+    (dropPreview.gapListParentId === undefined || dropPreview.gapListParentId === null);
 
-  const visibleRootEntries = useMemo(
-    () => visibleEntries.filter((e) => e.column === 0),
-    [visibleEntries],
-  );
-  const showEmptyRootSlot = visibleRootEntries.length === 0;
-
-  const nextInColumnByNodeId = useMemo(() => {
-    const nextInColumnByNodeId = new Map<string, (typeof visibleEntries)[number] | null>();
-    for (let col = 0; col < columnCount; col++) {
-      const ordered = entriesInColumnTreeOrder(col, visibleEntries, roots);
-      for (let i = 0; i < ordered.length; i++) {
-        nextInColumnByNodeId.set(
-          ordered[i]!.node.id,
-          i < ordered.length - 1 ? ordered[i + 1]! : null,
-        );
-      }
-    }
-    return nextInColumnByNodeId;
-  }, [visibleEntries, roots, columnCount]);
-
-  const gapSlots = useMemo((): GapSlot[] => {
-    const slots: GapSlot[] = [];
-
-    if (showEmptyRootSlot) {
-      const zone = gapZoneBetween(MINDMAP_BOARD_PAD_Y, MINDMAP_BOARD_PAD_Y + GAP_HIT_HEIGHT_PX);
-      if (zone) {
-        slots.push({
-          key: "empty-root",
-          columnIndex: 0,
-          insertIndex: 0,
-          listParentId: null,
-          left: columnLeftPx(0),
-          width: MINDMAP_COL_WIDTH_PX,
-          zone,
-          highlightColumn: isMainTailHighlight(0, 0, null),
-        });
-      }
-    }
-
-    for (let col = 0; col < columnCount; col++) {
-      const ordered = entriesInColumnTreeOrder(col, visibleEntries, roots);
-      for (let i = 0; i < ordered.length; i++) {
-        const entry = ordered[i]!;
+  const cardRows = useMemo(
+    () =>
+      layout.entries.flatMap((entry) => {
         const pos = positions.get(entry.node.id);
-        if (!pos) continue;
-
-        const prev = i > 0 ? ordered[i - 1]! : null;
-        const prevPos = prev ? positions.get(prev.node.id) : null;
-        const zoneTop = prevPos
-          ? visualCardBottomPx(prevPos)
-          : MINDMAP_BOARD_PAD_Y;
-        const zoneBottom = pos.top - MINDMAP_CARD_MARGIN_Y;
-        const zone = gapZoneBetween(zoneTop, zoneBottom);
-        if (zone) {
-          slots.push({
-            key: `between-${prev?.node.id ?? "start"}-${entry.node.id}`,
-            columnIndex: col,
-            insertIndex: siblingInsertIndexBeforeCard(roots, entry.listParentId, entry.node.id),
-            listParentId: entry.listParentId,
-            left: pos.left,
-            width: pos.width,
-            zone,
-            highlightColumn: false,
-          });
-        }
-      }
-    }
-
-    for (const entry of visibleEntries) {
-      const siblings = getSiblingsList(roots, entry.listParentId);
-      if (siblings[siblings.length - 1]?.id !== entry.node.id) continue;
-
-      const pos = positions.get(entry.node.id);
-      if (!pos) continue;
-
-      const tailInsert = siblings.length;
-      const nextEntry = nextInColumnByNodeId.get(entry.node.id) ?? null;
-      const nextPos = nextEntry ? positions.get(nextEntry.node.id) : null;
-      const zoneTop = visualCardBottomPx(pos);
-      const zoneBottom = nextPos
-        ? nextPos.top - MINDMAP_CARD_MARGIN_Y
-        : zoneTop + GAP_HIT_HEIGHT_PX + MINDMAP_CARD_GAP_PX;
-      const zone = gapZoneBetween(zoneTop, zoneBottom);
-      if (!zone) continue;
-
-      slots.push({
-        key: `tail-${entry.node.id}`,
-        columnIndex: entry.column,
-        insertIndex: tailInsert,
-        listParentId: entry.listParentId,
-        left: pos.left,
-        width: pos.width,
-        zone,
-        highlightColumn: isMainTailHighlight(entry.column, tailInsert, entry.listParentId),
-      });
-    }
-
-    return slots;
-  }, [
-    showEmptyRootSlot,
-    columnCount,
-    visibleEntries,
-    roots,
-    positions,
-    nextInColumnByNodeId,
-    dropPreview,
-    isMainTailHighlight,
-  ]);
-
-  const cardRows = useMemo(() => {
-    return visibleEntries.flatMap((e) => {
-      const pos = positions.get(e.node.id);
-      if (!pos) return [];
-      const previewHere =
-        dropPreview && dropPreview.toCol === e.column ? dropPreview : null;
-      return [{ entry: e, pos, previewHere }];
-    });
-  }, [visibleEntries, positions, dropPreview]);
+        if (!pos) return [];
+        const previewHere =
+          dropPreview && dropPreview.toCol === entry.column ? dropPreview : null;
+        return [{ entry, pos, previewHere }];
+      }),
+    [layout.entries, positions, dropPreview],
+  );
 
   return (
     <div className="inline-block min-w-min">
@@ -420,55 +242,44 @@ export function MindmapGrid({
           className="relative z-10 rounded-lg bg-column/40 ring-1 ring-slate-200/50"
           style={{ width: boardWidth, height: Math.max(boardHeight, MINDMAP_BOARD_PAD_Y * 2 + 40) }}
         >
-          {cardRows.map(({ entry: e, pos, previewHere }) => (
+          {cardRows.map(({ entry, pos, previewHere }) => (
             <div
-              key={e.node.id}
-              ref={cardRef(e.node.id)}
+              key={entry.node.id}
+              ref={cardRef(entry.node.id)}
               className="absolute z-10 px-0.5"
-              style={{
-                left: pos.left,
-                top: pos.top,
-                width: pos.width,
-              }}
+              style={{ left: pos.left, top: pos.top, width: pos.width }}
             >
               <TaskCard
-                node={e.node}
-                columnIndex={e.column}
-                listParentId={e.listParentId}
-                isSearchFocus={searchFocusNodeId === e.node.id}
+                node={entry.node}
+                columnIndex={entry.column}
+                listParentId={entry.listParentId}
+                isSearchFocus={searchFocusNodeId === entry.node.id}
                 isNestDropTarget={
-                  previewHere?.intent === "nest-under" && previewHere.anchorCardId === e.node.id
+                  previewHere?.intent === "nest-under" && previewHere.anchorCardId === entry.node.id
                 }
-                isBranchCollapsed={collapsedIds.has(e.node.id)}
-                onToggleCollapsed={() => onToggleCollapsed(e.node.id)}
-                isTitleEditing={titleEditNodeId === e.node.id}
-                onTitleSave={(t, meta) => onTitleSave(e.node.id, t, meta)}
-                onTitleEditCancel={() => onTitleEditCancel(e.node.id)}
-                onAddChild={() => onAddChildCard(e.node.id)}
-                onOpenDetails={() => onOpenDetails(e.node.id)}
+                isBranchCollapsed={collapsedIds.has(entry.node.id)}
+                onToggleCollapsed={() => onToggleCollapsed(entry.node.id)}
+                isTitleEditing={titleEditNodeId === entry.node.id}
+                onTitleSave={(t, meta) => onTitleSave(entry.node.id, t, meta)}
+                onTitleEditCancel={() => onTitleEditCancel(entry.node.id)}
+                onAddChild={() => onAddChildCard(entry.node.id)}
+                onOpenDetails={() => onOpenDetails(entry.node.id)}
                 fieldVisibility={fieldVisibility}
-                onOpenBranch={() => onActivateBranch(e.node.id)}
-                onCopySubtree={onCopySubtree ? () => onCopySubtree(e.node) : undefined}
-                onPasteSubtreeUnder={() => onPasteSubtreeUnder(e.node.id)}
+                onOpenBranch={() => onActivateBranch(entry.node.id)}
+                onCopySubtree={onCopySubtree ? () => onCopySubtree(entry.node) : undefined}
+                onPasteSubtreeUnder={() => onPasteSubtreeUnder(entry.node.id)}
                 onRequestDelete={
-                  onRequestDelete ? () => onRequestDelete(e.node.id) : undefined
+                  onRequestDelete ? () => onRequestDelete(entry.node.id) : undefined
                 }
               />
             </div>
           ))}
-          {gapSlots.map(({ key, columnIndex, insertIndex, listParentId, left, width, zone, highlightColumn }) => (
+          {dropGaps.map((gap) => (
             <GridInsertGap
-              key={key}
-              columnIndex={columnIndex}
-              insertIndex={insertIndex}
-              listParentId={listParentId}
-              showLine={gapLineAt(columnIndex, insertIndex, listParentId)}
-              highlightColumn={highlightColumn}
-              style={{
-                left,
-                ...zone,
-                width,
-              }}
+              key={`${gap.columnIndex}-${gap.insertIndex}-${gap.listParentId ?? "root"}-${gap.top}`}
+              gap={gap}
+              showLine={gapLineAt(gap)}
+              highlightColumn={isMainTailHighlight(gap)}
             />
           ))}
         </div>

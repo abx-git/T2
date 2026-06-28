@@ -206,7 +206,7 @@ export function rootsForMindmapDisplay(
   return next;
 }
 
-/** Zeilen einer Spalte aus dem Mindmap-Layout (sortiert nach ySlot). */
+/** Zeilen einer Spalte aus dem Mindmap-Layout. */
 export function getColumnDisplayRows(
   roots: TaskNode[],
   _pathIds: string[],

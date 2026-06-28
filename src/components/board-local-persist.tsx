@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef } from "react";
 
+import { flushLocalBoardBackup, writeLocalBoardBackup } from "@/lib/board-local-backup";
 import {
   flushLocalBoardMirror,
   readLocalBoardMirror,
@@ -24,6 +25,7 @@ function boardJsonFromStore(): string {
 function flushAllLocalCopies(): void {
   const json = boardJsonFromStore();
   flushLocalBoardMirror(json);
+  flushLocalBoardBackup(json);
   if (hasOfflinePauseState()) {
     updateOfflineDraftJson(json);
   }
@@ -55,7 +57,9 @@ export function BoardLocalPersist() {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
         saveTimerRef.current = null;
-        writeLocalBoardMirror(boardJsonFromStore());
+        const json = boardJsonFromStore();
+        writeLocalBoardMirror(json);
+        writeLocalBoardBackup(json);
       }, SAVE_DEBOUNCE_MS);
     };
 

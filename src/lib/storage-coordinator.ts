@@ -79,7 +79,7 @@ export function deriveStorageDisplayStatus(input: StorageCoordinatorInput): Stor
     return {
       tone: "saved",
       primaryLine: "Gespeichert — Server (LOX-Vault)",
-      secondaryLine: mirrorHint ? `Notfall-Kopie im Browser ${mirrorHint}` : null,
+      secondaryLine: mirrorHint ? `24h-Notfall-Sicherung im Browser ${mirrorHint}` : null,
       showFlushAction: false,
     };
   }
@@ -105,7 +105,7 @@ export function deriveStorageDisplayStatus(input: StorageCoordinatorInput): Stor
     return {
       tone: "saved",
       primaryLine: `Gespeichert — ${label}`,
-      secondaryLine: mirrorHint ? `Notfall-Kopie im Browser ${mirrorHint}` : null,
+      secondaryLine: mirrorHint ? `24h-Notfall-Sicherung im Browser ${mirrorHint}` : null,
       showFlushAction: false,
     };
   }
@@ -126,7 +126,7 @@ export function deriveStorageDisplayStatus(input: StorageCoordinatorInput): Stor
     tone: "local-only",
     primaryLine: "Nur in diesem Browser",
     secondaryLine: mirrorHint
-      ? `Notfall-Kopie ${mirrorHint} — kein Auto-Speichern in Datei oder Server`
+      ? `24h-Notfall-Sicherung ${mirrorHint} — kein Auto-Speichern in Datei oder Server`
       : "Kein Auto-Speichern in Datei oder Server — unter „Daten“ Ziel wählen",
     showFlushAction: false,
   };

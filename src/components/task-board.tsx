@@ -63,6 +63,11 @@ import {
 } from "@/lib/tree-utils";
 import { getBoardMaxVisibleLevels } from "@/lib/tree-depth-collapse";
 import type { VaultStatusInfo } from "@/lib/server-board";
+import {
+  getLocalBoardBackupEntry,
+  listLocalBoardBackups,
+  type LocalBoardBackupListItem,
+} from "@/lib/board-local-backup";
 import { flushLocalBoardMirror, readLocalBoardMirror } from "@/lib/board-local-mirror";
 import {
   deriveStorageDisplayStatus,
@@ -270,6 +275,8 @@ export function TaskBoard() {
   const [dataStoragePanelOpen, setDataStoragePanelOpen] = useState(false);
   const [storagePanelBusy, setStoragePanelBusy] = useState(false);
   const [localMirrorSavedAt, setLocalMirrorSavedAt] = useState<string | null>(null);
+  const [localBackupEntries, setLocalBackupEntries] = useState<LocalBoardBackupListItem[]>([]);
+  const [pendingLocalBackupSavedAt, setPendingLocalBackupSavedAt] = useState<string | null>(null);
   const [postImportSaveOpen, setPostImportSaveOpen] = useState(false);
   const [openWorkingFileConfirmOpen, setOpenWorkingFileConfirmOpen] = useState(false);
   const boardColumnsRef = useRef<HTMLDivElement>(null);
@@ -286,13 +293,14 @@ export function TaskBoard() {
   }, []);
 
   useEffect(() => {
-    const refreshMirror = () => {
+    const refreshLocalCopies = () => {
       setLocalMirrorSavedAt(readLocalBoardMirror()?.savedAt ?? null);
+      setLocalBackupEntries(listLocalBoardBackups());
     };
-    refreshMirror();
-    const timer = setInterval(refreshMirror, 2000);
+    refreshLocalCopies();
+    const timer = setInterval(refreshLocalCopies, 2000);
     const unsub = useTaskTreeStore.subscribe(() => {
-      refreshMirror();
+      refreshLocalCopies();
     });
     return () => {
       clearInterval(timer);
@@ -1228,6 +1236,42 @@ export function TaskBoard() {
         onConfirm={handleConfirmOpenWorkingFile}
       />
       <ConfirmDialog
+        open={pendingLocalBackupSavedAt !== null}
+        title="Notfall-Sicherung wiederherstellen?"
+        message={
+          pendingLocalBackupSavedAt
+            ? `Board-Stand vom ${new Date(pendingLocalBackupSavedAt).toLocaleString()} laden? Alle aktuellen Karten werden ersetzt. Server und Arbeitsdatei werden nicht automatisch angepasst.`
+            : ""
+        }
+        confirmLabel="Wiederherstellen"
+        cancelLabel="Abbrechen"
+        confirmClassName="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+        onCancel={() => setPendingLocalBackupSavedAt(null)}
+        onConfirm={() => {
+          const savedAt = pendingLocalBackupSavedAt;
+          setPendingLocalBackupSavedAt(null);
+          if (!savedAt) return;
+          const entry = getLocalBoardBackupEntry(savedAt);
+          if (!entry) {
+            window.alert("Diese Sicherung ist nicht mehr verfügbar.");
+            setLocalBackupEntries(listLocalBoardBackups());
+            return;
+          }
+          try {
+            const doc = parseExportedDocument(entry.json);
+            if (!isBoardSnapshot(doc)) {
+              window.alert("Ungültige Sicherung — kein Board-Export.");
+              return;
+            }
+            replaceBoardFromImport(boardSnapshotToReplacePayload(doc));
+            closeEditor();
+            setPostImportSaveOpen(true);
+          } catch (err) {
+            window.alert(err instanceof Error ? err.message : "Wiederherstellen fehlgeschlagen.");
+          }
+        }}
+      />
+      <ConfirmDialog
         open={pendingBoardImport !== null}
         title="Backup einspielen?"
         message={
@@ -1274,6 +1318,10 @@ export function TaskBoard() {
         serverOfflinePending={serverOfflinePending}
         serverBoardAutoPaused={serverBoardAutoPaused}
         localMirrorHint={localMirrorHint}
+        localBackupEntries={localBackupEntries}
+        onRestoreLocalBackup={(savedAt) => {
+          setPendingLocalBackupSavedAt(savedAt);
+        }}
         busy={storagePanelBusy}
         onSelectTarget={(target) => void handleSelectAutoSaveTarget(target)}
         onAttachWorkingFile={(createNew) => beginAttachWorkingFile(createNew)}

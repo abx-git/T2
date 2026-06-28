@@ -16,7 +16,9 @@ import {
   X,
 } from "lucide-react";
 
+import type { LocalBoardBackupListItem } from "@/lib/board-local-backup";
 import type { AutoSaveTarget } from "@/lib/storage-coordinator";
+import { formatStorageRelativeTime } from "@/lib/storage-coordinator";
 import type { VaultStatusInfo } from "@/lib/server-board";
 import { formatVaultLoxIdForDisplay } from "@/lib/task-id";
 
@@ -38,6 +40,8 @@ export interface DataStoragePanelProps {
   serverOfflinePending: boolean;
   serverBoardAutoPaused: boolean;
   localMirrorHint: string | null;
+  localBackupEntries: LocalBoardBackupListItem[];
+  onRestoreLocalBackup: (savedAt: string) => void;
   onSelectTarget: (target: AutoSaveTarget) => void;
   onAttachWorkingFile: (createNew: boolean) => void;
   onDetachWorkingFile: () => void;
@@ -120,6 +124,8 @@ export function DataStoragePanel({
   serverOfflinePending,
   serverBoardAutoPaused,
   localMirrorHint,
+  localBackupEntries,
+  onRestoreLocalBackup,
   onSelectTarget,
   onAttachWorkingFile,
   onDetachWorkingFile,
@@ -203,8 +209,8 @@ export function DataStoragePanel({
                 title="Nur in diesem Browser"
                 description={
                   localMirrorHint
-                    ? `Notfall-Kopie im Browser (${localMirrorHint}). Kein Auto-Speichern in Datei oder Server.`
-                    : "Entwurf nur hier — zusätzlich eine unsichtbare Notfall-Kopie im Browser."
+                    ? `24h-Notfall-Sicherung im Browser (${localMirrorHint}). Kein Auto-Speichern in Datei oder Server.`
+                    : "Entwurf nur hier — zusätzlich eine automatische 24h-Notfall-Sicherung im Browser."
                 }
               />
 
@@ -398,6 +404,52 @@ export function DataStoragePanel({
                 ) : null}
               </TargetOption>
             </div>
+          </section>
+
+          <section className="mt-8">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Lokale Notfall-Sicherung (24 h)
+            </h3>
+            <p className="mt-1 text-xs text-slate-600">
+              Automatische Zeitpunkte im Browser — unabhängig vom Server. Nützlich, wenn der Server
+              ausfällt oder Daten verloren gehen.
+            </p>
+            {localBackupEntries.length > 0 ? (
+              <ul className="mt-3 max-h-48 space-y-1.5 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/80 p-2">
+                {localBackupEntries.map((entry) => {
+                  const rel = formatStorageRelativeTime(entry.savedAt);
+                  const stamp = new Date(entry.savedAt).toLocaleString(undefined, {
+                    day: "2-digit",
+                    month: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+                  return (
+                    <li key={entry.savedAt}>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => onRestoreLocalBackup(entry.savedAt)}
+                        className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs text-slate-800 hover:bg-white disabled:opacity-60"
+                      >
+                        <span className="font-medium">{rel ?? stamp}</span>
+                        <span className="shrink-0 text-slate-500">
+                          {stamp}
+                          {" · "}
+                          {entry.rootCount === 0
+                            ? "leer"
+                            : `${entry.rootCount} Wurzelkarte${entry.rootCount === 1 ? "" : "n"}`}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-500">
+                Noch keine Zeitpunkte — Sicherungen entstehen automatisch bei Änderungen.
+              </p>
+            )}
           </section>
 
           <section className="mt-8">

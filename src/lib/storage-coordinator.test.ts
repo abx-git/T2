@@ -74,7 +74,7 @@ describe("formatStorageStatusTooltip", () => {
     });
     const tip = formatStorageStatusTooltip(status);
     expect(tip).toContain("Gespeichert — Server (LOX-Vault)");
-    expect(tip).toContain("Notfall-Kopie");
+    expect(tip).toContain("24h-Notfall-Sicherung");
     expect(tip).toContain("Klick:");
   });
 });

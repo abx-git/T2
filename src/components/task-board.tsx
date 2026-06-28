@@ -46,7 +46,6 @@ import {
   isWorkingFileAttached,
   isWorkingFileDirty,
   isWorkingFileSupported,
-  restoreWorkingFileFromDisk,
   STANDARD_WORKING_FILENAME,
   writeWorkingFileJson,
 } from "@/lib/working-file";
@@ -73,7 +72,9 @@ import {
   deriveStorageDisplayStatus,
   formatStorageRelativeTime,
   formatStorageStatusTooltip,
+  hasUnsavedPrimaryTarget,
   resolveAutoSaveTarget,
+  storageModeFromFlags,
 } from "@/lib/storage-coordinator";
 import {
   clearOfflinePauseState,
@@ -81,7 +82,8 @@ import {
   hasOfflinePendingChanges,
   pauseServerBoardOffline,
 } from "@/lib/server-board-offline";
-import { clearVaultLoxId, readVaultLoxId, writeVaultLoxId } from "@/lib/lox-vault-session";
+import { readStorageMode, writeStorageMode } from "@/lib/storage-session";
+import { readVaultLoxId, writeVaultLoxId } from "@/lib/lox-vault-session";
 import {
   detachServerBoard,
   fetchVaultStatus,
@@ -318,12 +320,15 @@ export function TaskBoard() {
         setVaultLoxId(storedLoxId);
         setLinkedVaultLoxId(storedLoxId);
       }
-      if (!status.configured || !storedLoxId || hasOfflinePauseState()) return;
-      if (isWorkingFileSupported()) {
-        const handle = await restoreWorkingFileFromDisk();
-        if (handle) return;
+      const mode = readStorageMode();
+      if (
+        mode === "server" &&
+        status.configured &&
+        storedLoxId &&
+        !hasOfflinePauseState()
+      ) {
+        setServerBoardEnabled(true);
       }
-      setServerBoardEnabled(true);
     })();
   }, []);
 
@@ -481,6 +486,7 @@ export function TaskBoard() {
     await detachWorkingFile();
     setWorkingFileName(null);
     setWorkingFileDirty(false);
+    writeStorageMode("browser");
     return true;
   }, [boardSnapshotTextFromStore]);
 
@@ -506,8 +512,10 @@ export function TaskBoard() {
       if (options?.offline !== false) {
         enterServerBoardOfflineMode({ auto: false });
       } else {
+        detachServerBoard();
         setServerBoardEnabled(false);
         setServerBoardDirty(false);
+        writeStorageMode("browser");
       }
       return true;
     },
@@ -539,6 +547,7 @@ export function TaskBoard() {
       setPendingVaultLinkIntent(intent);
       setServerBoardAutoPaused(false);
       setServerBoardEnabled(true);
+      writeStorageMode("server");
       return true;
     },
     [detachWorkingFileWithSave, vaultStatus?.configured],
@@ -577,6 +586,7 @@ export function TaskBoard() {
         if (!handle) return false;
         setWorkingFileName(handle.name?.trim() ? handle.name : "Arbeitsdatei");
         if (createNew) setWorkingFileDirty(false);
+        writeStorageMode("file");
         return true;
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return false;
@@ -627,13 +637,23 @@ export function TaskBoard() {
       try {
         if (target === "local") {
           if (serverBoardEnabled) {
-            const ok = await disconnectServerBoardLink({ offline: true });
+            const ok = await disconnectServerBoardLink({ saveFirst: true, offline: false });
             if (!ok) return;
+          }
+          if (serverOfflinePending || hasOfflinePauseState()) {
+            const cont = window.confirm(
+              "Offline-Entwurf für den Server verwerfen und nur im Browser weiterarbeiten?",
+            );
+            if (!cont) return;
+            clearOfflinePauseState();
+            setServerOfflinePending(false);
+            setServerBoardAutoPaused(false);
           }
           if (isWorkingFileAttached()) {
             const ok = await detachWorkingFileWithSave();
             if (!ok) return;
           }
+          writeStorageMode("browser");
           return;
         }
         if (target === "server") {
@@ -650,6 +670,7 @@ export function TaskBoard() {
       detachWorkingFileWithSave,
       disconnectServerBoardLink,
       serverBoardEnabled,
+      serverOfflinePending,
     ],
   );
 
@@ -662,7 +683,10 @@ export function TaskBoard() {
     const json = boardSnapshotTextFromStore();
     const written = await writeWorkingFileJson(json);
     if (!written) window.alert("Speichern in die Arbeitsdatei ist fehlgeschlagen.");
-    else setWorkingFileDirty(false);
+    else {
+      setWorkingFileDirty(false);
+      writeStorageMode("file");
+    }
   }, [beginAttachWorkingFile, boardSnapshotTextFromStore]);
 
   const handleSaveServerBoard = useCallback(async () => {
@@ -866,11 +890,6 @@ export function TaskBoard() {
     setVaultDialogOpen(true);
   }, []);
 
-  const openConnectVaultDialog = useCallback(() => {
-    setVaultDialogMode("connect");
-    setVaultDialogOpen(true);
-  }, []);
-
   const handleImportFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -983,15 +1002,22 @@ export function TaskBoard() {
       ? workingFileHandle.name
       : null);
 
+  const storageMode = storageModeFromFlags({
+    serverBoardEnabled,
+    workingFileAttached,
+    serverOfflinePending,
+  });
+
   const autoSaveTarget = resolveAutoSaveTarget({
     serverBoardEnabled,
     workingFileAttached,
+    serverOfflinePending,
   });
 
   const storageDisplayStatus = useMemo(
     () =>
       deriveStorageDisplayStatus({
-        autoSaveTarget,
+        storageMode,
         workingFileLabel,
         workingFileDirty,
         workingFileSaving,
@@ -1002,7 +1028,7 @@ export function TaskBoard() {
         localMirrorSavedAt,
       }),
     [
-      autoSaveTarget,
+      storageMode,
       workingFileLabel,
       workingFileDirty,
       workingFileSaving,
@@ -1013,6 +1039,21 @@ export function TaskBoard() {
       localMirrorSavedAt,
     ],
   );
+
+  useEffect(() => {
+    const warnOnLeave = (event: BeforeUnloadEvent) => {
+      const dirty = hasUnsavedPrimaryTarget({
+        storageMode,
+        workingFileDirty,
+        serverBoardDirty,
+      });
+      if (!dirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnOnLeave);
+    return () => window.removeEventListener("beforeunload", warnOnLeave);
+  }, [storageMode, workingFileDirty, serverBoardDirty]);
 
   const dataStorageTooltip = useMemo(
     () => formatStorageStatusTooltip(storageDisplayStatus),
@@ -1297,7 +1338,10 @@ export function TaskBoard() {
         serverConfigured={Boolean(vaultStatus?.configured)}
         onSaveToWorkingFile={() => void handlePostImportSaveToFile()}
         onSyncToServer={() => void handlePostImportSyncServer()}
-        onKeepLocalOnly={() => setPostImportSaveOpen(false)}
+        onKeepLocalOnly={() => {
+          setPostImportSaveOpen(false);
+          writeStorageMode("browser");
+        }}
       />
       <DataStoragePanel
         open={dataStoragePanelOpen}

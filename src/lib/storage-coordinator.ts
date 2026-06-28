@@ -1,13 +1,16 @@
 /**
- * Einheitlicher Speicher-Status für Arbeitsziel, Server und lokale Notfall-Kopie.
+ * Einheitlicher Speicher-Status für die drei Modi: Browser, Datei, Server.
  */
 
+import type { StorageMode } from "@/lib/storage-session";
+
+/** @deprecated Alias — gleichbedeutend mit StorageMode-Mapping in der UI. */
 export type AutoSaveTarget = "local" | "working-file" | "server";
 
 export type StorageStatusTone = "saved" | "dirty" | "saving" | "offline" | "local-only";
 
 export interface StorageCoordinatorInput {
-  autoSaveTarget: AutoSaveTarget;
+  storageMode: StorageMode;
   workingFileLabel: string | null;
   workingFileDirty: boolean;
   workingFileSaving: boolean;
@@ -22,17 +25,38 @@ export interface StorageDisplayStatus {
   tone: StorageStatusTone;
   primaryLine: string;
   secondaryLine: string | null;
-  /** „Jetzt speichern“ anzeigen (nur bei dirty + Auto-Save-Ziel). */
-  showFlushAction: boolean;
 }
 
+export function storageModeFromFlags(input: {
+  serverBoardEnabled: boolean;
+  workingFileAttached: boolean;
+  serverOfflinePending?: boolean;
+}): StorageMode {
+  if (input.serverBoardEnabled || input.serverOfflinePending) return "server";
+  if (input.workingFileAttached) return "file";
+  return "browser";
+}
+
+/** @deprecated Nutze storageModeFromFlags. */
 export function resolveAutoSaveTarget(input: {
   serverBoardEnabled: boolean;
   workingFileAttached: boolean;
+  serverOfflinePending?: boolean;
 }): AutoSaveTarget {
-  if (input.serverBoardEnabled) return "server";
-  if (input.workingFileAttached) return "working-file";
+  const mode = storageModeFromFlags(input);
+  if (mode === "server") return "server";
+  if (mode === "file") return "working-file";
   return "local";
+}
+
+export function hasUnsavedPrimaryTarget(input: {
+  storageMode: StorageMode;
+  workingFileDirty: boolean;
+  serverBoardDirty: boolean;
+}): boolean {
+  if (input.storageMode === "file") return input.workingFileDirty;
+  if (input.storageMode === "server") return input.serverBoardDirty;
+  return false;
 }
 
 export function formatStorageRelativeTime(iso: string | null, nowMs = Date.now()): string | null {
@@ -59,80 +83,70 @@ export function deriveStorageDisplayStatus(input: StorageCoordinatorInput): Stor
     ? formatStorageRelativeTime(input.localMirrorSavedAt)
     : null;
 
-  if (input.autoSaveTarget === "server") {
+  if (input.storageMode === "server") {
+    if (input.serverOfflinePending && !input.serverBoardSaving) {
+      const offlineSecondary = input.serverBoardAutoPaused
+        ? "Kein Netz — Server-Abgleich sobald online"
+        : "Offline-Entwurf — unter „Daten“ verbinden";
+      return {
+        tone: "offline",
+        primaryLine: "Offline-Entwurf — Server",
+        secondaryLine: offlineSecondary,
+      };
+    }
     if (input.serverBoardSaving) {
       return {
         tone: "saving",
         primaryLine: "Speichert auf Server …",
         secondaryLine: null,
-        showFlushAction: false,
       };
     }
     if (input.serverBoardDirty) {
       return {
         tone: "dirty",
         primaryLine: "Ungespeichert — Server",
-        secondaryLine: "Änderungen werden automatisch hochgeladen",
-        showFlushAction: true,
+        secondaryLine: "Wird automatisch hochgeladen — Tab nicht schließen",
       };
     }
     return {
       tone: "saved",
-      primaryLine: "Gespeichert — Server (LOX-Vault)",
-      secondaryLine: mirrorHint ? `24h-Notfall-Sicherung im Browser ${mirrorHint}` : null,
-      showFlushAction: false,
+      primaryLine: "Gespeichert — Server (LOX-ID)",
+      secondaryLine: mirrorHint ? `Browser-Notfallkopie ${mirrorHint}` : null,
     };
   }
 
-  if (input.autoSaveTarget === "working-file") {
+  if (input.storageMode === "file") {
     const label = input.workingFileLabel?.trim() || "Arbeitsdatei";
     if (input.workingFileSaving) {
       return {
         tone: "saving",
         primaryLine: `Speichert in „${label}“ …`,
         secondaryLine: null,
-        showFlushAction: false,
       };
     }
     if (input.workingFileDirty) {
       return {
         tone: "dirty",
         primaryLine: `Ungespeichert — ${label}`,
-        secondaryLine: "Änderungen werden automatisch in die Datei geschrieben",
-        showFlushAction: true,
+        secondaryLine: "Wird automatisch in die Datei geschrieben — Tab nicht schließen",
       };
     }
     return {
       tone: "saved",
       primaryLine: `Gespeichert — ${label}`,
-      secondaryLine: mirrorHint ? `24h-Notfall-Sicherung im Browser ${mirrorHint}` : null,
-      showFlushAction: false,
-    };
-  }
-
-  if (input.serverOfflinePending) {
-    const offlineSecondary = input.serverBoardAutoPaused
-      ? "Kein Netz — Abgleich mit Server sobald online"
-      : "Offline-Entwurf — unter „Daten“ mit Server verbinden";
-    return {
-      tone: "offline",
-      primaryLine: "Nur in diesem Browser (Offline-Entwurf)",
-      secondaryLine: offlineSecondary,
-      showFlushAction: false,
+      secondaryLine: mirrorHint ? `Browser-Notfallkopie ${mirrorHint}` : null,
     };
   }
 
   return {
     tone: "local-only",
-    primaryLine: "Nur in diesem Browser",
+    primaryLine: "Nur im Browser",
     secondaryLine: mirrorHint
-      ? `24h-Notfall-Sicherung ${mirrorHint} — kein Auto-Speichern in Datei oder Server`
-      : "Kein Auto-Speichern in Datei oder Server — unter „Daten“ Ziel wählen",
-    showFlushAction: false,
+      ? `24h-Notfallkopie ${mirrorHint}`
+      : "Automatische Browser-Kopie aktiv — optional Backup auf den Computer",
   };
 }
 
-/** Mehrzeiliger Tooltip für den „Daten“-Button (Mouseover). */
 export function formatStorageStatusTooltip(status: StorageDisplayStatus): string {
   const lines = [status.primaryLine];
   if (status.secondaryLine) lines.push(status.secondaryLine);

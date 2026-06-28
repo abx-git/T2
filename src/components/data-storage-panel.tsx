@@ -99,7 +99,7 @@ function TargetOption({
         <div className="min-w-0 flex-1">
           <span className="text-sm font-medium text-slate-900">{title}</span>
           <p className="mt-0.5 text-xs leading-relaxed text-slate-600">{description}</p>
-          {children ? <div className="mt-3 flex flex-wrap gap-2">{children}</div> : null}
+          {children ? <div className="mt-3">{children}</div> : null}
         </div>
       </div>
     </label>
@@ -147,6 +147,7 @@ export function DataStoragePanel({
 
   const vaultConfigured = Boolean(vaultStatus?.configured);
   const vaultIdDisplay = vaultLoxId ? formatVaultLoxIdForDisplay(vaultLoxId) : null;
+  const serverTargetActive = autoSaveTarget === "server" || serverOfflinePending;
 
   const copyVaultLoxId = async () => {
     if (!vaultLoxId) return;
@@ -180,9 +181,7 @@ export function DataStoragePanel({
               Daten &amp; Speicher
             </h2>
             <p className="mt-1 text-xs text-slate-600">
-              {vaultConfigured
-                ? "Ein Ziel für automatisches Speichern. Server-Boards sind verschlüsselt und nur mit Ihrer LOX-ID zugänglich."
-                : "Der Server liefert nur die App — Ihre Board-JSON bleibt auf Ihrem Rechner (Arbeitsdatei). Backups ersetzen bewusst den gesamten Stand."}
+              Drei Speicherorte — jeweils eines aktiv. Im Browser läuft immer eine Notfallkopie mit.
             </p>
           </div>
           <button
@@ -198,21 +197,112 @@ export function DataStoragePanel({
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <section>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Wo sollen Änderungen automatisch landen?
+              Speicherort
             </h3>
             <div className="mt-3 space-y-2">
               <TargetOption
                 id="storage-target-local"
                 name="auto-save-target"
-                checked={autoSaveTarget === "local"}
+                checked={autoSaveTarget === "local" && !serverOfflinePending}
                 onChange={() => onSelectTarget("local")}
-                title="Nur in diesem Browser"
+                title="1. Nur im Browser (Standard)"
                 description={
                   localMirrorHint
-                    ? `24h-Notfall-Sicherung im Browser (${localMirrorHint}). Kein Auto-Speichern in Datei oder Server.`
-                    : "Entwurf nur hier — zusätzlich eine automatische 24h-Notfall-Sicherung im Browser."
+                    ? `Automatische 24h-Notfallkopie (${localMirrorHint}). Optional Backup-Datei auf dem Computer.`
+                    : "Entwurf nur hier — automatische 24h-Notfallkopie im Browser. Optional Backup auf den Computer."
                 }
-              />
+              >
+                <div className="space-y-3 rounded-lg border border-slate-200/80 bg-white/80 p-3">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                      24h-Notfallkopie
+                    </p>
+                    {localBackupEntries.length > 0 ? (
+                      <ul className="mt-2 max-h-36 space-y-1 overflow-y-auto">
+                        {localBackupEntries.map((entry) => {
+                          const rel = formatStorageRelativeTime(entry.savedAt);
+                          const stamp = new Date(entry.savedAt).toLocaleString(undefined, {
+                            day: "2-digit",
+                            month: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          });
+                          return (
+                            <li key={entry.savedAt}>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  onRestoreLocalBackup(entry.savedAt);
+                                }}
+                                className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+                              >
+                                <span className="font-medium">{rel ?? stamp}</span>
+                                <span className="shrink-0 text-slate-500">
+                                  {entry.rootCount === 0
+                                    ? "leer"
+                                    : `${entry.rootCount} Wurzel${entry.rootCount === 1 ? "" : "n"}`}
+                                </span>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-xs text-slate-500">
+                        Noch keine Zeitpunkte — entstehen automatisch bei Änderungen.
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                      Backup auf dem Computer
+                    </p>
+                    <div className="mt-2 flex flex-col gap-1.5">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onCreateBackup();
+                        }}
+                        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-left text-xs font-medium text-slate-800 hover:bg-slate-50"
+                      >
+                        <Download className="h-3.5 w-3.5 shrink-0 text-slate-600" aria-hidden />
+                        Backup erstellen (JSON)
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onRestoreBackupFile();
+                        }}
+                        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-left text-xs font-medium text-slate-800 hover:bg-slate-50"
+                      >
+                        <Upload className="h-3.5 w-3.5 shrink-0 text-slate-600" aria-hidden />
+                        Backup einspielen (Datei)
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onRestoreBackupPaste();
+                        }}
+                        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-left text-xs font-medium text-slate-800 hover:bg-slate-50"
+                      >
+                        <HardDrive className="h-3.5 w-3.5 shrink-0 text-slate-600" aria-hidden />
+                        Backup einspielen (Text)
+                      </button>
+                    </div>
+                    <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+                      Datei-Backups ersetzen den gesamten Board-Stand — nicht Server oder Arbeitsdatei.
+                    </p>
+                  </div>
+                </div>
+              </TargetOption>
 
               <TargetOption
                 id="storage-target-file"
@@ -220,10 +310,10 @@ export function DataStoragePanel({
                 checked={autoSaveTarget === "working-file"}
                 disabled={!fsAccessSupported}
                 onChange={() => onSelectTarget("working-file")}
-                title="Arbeitsdatei (JSON)"
+                title="2. Verknüpfung mit einer Datei"
                 description={
                   fsAccessSupported
-                    ? "Eine verknüpfte Datei auf Ihrem Rechner — Änderungen werden automatisch geschrieben."
+                    ? "Eine JSON-Arbeitsdatei auf Ihrem Rechner — Änderungen werden automatisch geschrieben (ca. 0,7 s nach der letzten Änderung)."
                     : workingFileUiReady
                       ? workingFileUnavailableTooltip
                       : "Browser-Unterstützung wird geprüft …"
@@ -231,13 +321,13 @@ export function DataStoragePanel({
               >
                 {fsAccessSupported ? (
                   autoSaveTarget === "working-file" ? (
-                    <>
+                    <div className="flex flex-wrap gap-2">
                       <span className="w-full text-xs text-slate-600">
                         {workingFileLabel ? `„${workingFileLabel}“` : "Verknüpft"}
                         {workingFileSaving
                           ? " — speichert …"
                           : workingFileDirty
-                            ? " — ungespeichert"
+                            ? " — ungespeichert (Tab nicht schließen)"
                             : " — synchron"}
                       </span>
                       <button
@@ -251,9 +341,9 @@ export function DataStoragePanel({
                       >
                         Datei trennen
                       </button>
-                    </>
+                    </div>
                   ) : (
-                    <>
+                    <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
                         disabled={busy}
@@ -277,7 +367,7 @@ export function DataStoragePanel({
                       >
                         Neue Datei
                       </button>
-                    </>
+                    </div>
                   )
                 ) : null}
               </TargetOption>
@@ -285,22 +375,22 @@ export function DataStoragePanel({
               <TargetOption
                 id="storage-target-server"
                 name="auto-save-target"
-                checked={autoSaveTarget === "server"}
-                disabled={!vaultConfigured}
+                checked={serverTargetActive}
+                disabled={!vaultConfigured && !serverOfflinePending}
                 onChange={() => onSelectTarget("server")}
-                title="Server (LOX-ID)"
+                title="3. Server mit LOX-ID"
                 description={
-                  vaultConfigured
+                  vaultConfigured || serverOfflinePending
                     ? "Verschlüsseltes Board auf dem Server — Zugriff nur mit Board-LOX-ID (nie in der URL)."
                     : "Nicht verfügbar (Vault-API auf dem Host oder NEXT_PUBLIC_T2_VAULT_API_URL)."
                 }
               >
-                {vaultConfigured ? (
-                  autoSaveTarget === "server" ? (
-                    <>
-                      <div className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                {vaultConfigured || serverOfflinePending ? (
+                  serverBoardEnabled ? (
+                    <div className="space-y-2">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                         <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-                          Board-LOX-ID (vollständig)
+                          Board-LOX-ID
                         </p>
                         <p className="mt-1 break-all font-mono text-sm font-semibold tracking-wide text-slate-900">
                           {vaultIdDisplay ?? "Keine LOX-ID"}
@@ -309,54 +399,56 @@ export function DataStoragePanel({
                           {serverBoardSaving
                             ? "Speichert auf Server …"
                             : serverBoardDirty
-                              ? "Ungespeichert"
+                              ? "Ungespeichert — Tab nicht schließen"
                               : "Synchron"}
                         </p>
                       </div>
-                      {vaultLoxId ? (
+                      <div className="flex flex-wrap gap-2">
+                        {vaultLoxId ? (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              void copyVaultLoxId();
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          >
+                            <Copy className="h-3.5 w-3.5" aria-hidden />
+                            {vaultIdCopied ? "Kopiert" : "ID kopieren"}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          disabled={busy || serverBoardSaving || !serverBoardDirty}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            onSaveServer();
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+                        >
+                          <Save className="h-3.5 w-3.5" aria-hidden />
+                          Jetzt speichern
+                        </button>
                         <button
                           type="button"
                           disabled={busy}
                           onClick={(e) => {
                             e.preventDefault();
-                            void copyVaultLoxId();
+                            onDisconnectServer();
                           }}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                         >
-                          <Copy className="h-3.5 w-3.5" aria-hidden />
-                          {vaultIdCopied ? "Kopiert" : "ID kopieren"}
+                          Vom Server trennen
                         </button>
-                      ) : null}
+                      </div>
                       {serverSaveError ? (
-                        <span className="w-full text-xs text-red-700">{serverSaveError}</span>
+                        <span className="block text-xs text-red-700">{serverSaveError}</span>
                       ) : null}
-                      <button
-                        type="button"
-                        disabled={busy || serverBoardSaving || !serverBoardDirty}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          onSaveServer();
-                        }}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-900 hover:bg-sky-100 disabled:opacity-50"
-                      >
-                        <Save className="h-3.5 w-3.5" aria-hidden />
-                        Speichern
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          onDisconnectServer();
-                        }}
-                        className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                      >
-                        Vom Server trennen
-                      </button>
-                    </>
+                    </div>
                   ) : serverOfflinePending ? (
-                    <>
-                      <span className="w-full text-xs text-amber-800">
+                    <div className="space-y-2">
+                      <span className="block text-xs text-amber-800">
                         {serverBoardAutoPaused
                           ? "Offline-Entwurf — Abgleich bei Netz automatisch"
                           : "Offline-Änderungen warten auf Verbindung"}
@@ -373,7 +465,7 @@ export function DataStoragePanel({
                         <Cloud className="h-3.5 w-3.5" aria-hidden />
                         Mit Server verbinden
                       </button>
-                    </>
+                    </div>
                   ) : (
                     <div className="flex flex-wrap gap-2">
                       <button
@@ -403,87 +495,6 @@ export function DataStoragePanel({
                   )
                 ) : null}
               </TargetOption>
-            </div>
-          </section>
-
-          <section className="mt-8">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Lokale Notfall-Sicherung (24 h)
-            </h3>
-            <p className="mt-1 text-xs text-slate-600">
-              Automatische Zeitpunkte im Browser — unabhängig vom Server. Nützlich, wenn der Server
-              ausfällt oder Daten verloren gehen.
-            </p>
-            {localBackupEntries.length > 0 ? (
-              <ul className="mt-3 max-h-48 space-y-1.5 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/80 p-2">
-                {localBackupEntries.map((entry) => {
-                  const rel = formatStorageRelativeTime(entry.savedAt);
-                  const stamp = new Date(entry.savedAt).toLocaleString(undefined, {
-                    day: "2-digit",
-                    month: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  });
-                  return (
-                    <li key={entry.savedAt}>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => onRestoreLocalBackup(entry.savedAt)}
-                        className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs text-slate-800 hover:bg-white disabled:opacity-60"
-                      >
-                        <span className="font-medium">{rel ?? stamp}</span>
-                        <span className="shrink-0 text-slate-500">
-                          {stamp}
-                          {" · "}
-                          {entry.rootCount === 0
-                            ? "leer"
-                            : `${entry.rootCount} Wurzelkarte${entry.rootCount === 1 ? "" : "n"}`}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-500">
-                Noch keine Zeitpunkte — Sicherungen entstehen automatisch bei Änderungen.
-              </p>
-            )}
-          </section>
-
-          <section className="mt-8">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Sicherung (ersetzt gesamtes Board)
-            </h3>
-            <p className="mt-1 text-xs text-slate-600">
-              Kopien ändern weder Server noch Arbeitsdatei. Einspielen überschreibt alle Karten.
-            </p>
-            <div className="mt-3 flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={onCreateBackup}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-white"
-              >
-                <Download className="h-4 w-4 shrink-0 text-slate-600" aria-hidden />
-                Backup erstellen (JSON)
-              </button>
-              <button
-                type="button"
-                onClick={onRestoreBackupFile}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-white"
-              >
-                <Upload className="h-4 w-4 shrink-0 text-slate-600" aria-hidden />
-                Backup einspielen (Datei …)
-              </button>
-              <button
-                type="button"
-                onClick={onRestoreBackupPaste}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-white"
-              >
-                <HardDrive className="h-4 w-4 shrink-0 text-slate-600" aria-hidden />
-                Backup einspielen (Text …)
-              </button>
             </div>
           </section>
 

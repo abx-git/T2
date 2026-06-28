@@ -4,26 +4,50 @@ import {
   deriveStorageDisplayStatus,
   formatStorageRelativeTime,
   formatStorageStatusTooltip,
+  hasUnsavedPrimaryTarget,
   resolveAutoSaveTarget,
+  storageModeFromFlags,
 } from "./storage-coordinator";
 
-describe("resolveAutoSaveTarget", () => {
-  it("prefers server over working file", () => {
+describe("storageModeFromFlags", () => {
+  it("prefers server when connected", () => {
     expect(
-      resolveAutoSaveTarget({ serverBoardEnabled: true, workingFileAttached: true }),
+      storageModeFromFlags({ serverBoardEnabled: true, workingFileAttached: true }),
     ).toBe("server");
   });
 
-  it("uses working file when server off", () => {
+  it("keeps server mode for offline draft", () => {
     expect(
-      resolveAutoSaveTarget({ serverBoardEnabled: false, workingFileAttached: true }),
-    ).toBe("working-file");
+      storageModeFromFlags({
+        serverBoardEnabled: false,
+        workingFileAttached: false,
+        serverOfflinePending: true,
+      }),
+    ).toBe("server");
   });
 
-  it("falls back to local", () => {
+  it("uses file when server off", () => {
     expect(
-      resolveAutoSaveTarget({ serverBoardEnabled: false, workingFileAttached: false }),
-    ).toBe("local");
+      storageModeFromFlags({ serverBoardEnabled: false, workingFileAttached: true }),
+    ).toBe("file");
+  });
+
+  it("falls back to browser", () => {
+    expect(
+      storageModeFromFlags({ serverBoardEnabled: false, workingFileAttached: false }),
+    ).toBe("browser");
+  });
+});
+
+describe("resolveAutoSaveTarget", () => {
+  it("maps server offline pending to server target", () => {
+    expect(
+      resolveAutoSaveTarget({
+        serverBoardEnabled: false,
+        workingFileAttached: false,
+        serverOfflinePending: true,
+      }),
+    ).toBe("server");
   });
 });
 
@@ -42,27 +66,56 @@ describe("deriveStorageDisplayStatus", () => {
   it("shows dirty server state", () => {
     const s = deriveStorageDisplayStatus({
       ...base,
-      autoSaveTarget: "server",
+      storageMode: "server",
       serverBoardDirty: true,
     });
     expect(s.tone).toBe("dirty");
-    expect(s.showFlushAction).toBe(true);
+    expect(s.secondaryLine).toContain("Tab nicht schließen");
   });
 
-  it("shows offline draft", () => {
+  it("shows offline draft under server mode", () => {
     const s = deriveStorageDisplayStatus({
       ...base,
-      autoSaveTarget: "local",
+      storageMode: "server",
       serverOfflinePending: true,
     });
     expect(s.tone).toBe("offline");
+    expect(s.primaryLine).toContain("Offline-Entwurf");
+  });
+
+  it("shows browser-only default", () => {
+    const s = deriveStorageDisplayStatus({
+      ...base,
+      storageMode: "browser",
+    });
+    expect(s.tone).toBe("local-only");
+    expect(s.primaryLine).toBe("Nur im Browser");
+  });
+});
+
+describe("hasUnsavedPrimaryTarget", () => {
+  it("warns only for active dirty targets", () => {
+    expect(
+      hasUnsavedPrimaryTarget({
+        storageMode: "file",
+        workingFileDirty: true,
+        serverBoardDirty: false,
+      }),
+    ).toBe(true);
+    expect(
+      hasUnsavedPrimaryTarget({
+        storageMode: "browser",
+        workingFileDirty: true,
+        serverBoardDirty: true,
+      }),
+    ).toBe(false);
   });
 });
 
 describe("formatStorageStatusTooltip", () => {
   it("joins primary, secondary and action hint", () => {
     const status = deriveStorageDisplayStatus({
-      autoSaveTarget: "server",
+      storageMode: "server",
       workingFileLabel: null,
       workingFileDirty: false,
       workingFileSaving: false,
@@ -73,8 +126,8 @@ describe("formatStorageStatusTooltip", () => {
       localMirrorSavedAt: new Date().toISOString(),
     });
     const tip = formatStorageStatusTooltip(status);
-    expect(tip).toContain("Gespeichert — Server (LOX-Vault)");
-    expect(tip).toContain("24h-Notfall-Sicherung");
+    expect(tip).toContain("Gespeichert — Server (LOX-ID)");
+    expect(tip).toContain("Browser-Notfallkopie");
     expect(tip).toContain("Klick:");
   });
 });

@@ -218,10 +218,6 @@ export function getColumnDisplayRows(
   return col.map((e) => ({
     node: e.node,
     listParentId: e.listParentId,
-    ySlot: e.ySlot,
-    slotStart: e.slotStart,
-    slotEnd: e.slotEnd,
-    rowSpan: e.rowSpan,
   }));
 }
 

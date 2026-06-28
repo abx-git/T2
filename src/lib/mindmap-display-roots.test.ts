@@ -43,7 +43,6 @@ describe("rootsForMindmapDisplay", () => {
 
     expect(full.entries.length).toBeGreaterThan(filtered.entries.length);
     expect(filtered.entries.map((e) => e.node.id).sort()).toEqual(["a", "a1"].sort());
-    expect(filtered.totalRows).toBeLessThanOrEqual(full.totalRows);
   });
 
   it("Erledigt ausblenden: erledigte Karte entfernen, Kind nach oben ziehen", () => {

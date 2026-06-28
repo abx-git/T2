@@ -166,7 +166,7 @@ export function TaskColumn({
 
     rows.forEach((row, i) => {
       const insertBefore = siblingInsertIndexBeforeCard(roots, row.listParentId, row.node.id);
-      const gapTop = row.slotStart * MINDMAP_ROW_HEIGHT;
+      const gapTop = i * MINDMAP_ROW_HEIGHT;
 
       elements.push(
         <ColumnInsertGap
@@ -184,7 +184,7 @@ export function TaskColumn({
         <div
           key={row.node.id}
           className="absolute left-0 right-0 z-20 px-0.5"
-          style={{ top: row.ySlot * MINDMAP_ROW_HEIGHT }}
+          style={{ top: i * MINDMAP_ROW_HEIGHT }}
         >
           <TaskCard
             node={row.node}
@@ -210,7 +210,7 @@ export function TaskColumn({
 
       if (i === rows.length - 1) {
         const tailIndex = siblingTailInsertIndex(row.listParentId);
-        const tailTop = row.slotEnd * MINDMAP_ROW_HEIGHT;
+        const tailTop = (i + 1) * MINDMAP_ROW_HEIGHT;
         elements.push(
           <ColumnInsertGap
             key={`gap-tail-${row.node.id}`}

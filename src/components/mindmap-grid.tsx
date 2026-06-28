@@ -10,6 +10,8 @@ import {
   columnLeftPx,
   entriesInColumnTreeOrder,
   MINDMAP_BOARD_PAD_Y,
+  MINDMAP_CARD_GAP_PX,
+  MINDMAP_CARD_MARGIN_Y,
   MINDMAP_COL_GAP_PX,
   MINDMAP_COL_WIDTH_PX,
   mindmapBoardWidthPx,
@@ -167,14 +169,10 @@ export function MindmapGrid({
       const next = new Map<string, number>();
       for (const [id, el] of elements) {
         const h = measureCardElement(el);
-        const prevH = prev.get(id) ?? 0;
         if (h <= 0) continue;
-        if (prevH === 0 || h <= prevH || Math.abs(prevH - h) >= 4) {
-          next.set(id, h);
-          if (prevH !== h) changed = true;
-        } else {
-          next.set(id, prevH);
-        }
+        next.set(id, h);
+        const prevH = prev.get(id);
+        if (prevH !== h) changed = true;
       }
       if (next.size !== prev.size) changed = true;
       return changed ? next : prev;
@@ -207,8 +205,8 @@ export function MindmapGrid({
   );
 
   const { positions, boardHeight } = useMemo(
-    () => computeCardPositions(visibleEntries, cardHeights, roots),
-    [visibleEntries, cardHeights, roots],
+    () => computeCardPositions(visibleEntries, cardHeights, roots, collapsedIds),
+    [visibleEntries, cardHeights, roots, collapsedIds],
   );
 
   const boardWidth = mindmapBoardWidthPx(columnCount);
@@ -319,11 +317,11 @@ export function MindmapGrid({
 
         const prev = i > 0 ? ordered[i - 1]! : null;
         const prevPos = prev ? positions.get(prev.node.id) : null;
-        const zoneTop =
-          prev && prevPos
-            ? visualCardBottomPx(prev, prevPos, cardHeights)
-            : MINDMAP_BOARD_PAD_Y;
-        const zone = gapZoneBetween(zoneTop, pos.top);
+        const zoneTop = prevPos
+          ? visualCardBottomPx(prevPos)
+          : MINDMAP_BOARD_PAD_Y;
+        const zoneBottom = pos.top - MINDMAP_CARD_MARGIN_Y;
+        const zone = gapZoneBetween(zoneTop, zoneBottom);
         if (zone) {
           slots.push({
             key: `between-${prev?.node.id ?? "start"}-${entry.node.id}`,
@@ -349,8 +347,10 @@ export function MindmapGrid({
       const tailInsert = siblings.length;
       const nextEntry = nextInColumnByNodeId.get(entry.node.id) ?? null;
       const nextPos = nextEntry ? positions.get(nextEntry.node.id) : null;
-      const zoneTop = visualCardBottomPx(entry, pos, cardHeights);
-      const zoneBottom = nextPos?.top ?? zoneTop + GAP_HIT_HEIGHT_PX + 2;
+      const zoneTop = visualCardBottomPx(pos);
+      const zoneBottom = nextPos
+        ? nextPos.top - MINDMAP_CARD_MARGIN_Y
+        : zoneTop + GAP_HIT_HEIGHT_PX + MINDMAP_CARD_GAP_PX;
       const zone = gapZoneBetween(zoneTop, zoneBottom);
       if (!zone) continue;
 
@@ -373,7 +373,6 @@ export function MindmapGrid({
     visibleEntries,
     roots,
     positions,
-    cardHeights,
     nextInColumnByNodeId,
     dropPreview,
     isMainTailHighlight,

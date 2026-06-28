@@ -19,10 +19,23 @@ export interface BoardFetchResult {
   lastModified: number;
 }
 
+export type VaultLinkIntent = "create" | "connect";
+
 let linkedLoxId: string | null = null;
 let lastSyncedBoardJson: string | null = null;
 let lastKnownEtag: string | null = null;
 let suppressExternalPollUntil = 0;
+let pendingVaultLinkIntent: VaultLinkIntent = "connect";
+
+export function setPendingVaultLinkIntent(intent: VaultLinkIntent): void {
+  pendingVaultLinkIntent = intent;
+}
+
+export function consumePendingVaultLinkIntent(): VaultLinkIntent {
+  const intent = pendingVaultLinkIntent;
+  pendingVaultLinkIntent = "connect";
+  return intent;
+}
 
 const EXTERNAL_POLL_SUPPRESS_MS = 6000;
 const VAULT_AUTH_SCHEME = "Vault";

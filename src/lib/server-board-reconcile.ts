@@ -18,12 +18,16 @@ import {
   markServerBoardSynced,
   writeBoardToServer,
   type BoardFetchResult,
+  type VaultLinkIntent,
 } from "@/lib/server-board";
 import { VaultDecryptError } from "@/lib/vault-crypto";
 
 export type ReconcileResult =
   | { ok: true; plan: ReconcilePlan }
-  | { ok: false; reason: "parse_error" | "write_failed" | "cancelled" | "decrypt_error" };
+  | {
+      ok: false;
+      reason: "parse_error" | "write_failed" | "cancelled" | "decrypt_error" | "not_found";
+    };
 
 function isEmptyBoardJson(json: string): boolean {
   const payload = boardImportPayloadFromExportText(json);
@@ -100,16 +104,36 @@ async function resolveConflict(
   return { ok: true, plan: { action: "apply_remote" } };
 }
 
-/** Erster Connect ohne Offline-Pause. */
-export async function reconcileInitialServerBoard(
+async function reconcileConnectServerBoard(
+  localJson: string,
+  remote: BoardFetchResult,
+): Promise<ReconcileResult> {
+  if (boardExportTextsEquivalent(localJson, remote.text)) {
+    markServerBoardSynced(localJson, remote.etag);
+    return { ok: true, plan: { action: "in_sync" } };
+  }
+
+  if (isEmptyBoardJson(localJson)) {
+    if (!applyBoardJsonToStore(remote.text)) return { ok: false, reason: "parse_error" };
+    markServerBoardSynced(remote.text, remote.etag);
+    return { ok: true, plan: { action: "apply_remote" } };
+  }
+
+  const loadServer = window.confirm(
+    "Der Server enthält bereits ein Board, das sich von Ihrem lokalen Stand unterscheidet.\n\nOK = Server-Version laden\nAbbrechen = Verbindung abbrechen (Server bleibt unverändert)",
+  );
+
+  if (!loadServer) return { ok: false, reason: "cancelled" };
+
+  if (!applyBoardJsonToStore(remote.text)) return { ok: false, reason: "parse_error" };
+  markServerBoardSynced(remote.text, remote.etag);
+  return { ok: true, plan: { action: "apply_remote" } };
+}
+
+async function reconcileCreateServerBoard(
   localJson: string,
   remote: BoardFetchResult | null,
 ): Promise<ReconcileResult> {
-  if (readOfflinePauseState()) {
-    if (!remote) return { ok: false, reason: "write_failed" };
-    return reconcileAndApplyServerBoard(localJson, remote);
-  }
-
   if (!remote || !remote.text.trim()) {
     try {
       await writeBoardToServer(localJson, remote?.etag ?? null);
@@ -125,38 +149,34 @@ export async function reconcileInitialServerBoard(
     return { ok: true, plan: { action: "in_sync" } };
   }
 
-  if (isEmptyBoardJson(localJson)) {
-    if (!applyBoardJsonToStore(remote.text)) return { ok: false, reason: "parse_error" };
-    markServerBoardSynced(remote.text, remote.etag);
-    return { ok: true, plan: { action: "apply_remote" } };
-  }
-
-  if (isEmptyBoardJson(remote.text)) {
-    try {
-      await writeBoardToServer(localJson, remote.etag);
-    } catch {
-      return { ok: false, reason: "write_failed" };
-    }
-    return { ok: true, plan: { action: "push_local" } };
-  }
-
   const loadServer = window.confirm(
-    "Der Server enthält bereits ein Board, das sich von Ihrem aktuellen Stand unterscheidet.\n\nOK = Server-Version laden\nAbbrechen = lokalen Stand auf den Server speichern",
+    "Zu dieser LOX-ID existiert bereits ein Board auf dem Server.\n\nOK = Server-Version laden\nAbbrechen = Verbindung abbrechen (Server bleibt unverändert)",
   );
 
-  if (loadServer) {
-    if (!applyBoardJsonToStore(remote.text)) return { ok: false, reason: "parse_error" };
-    markServerBoardSynced(remote.text, remote.etag);
-    return { ok: true, plan: { action: "apply_remote" } };
+  if (!loadServer) return { ok: false, reason: "cancelled" };
+
+  if (!applyBoardJsonToStore(remote.text)) return { ok: false, reason: "parse_error" };
+  markServerBoardSynced(remote.text, remote.etag);
+  return { ok: true, plan: { action: "apply_remote" } };
+}
+
+/** Erster Connect ohne Offline-Pause. */
+export async function reconcileInitialServerBoard(
+  localJson: string,
+  remote: BoardFetchResult | null,
+  intent: VaultLinkIntent,
+): Promise<ReconcileResult> {
+  if (readOfflinePauseState()) {
+    if (!remote) return { ok: false, reason: "write_failed" };
+    return reconcileAndApplyServerBoard(localJson, remote);
   }
 
-  try {
-    await writeBoardToServer(localJson, remote.etag);
-    return { ok: true, plan: { action: "push_local" } };
-  } catch (e) {
-    if (e instanceof Error && e.message === "precondition_failed") {
-      return reconcileAndApplyServerBoard(localJson, remote);
+  if (intent === "connect") {
+    if (!remote || !remote.text.trim()) {
+      return { ok: false, reason: "not_found" };
     }
-    return { ok: false, reason: "write_failed" };
+    return reconcileConnectServerBoard(localJson, remote);
   }
+
+  return reconcileCreateServerBoard(localJson, remote);
 }

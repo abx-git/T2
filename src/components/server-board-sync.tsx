@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { applyBoardJsonToStore } from "@/lib/server-board-offline";
 import { reconcileInitialServerBoard } from "@/lib/server-board-reconcile";
 import {
+  consumePendingVaultLinkIntent,
   fetchBoardEtagFromServer,
   fetchBoardFromServer,
   getLastKnownEtag,
@@ -172,15 +173,21 @@ export function ServerBoardSync({
         if (!mountedRef.current || generation !== loadGenerationRef.current) return;
 
         const localJson = boardJsonFromTaskTreeStore();
+        const linkIntent = consumePendingVaultLinkIntent();
         const result = await reconcileInitialServerBoard(
           localJson,
           snap ?? { text: "", etag: null, lastModified: 0 },
+          linkIntent,
         );
         if (!mountedRef.current || generation !== loadGenerationRef.current) return;
 
         if (!result.ok) {
           if (result.reason === "cancelled") {
             window.alert("Server-Verknüpfung nicht hergestellt — Abgleich abgebrochen.");
+          } else if (result.reason === "not_found") {
+            window.alert(
+              "Auf dem Server liegt noch kein Board zu dieser LOX-ID.\n\nAuf dem ersten Gerät zuerst „Neues Board“ anlegen und speichern, dann hier erneut verbinden.",
+            );
           } else if (result.reason === "decrypt_error") {
             window.alert("Entschlüsselung fehlgeschlagen — LOX-ID prüfen.");
           } else {

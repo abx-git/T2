@@ -84,6 +84,8 @@ import {
   getLastSyncedBoardJson,
   isServerBoardDirty,
   setLinkedVaultLoxId,
+  setPendingVaultLinkIntent,
+  type VaultLinkIntent,
   writeBoardToServer,
 } from "@/lib/server-board";
 import { useTaskTreeStore } from "@/store/task-tree-store";
@@ -505,7 +507,7 @@ export function TaskBoard() {
   );
 
   const beginVaultLink = useCallback(
-    async (loxId: string) => {
+    async (loxId: string, intent: VaultLinkIntent = "connect") => {
       if (!vaultStatus?.configured) {
         window.alert(
           "LOX-Vault ist nicht verfügbar. Auf dem Host T2_VAULT_ENABLED setzen oder NEXT_PUBLIC_T2_VAULT_API_URL konfigurieren.",
@@ -526,6 +528,7 @@ export function TaskBoard() {
       writeVaultLoxId(canonical);
       setVaultLoxId(canonical);
       setLinkedVaultLoxId(canonical);
+      setPendingVaultLinkIntent(intent);
       setServerBoardAutoPaused(false);
       setServerBoardEnabled(true);
       return true;
@@ -837,7 +840,7 @@ export function TaskBoard() {
   const handleVaultCreate = useCallback(
     (loxId: string) => {
       setVaultDialogOpen(false);
-      void beginVaultLink(loxId);
+      void beginVaultLink(loxId, "create");
     },
     [beginVaultLink],
   );
@@ -845,7 +848,7 @@ export function TaskBoard() {
   const handleVaultConnect = useCallback(
     (loxId: string) => {
       setVaultDialogOpen(false);
-      void beginVaultLink(loxId);
+      void beginVaultLink(loxId, "connect");
     },
     [beginVaultLink],
   );

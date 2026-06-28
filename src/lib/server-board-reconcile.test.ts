@@ -13,6 +13,7 @@ const applyBoardJsonToStore = vi.fn(() => true);
 
 vi.mock("@/lib/server-board", () => ({
   getLastSyncedBoardJson: vi.fn(() => null),
+  isBoardFetchOk: (result: { status: string }) => result.status === "ok",
   markServerBoardSynced: (...args: unknown[]) => markServerBoardSynced(...args),
   writeBoardToServer: (...args: unknown[]) => writeBoardToServer(...args),
 }));
@@ -68,7 +69,11 @@ describe("reconcileInitialServerBoard", () => {
 
   it("connect: lädt Server-Stand bei leerem lokalen Board", async () => {
     const remote = snap([node("a", "Remote")]);
-    const result = await reconcileInitialServerBoard("", { text: remote, etag: '"x"', lastModified: 1 }, "connect");
+    const result = await reconcileInitialServerBoard(
+      "",
+      { status: "ok", text: remote, etag: '"x"', lastModified: 1 },
+      "connect",
+    );
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.plan.action).toBe("apply_remote");
@@ -78,9 +83,17 @@ describe("reconcileInitialServerBoard", () => {
 
   it("connect: überschreibt Server nicht bei leerem Remote", async () => {
     const local = snap([node("a", "Local")]);
-    const result = await reconcileInitialServerBoard(local, { text: "", etag: null, lastModified: 0 }, "connect");
+    const result = await reconcileInitialServerBoard(local, { status: "missing" }, "connect");
 
     expect(result).toEqual({ ok: false, reason: "not_found" });
+    expect(writeBoardToServer).not.toHaveBeenCalled();
+  });
+
+  it("connect: meldet ungültige LOX-ID separat", async () => {
+    const local = snap([node("a", "Local")]);
+    const result = await reconcileInitialServerBoard(local, { status: "unauthorized" }, "connect");
+
+    expect(result).toEqual({ ok: false, reason: "unauthorized" });
     expect(writeBoardToServer).not.toHaveBeenCalled();
   });
 
@@ -90,7 +103,7 @@ describe("reconcileInitialServerBoard", () => {
     const remote = snap([node("b", "Remote")]);
     const result = await reconcileInitialServerBoard(
       local,
-      { text: remote, etag: '"x"', lastModified: 1 },
+      { status: "ok", text: remote, etag: '"x"', lastModified: 1 },
       "connect",
     );
 
@@ -101,7 +114,7 @@ describe("reconcileInitialServerBoard", () => {
   it("create: legt Board auf leerem Server an", async () => {
     writeBoardToServer.mockResolvedValue('"etag"');
     const local = snap([node("a", "Local")]);
-    const result = await reconcileInitialServerBoard(local, { text: "", etag: null, lastModified: 0 }, "create");
+    const result = await reconcileInitialServerBoard(local, { status: "missing" }, "create");
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.plan.action).toBe("push_local");

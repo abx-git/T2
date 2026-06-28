@@ -15,6 +15,7 @@ import {
 } from "@/lib/task-tree-json";
 import {
   getLastSyncedBoardJson,
+  isBoardFetchOk,
   markServerBoardSynced,
   writeBoardToServer,
   type BoardFetchResult,
@@ -26,7 +27,7 @@ export type ReconcileResult =
   | { ok: true; plan: ReconcilePlan }
   | {
       ok: false;
-      reason: "parse_error" | "write_failed" | "cancelled" | "decrypt_error" | "not_found";
+      reason: "parse_error" | "write_failed" | "cancelled" | "decrypt_error" | "not_found" | "unauthorized";
     };
 
 function isEmptyBoardJson(json: string): boolean {
@@ -38,6 +39,9 @@ export async function reconcileAndApplyServerBoard(
   localJson: string,
   remote: BoardFetchResult,
 ): Promise<ReconcileResult> {
+  if (!isBoardFetchOk(remote)) {
+    return { ok: false, reason: remote.status === "unauthorized" ? "unauthorized" : "write_failed" };
+  }
   const pause = readOfflinePauseState();
   const baselineJson = pause?.baselineJson ?? getLastSyncedBoardJson() ?? localJson;
   const plan = planServerBoardReconcile(localJson, remote.text, baselineJson);
@@ -132,11 +136,11 @@ async function reconcileConnectServerBoard(
 
 async function reconcileCreateServerBoard(
   localJson: string,
-  remote: BoardFetchResult | null,
+  remote: BoardFetchResult,
 ): Promise<ReconcileResult> {
-  if (!remote || !remote.text.trim()) {
+  if (!isBoardFetchOk(remote) || !remote.text.trim()) {
     try {
-      await writeBoardToServer(localJson, remote?.etag ?? null);
+      await writeBoardToServer(localJson, isBoardFetchOk(remote) ? remote.etag : null);
     } catch (e) {
       if (e instanceof VaultDecryptError) return { ok: false, reason: "decrypt_error" };
       return { ok: false, reason: "write_failed" };
@@ -163,16 +167,19 @@ async function reconcileCreateServerBoard(
 /** Erster Connect ohne Offline-Pause. */
 export async function reconcileInitialServerBoard(
   localJson: string,
-  remote: BoardFetchResult | null,
+  remote: BoardFetchResult,
   intent: VaultLinkIntent,
 ): Promise<ReconcileResult> {
   if (readOfflinePauseState()) {
-    if (!remote) return { ok: false, reason: "write_failed" };
+    if (!isBoardFetchOk(remote)) {
+      return { ok: false, reason: remote.status === "unauthorized" ? "unauthorized" : "write_failed" };
+    }
     return reconcileAndApplyServerBoard(localJson, remote);
   }
 
   if (intent === "connect") {
-    if (!remote || !remote.text.trim()) {
+    if (remote.status === "unauthorized") return { ok: false, reason: "unauthorized" };
+    if (remote.status === "missing" || !remote.text.trim()) {
       return { ok: false, reason: "not_found" };
     }
     return reconcileConnectServerBoard(localJson, remote);

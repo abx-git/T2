@@ -10,9 +10,11 @@ import {
   fetchBoardFromServer,
   getLastKnownEtag,
   getLastSyncedBoardJson,
+  isBoardFetchOk,
   isServerBoardDirty,
   markServerBoardSynced,
   shouldSuppressExternalServerPoll,
+  VaultDecryptError,
 } from "@/lib/server-board";
 import {
   boardJsonFromTaskTreeStore,
@@ -28,6 +30,7 @@ const EXTERNAL_POLL_MS = 5000;
 
 export interface ServerBoardSyncProps {
   enabled: boolean;
+  vaultLoxId: string | null;
   onDirtyChange?: (dirty: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
   onConnectFailed?: () => void;
@@ -37,6 +40,7 @@ export interface ServerBoardSyncProps {
 
 export function ServerBoardSync({
   enabled,
+  vaultLoxId,
   onDirtyChange,
   onSavingChange,
   onConnectFailed,
@@ -140,7 +144,7 @@ export function ServerBoardSync({
         if (!isBrowserNetworkOnline()) onNetworkUnavailableRef.current?.();
         return;
       }
-      if (!snap || !mountedRef.current) return;
+      if (!isBoardFetchOk(snap) || !mountedRef.current) return;
 
       const currentJson = boardJsonFromTaskTreeStore();
 
@@ -169,16 +173,12 @@ export function ServerBoardSync({
 
     const loadInitial = async () => {
       try {
-        const snap = await fetchBoardFromServer();
+        const remote = await fetchBoardFromServer();
         if (!mountedRef.current || generation !== loadGenerationRef.current) return;
 
         const localJson = boardJsonFromTaskTreeStore();
         const linkIntent = consumePendingVaultLinkIntent();
-        const result = await reconcileInitialServerBoard(
-          localJson,
-          snap ?? { text: "", etag: null, lastModified: 0 },
-          linkIntent,
-        );
+        const result = await reconcileInitialServerBoard(localJson, remote, linkIntent);
         if (!mountedRef.current || generation !== loadGenerationRef.current) return;
 
         if (!result.ok) {
@@ -186,7 +186,11 @@ export function ServerBoardSync({
             window.alert("Server-Verknüpfung nicht hergestellt — Abgleich abgebrochen.");
           } else if (result.reason === "not_found") {
             window.alert(
-              "Auf dem Server liegt noch kein Board zu dieser LOX-ID.\n\nAuf dem ersten Gerät zuerst „Neues Board“ anlegen und speichern, dann hier erneut verbinden.",
+              "Zu dieser LOX-ID liegt auf dem Server noch kein Board.\n\nAuf dem ersten Gerät „Neues Board“ wählen und speichern — oder die vollständige LOX-ID prüfen (BRD-XXXX-XXXX, unter „Daten“ → „ID kopieren“).",
+            );
+          } else if (result.reason === "unauthorized") {
+            window.alert(
+              "Zugriff mit dieser LOX-ID verweigert.\n\nBitte die vollständige Board-LOX-ID eingeben (Format BRD-XXXX-XXXX) — eine gekürzte Anzeige reicht nicht.",
             );
           } else if (result.reason === "decrypt_error") {
             window.alert("Entschlüsselung fehlgeschlagen — LOX-ID prüfen.");
@@ -206,7 +210,11 @@ export function ServerBoardSync({
         }
       } catch (e) {
         if (!mountedRef.current || generation !== loadGenerationRef.current) return;
-        console.error("Vault beim Start:", e);
+        if (e instanceof VaultDecryptError) {
+          window.alert("Entschlüsselung fehlgeschlagen — LOX-ID prüfen.");
+        } else {
+          console.error("Vault beim Start:", e);
+        }
         onConnectFailedRef.current?.();
       }
     };
@@ -247,7 +255,7 @@ export function ServerBoardSync({
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       window.removeEventListener("pagehide", onPageHide);
     };
-  }, [enabled]);
+  }, [enabled, vaultLoxId]);
 
   return null;
 }

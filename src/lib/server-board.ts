@@ -13,10 +13,15 @@ export interface VaultStatusInfo {
   configured: boolean;
 }
 
-export interface BoardFetchResult {
-  text: string;
-  etag: string | null;
-  lastModified: number;
+export type BoardFetchResult =
+  | { status: "ok"; text: string; etag: string | null; lastModified: number }
+  | { status: "missing" }
+  | { status: "unauthorized" };
+
+export function isBoardFetchOk(
+  result: BoardFetchResult,
+): result is { status: "ok"; text: string; etag: string | null; lastModified: number } {
+  return result.status === "ok";
 }
 
 export type VaultLinkIntent = "create" | "connect";
@@ -132,24 +137,22 @@ export async function fetchBoardEtagFromServer(): Promise<{ etag: string; lastMo
   return readBoardResponseMeta(res);
 }
 
-export async function fetchBoardFromServer(): Promise<BoardFetchResult | null> {
-  if (!linkedLoxId) return null;
+export async function fetchBoardFromServer(): Promise<BoardFetchResult> {
+  if (!linkedLoxId) return { status: "unauthorized" };
   const res = await fetch(vaultApiUrl("/api/vault"), {
     method: "GET",
     headers: { Authorization: vaultAuthHeader(linkedLoxId) },
     cache: "no-store",
   });
-  if (res.status === 401) return null;
-  if (res.status === 404) {
-    return { text: "", etag: null, lastModified: 0 };
-  }
+  if (res.status === 401) return { status: "unauthorized" };
+  if (res.status === 404) return { status: "missing" };
   if (!res.ok) throw new Error(`Vault laden fehlgeschlagen (${res.status}).`);
 
   const { etag, lastModified } = readBoardResponseMeta(res);
   const blob = await res.arrayBuffer();
   try {
     const text = await decryptBoardBlob(linkedLoxId, blob);
-    return { text, etag, lastModified };
+    return { status: "ok", text, etag, lastModified };
   } catch (e) {
     if (e instanceof VaultDecryptError) throw e;
     throw new VaultDecryptError();

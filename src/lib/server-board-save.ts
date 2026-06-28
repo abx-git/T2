@@ -12,6 +12,7 @@ import {
   fetchBoardFromServer,
   getLastKnownEtag,
   getLinkedVaultLoxId,
+  isBoardFetchOk,
   isServerBoardDirty,
   markServerBoardSynced,
   writeBoardToServer,
@@ -79,7 +80,7 @@ export async function saveServerBoardToVault(): Promise<ServerBoardSaveResult> {
     if (e instanceof Error && e.message === "precondition_failed") {
       try {
         const remote = await fetchBoardFromServer();
-        if (!remote) {
+        if (!isBoardFetchOk(remote)) {
           return { ok: false, error: "Server-Version konnte nicht geladen werden." };
         }
         const localJson = boardJsonFromTaskTreeStore();

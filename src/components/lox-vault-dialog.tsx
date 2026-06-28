@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Copy, KeyRound } from "lucide-react";
 
 import { parseBoardVaultLoxIdFromInput } from "@/lib/lox-id";
@@ -12,15 +12,33 @@ export type LoxVaultDialogMode = "create" | "connect";
 export interface LoxVaultDialogProps {
   open: boolean;
   mode: LoxVaultDialogMode;
+  initialConnectId?: string | null;
   onClose: () => void;
   onCreate: (loxId: string) => void;
   onConnect: (loxId: string) => void;
 }
 
-export function LoxVaultDialog({ open, mode, onClose, onCreate, onConnect }: LoxVaultDialogProps) {
+export function LoxVaultDialog({
+  open,
+  mode,
+  initialConnectId,
+  onClose,
+  onCreate,
+  onConnect,
+}: LoxVaultDialogProps) {
   const [input, setInput] = useState("");
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (open && mode === "connect") {
+      setInput(initialConnectId ?? "");
+    }
+    if (!open) {
+      setCreatedId(null);
+      setCopied(false);
+    }
+  }, [open, mode, initialConnectId]);
 
   if (!open) return null;
 

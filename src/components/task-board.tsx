@@ -560,13 +560,10 @@ export function TaskBoard() {
       );
       return false;
     }
-    if (vaultLoxId) {
-      return beginVaultLink(vaultLoxId);
-    }
     setVaultDialogMode("connect");
     setVaultDialogOpen(true);
     return false;
-  }, [beginVaultLink, vaultLoxId, vaultStatus?.configured]);
+  }, [vaultStatus?.configured]);
 
   const attachWorkingFileLink = useCallback(
     async (createNew: boolean) => {
@@ -1083,6 +1080,7 @@ export function TaskBoard() {
       />
       <ServerBoardSync
         enabled={serverBoardEnabled}
+        vaultLoxId={vaultLoxId}
         onDirtyChange={onServerBoardDirtyChange}
         onSavingChange={setServerBoardSaving}
         onConnectFailed={onServerBoardConnectFailed}
@@ -1424,6 +1422,7 @@ export function TaskBoard() {
       <LoxVaultDialog
         open={vaultDialogOpen}
         mode={vaultDialogMode}
+        initialConnectId={vaultLoxId}
         onClose={() => setVaultDialogOpen(false)}
         onCreate={handleVaultCreate}
         onConnect={handleVaultConnect}

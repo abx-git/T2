@@ -10,6 +10,7 @@ import {
   boardStatesEquivalent,
   planFileReconcile,
 } from "@/lib/file-board-reconcile";
+import { boardImportPayloadFromExportText } from "@/lib/task-tree-json";
 
 /** Vorgeschlagener Dateiname beim Anlegen einer neuen Arbeitsdatei. */
 export const STANDARD_WORKING_FILENAME = "t2-board.json";
@@ -412,6 +413,68 @@ export type HydrateWorkingFileResult =
   | { status: "loaded" | "empty" | "pushed_local" }
   | { status: "conflict"; fileText: string; fileLastModified: number };
 
+export type BrowserFileAttachResult =
+  | HydrateWorkingFileResult
+  | { status: "read_error"; message: string };
+
+export function normalizeImportedFileText(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.charCodeAt(0) === 0xfeff) {
+    return trimmed.slice(1);
+  }
+  return trimmed;
+}
+
+/** Liest eine per Datei-Dialog gewählte Datei (Android/Cloud-tauglich). */
+export async function readUserPickedFileText(file: File): Promise<string> {
+  if (file.size === 0) {
+    throw new Error(
+      "Die Datei ist leer. Bei Proton Drive die Datei in der App öffnen, „Offline verfügbar“ aktivieren und danach erneut wählen.",
+    );
+  }
+
+  const strategies: Array<() => Promise<string>> = [
+    async () => file.text(),
+    async () => {
+      const buf = await file.arrayBuffer();
+      return new TextDecoder("utf-8", { fatal: false }).decode(buf);
+    },
+    async () =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result ?? ""));
+        reader.onerror = () => reject(reader.error ?? new Error("FileReader fehlgeschlagen"));
+        reader.readAsText(file);
+      }),
+    async () =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const buf = reader.result as ArrayBuffer;
+          resolve(new TextDecoder("utf-8", { fatal: false }).decode(buf));
+        };
+        reader.onerror = () => reject(reader.error ?? new Error("FileReader fehlgeschlagen"));
+        reader.readAsArrayBuffer(file);
+      }),
+  ];
+
+  let lastError: unknown;
+  for (const strategy of strategies) {
+    try {
+      const text = normalizeImportedFileText(await strategy());
+      if (!text && file.size > 0) {
+        throw new Error("Dateiinhalt konnte nicht gelesen werden.");
+      }
+      return text;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  if (lastError instanceof Error) throw lastError;
+  throw new Error("Datei konnte nicht gelesen werden.");
+}
+
 async function rememberHandle(handle: FileSystemFileHandle): Promise<void> {
   memoryHandle = handle;
   try {
@@ -469,12 +532,20 @@ export async function hydrateStoreFromWorkingFile(handle: FileSystemFileHandle):
  * Smartphone/Cloud-Sync: JSON über den normalen Datei-Dialog öffnen
  * (z. B. Proton Drive, Dateien-App).
  */
-export async function attachWorkingFileFromBrowserFile(file: File): Promise<HydrateWorkingFileResult | null> {
+export async function attachWorkingFileFromBrowserFile(file: File): Promise<BrowserFileAttachResult> {
   try {
-    const text = await file.text();
+    const text = await readUserPickedFileText(file);
     const fileName = file.name?.trim() || STANDARD_WORKING_FILENAME;
     memoryHandle = null;
     await idbClearHandle();
+
+    if (text.trim() && !boardImportPayloadFromExportText(text)) {
+      return {
+        status: "read_error",
+        message:
+          "Die Datei ist keine gültige T2-Arbeitsdatei (JSON-Format „hierarchical-task-manager“ erwartet).",
+      };
+    }
 
     const result = hydrateFromFileText(text, file.lastModified);
     if (result.status === "conflict") {
@@ -487,7 +558,13 @@ export async function attachWorkingFileFromBrowserFile(file: File): Promise<Hydr
     return result;
   } catch (e) {
     console.error("Arbeitsdatei aus Datei-Dialog:", e);
-    return null;
+    return {
+      status: "read_error",
+      message:
+        e instanceof Error
+          ? e.message
+          : "Datei konnte nicht gelesen werden. Bei Proton Drive die Datei offline verfügbar machen.",
+    };
   }
 }
 

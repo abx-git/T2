@@ -6,6 +6,7 @@ import {
   isKnownFileRevision,
   markWorkingFileSessionHydrated,
   markWorkingFileSynced,
+  normalizeImportedFileText,
   wasWorkingFileSessionHydrated,
 } from "./working-file";
 
@@ -22,6 +23,12 @@ describe("isKnownFileRevision", () => {
 
   it("is false before any sync", () => {
     expect(isKnownFileRevision(1)).toBe(false);
+  });
+});
+
+describe("normalizeImportedFileText", () => {
+  it("strips UTF-8 BOM", () => {
+    expect(normalizeImportedFileText("\uFEFF{\"a\":1}")).toBe("{\"a\":1}");
   });
 });
 

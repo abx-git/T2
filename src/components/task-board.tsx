@@ -40,6 +40,7 @@ import {
   attachWorkingFileFromBrowserFile,
   attachWorkingFileFromPicker,
   bindMobileWorkingFile,
+  readUserPickedFileText,
   createAndAttachWorkingFile,
   detachWorkingFile,
   fileSystemAccessUnavailableMessage,
@@ -424,8 +425,8 @@ export function TaskBoard() {
       setStoragePanelBusy(true);
       try {
         const result = await attachWorkingFileFromBrowserFile(file);
-        if (!result) {
-          window.alert("Die Datei konnte nicht gelesen werden.");
+        if (result.status === "read_error") {
+          window.alert(result.message);
           return false;
         }
         if (result.status === "conflict") {
@@ -433,7 +434,7 @@ export function TaskBoard() {
             "Die gewählte Datei unterscheidet sich von Ihrer aktuellen Ansicht.\n\nOK = Inhalt der Datei laden\nAbbrechen = Abbrechen",
           );
           if (!loadFile) return false;
-          const text = await file.text();
+          const text = await readUserPickedFileText(file);
           applyBoardJsonToStore(text);
           await bindMobileWorkingFile(file, text);
         } else if (result.status === "pushed_local") {
@@ -459,10 +460,14 @@ export function TaskBoard() {
 
   const handleWorkingFilePickChange = useCallback(
     async (e: ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      e.target.value = "";
+      const input = e.currentTarget;
+      const file = input.files?.[0];
       if (!file) return;
-      await attachWorkingFileFromMobilePicker(file);
+      try {
+        await attachWorkingFileFromMobilePicker(file);
+      } finally {
+        input.value = "";
+      }
     },
     [attachWorkingFileFromMobilePicker],
   );
@@ -677,11 +682,17 @@ export function TaskBoard() {
   };
 
   const handleImportFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
+    const input = e.currentTarget;
+    const file = input.files?.[0];
     if (!file) return;
-    const text = await file.text();
-    applyImportedText(text);
+    try {
+      const text = await readUserPickedFileText(file);
+      applyImportedText(text);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Import fehlgeschlagen.");
+    } finally {
+      input.value = "";
+    }
   };
 
   const onDragStart = (e: DragStartEvent) => {
@@ -843,7 +854,7 @@ export function TaskBoard() {
             <input
               ref={workingFilePickRef}
               type="file"
-              accept=".json,application/json"
+              accept=".json,application/json,text/json,application/octet-stream"
               className="hidden"
               aria-hidden
               onChange={(e) => void handleWorkingFilePickChange(e)}

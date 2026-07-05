@@ -1,6 +1,7 @@
 /**
- * Verknüpfte Arbeitsdatei (File System Access API): ein JSON-File-Handle in IndexedDB.
- * Attach lädt die Datei; Auto-Save und externes Ändern werden in `WorkingFileSync` gesteuert.
+ * Arbeitsdatei (File System Access API): einziges Speichermedium.
+ * Das File-Handle wird in IndexedDB gehalten, damit die Datei beim nächsten Start automatisch
+ * wieder geöffnet werden kann — Board-Daten liegen nur in der JSON-Datei.
  */
 
 import {
@@ -29,7 +30,11 @@ let lastKnownFileModified = 0;
 /** Kurz nach eigenem Schreiben externes Polling unterdrücken (ms seit Epoch). */
 let suppressExternalPollUntil = 0;
 
-const EXTERNAL_POLL_SUPPRESS_MS = 1500;
+const EXTERNAL_POLL_SUPPRESS_MS = 800;
+
+export type WriteWorkingFileResult =
+  | { ok: true; lastModified: number }
+  | { ok: false; reason: "no_handle" | "permission_denied" | "conflict" | "io_error" };
 
 export function isWorkingFileSupported(): boolean {
   return (
@@ -210,19 +215,32 @@ export async function readWorkingFileSnapshot(
   }
 }
 
-export async function writeWorkingFileJson(json: string, handle: FileSystemFileHandle = memoryHandle!): Promise<boolean> {
-  if (!handle) return false;
+export async function writeWorkingFileJson(
+  json: string,
+  handle: FileSystemFileHandle = memoryHandle!,
+  options?: { expectedLastModified?: number },
+): Promise<WriteWorkingFileResult> {
+  if (!handle) return { ok: false, reason: "no_handle" };
   try {
-    if (!(await ensureReadWritePermission(handle))) return false;
+    if (!(await ensureReadWritePermission(handle))) {
+      return { ok: false, reason: "permission_denied" };
+    }
+    const before = await handle.getFile();
+    if (
+      options?.expectedLastModified !== undefined &&
+      before.lastModified !== options.expectedLastModified
+    ) {
+      return { ok: false, reason: "conflict" };
+    }
     const writable = await handle.createWritable({ keepExistingData: false });
     await writable.write(json);
     await writable.close();
     const file = await handle.getFile();
     markWorkingFileSynced(json, file.lastModified);
-    return true;
+    return { ok: true, lastModified: file.lastModified };
   } catch (e) {
     console.error("Arbeitsdatei schreiben:", e);
-    return false;
+    return { ok: false, reason: "io_error" };
   }
 }
 
@@ -303,8 +321,8 @@ export async function attachWorkingFileFromPicker(): Promise<FileSystemFileHandl
 export async function createAndAttachWorkingFile(initialJson: string): Promise<FileSystemFileHandle | null> {
   const handle = await attachWorkingFileCreate();
   if (!handle) return null;
-  const ok = await writeWorkingFileJson(initialJson, handle);
-  if (!ok) {
+  const result = await writeWorkingFileJson(initialJson, handle);
+  if (!result.ok) {
     await detachWorkingFile();
     return null;
   }

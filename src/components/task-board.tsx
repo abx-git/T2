@@ -69,6 +69,7 @@ import {
 } from "@/lib/board-local-backup";
 import { flushLocalBoardMirror, readLocalBoardMirror } from "@/lib/board-local-mirror";
 import {
+  dataStorageButtonClassName,
   deriveStorageDisplayStatus,
   formatStorageRelativeTime,
   formatStorageStatusTooltip,
@@ -1114,7 +1115,7 @@ export function TaskBoard() {
             <button
               type="button"
               onClick={() => setDataStoragePanelOpen(true)}
-              className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-slate-50/80 px-2.5 text-slate-600 transition hover:bg-white hover:text-slate-900"
+              className={dataStorageButtonClassName(storageDisplayStatus.tone)}
               title={dataStorageTooltip}
               aria-label={`Daten und Speicher: ${storageDisplayStatus.primaryLine}`}
             >

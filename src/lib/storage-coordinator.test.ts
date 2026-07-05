@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  dataStorageButtonClassName,
   deriveStorageDisplayStatus,
   formatStorageRelativeTime,
   formatStorageStatusTooltip,
@@ -136,5 +137,16 @@ describe("formatStorageRelativeTime", () => {
   it("returns gerade eben for recent", () => {
     const now = Date.parse("2026-05-28T12:00:05Z");
     expect(formatStorageRelativeTime("2026-05-28T12:00:00Z", now)).toBe("gerade eben");
+  });
+});
+
+describe("dataStorageButtonClassName", () => {
+  it("uses emerald styling when saved", () => {
+    expect(dataStorageButtonClassName("saved")).toContain("bg-emerald-50");
+  });
+
+  it("uses neutral styling otherwise", () => {
+    expect(dataStorageButtonClassName("dirty")).toContain("bg-slate-50");
+    expect(dataStorageButtonClassName("local-only")).not.toContain("bg-emerald-50");
   });
 });

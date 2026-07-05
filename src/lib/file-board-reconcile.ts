@@ -219,3 +219,19 @@ export function stableKeyFromJson(text: string): string | null {
   if (!payload) return null;
   return stableBoardStateKey(payload);
 }
+
+/** Stabiler Schlüssel des persistierten Board-Stands (ohne UI-only State wie focusNodeId). */
+export function boardPersistKeyFromStoreState(): string {
+  const s = useTaskTreeStore.getState();
+  return stableBoardStateKey({
+    roots: s.roots,
+    pathIds: s.pathIds,
+    collapsedIds: s.collapsedIds,
+    columnTitleOverrides: s.columnTitleOverrides,
+    cardFieldVisibility: s.cardFieldVisibility,
+    hideCompletedTasks: s.hideCompletedTasks,
+    effortOnTasksEnabled: s.effortOnTasksEnabled,
+    filterTags: s.filterTags,
+    completedTag: s.completedTag,
+  });
+}

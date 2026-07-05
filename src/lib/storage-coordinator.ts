@@ -56,7 +56,7 @@ export function deriveStorageDisplayStatus(input: StorageCoordinatorInput): Stor
   return {
     tone: "saved",
     primaryLine: `Gespeichert — ${label}`,
-    secondaryLine: "Änderungen werden sofort in die Datei geschrieben",
+    secondaryLine: "Änderungen am Board werden automatisch in die Datei geschrieben",
   };
 }
 

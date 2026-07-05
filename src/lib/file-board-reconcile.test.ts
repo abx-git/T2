@@ -102,3 +102,19 @@ describe("mergeBoardPayloads", () => {
     for (const r of merged.roots) walk(r);
   });
 });
+
+describe("boardPersistKeyFromStoreState", () => {
+  it("ignores focus-only UI state", async () => {
+    const { useTaskTreeStore } = await import("@/store/task-tree-store");
+    const { boardPersistKeyFromStoreState } = await import("./file-board-reconcile");
+
+    useTaskTreeStore.getState().replaceBoardFromImport({
+      roots: [],
+      pathIds: [],
+      columnTitleOverrides: {},
+    });
+    const before = boardPersistKeyFromStoreState();
+    useTaskTreeStore.getState().openFocusMode("does-not-exist");
+    expect(boardPersistKeyFromStoreState()).toBe(before);
+  });
+});

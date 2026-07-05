@@ -16,6 +16,7 @@ import {
 } from "@/lib/file-board-reconcile";
 import {
   getWorkingFileHandle,
+  isKnownFileRevision,
   isWorkingFileAttached,
   isWorkingFileDirty,
   markWorkingFileSynced,
@@ -39,8 +40,8 @@ type AcknowledgedConflict = { fileKey: string; localKey: string };
 const CONFLICT_CHECK_COOLDOWN_MS = 3000;
 
 /**
- * Arbeitsdatei: laden beim Start, bei Board-Änderungen speichern,
- * bei echtem Datei-Unterschied einmalig nachfragen.
+ * Arbeitsdatei: beim Start laden, bei Board-Änderungen speichern.
+ * Externe Dateiänderungen werden nur per Dialog angeboten — nie automatisch eingelesen.
  */
 export function WorkingFileSync({
   onWorkingFileNameChange,
@@ -174,7 +175,6 @@ export function WorkingFileSync({
         if (!mountedRef.current) return false;
         if (result.ok) {
           lastPersistKeyRef.current = boardPersistKeyFromStoreState();
-          acknowledgeConflictPair(json);
           syncDirty();
           return true;
         }
@@ -208,48 +208,30 @@ export function WorkingFileSync({
       schedulePersistOnChange();
     };
 
+    /** Nur bei echtem Datei-Zeitstempel-Wechsel — nie automatisch einlesen. */
     const checkExternalFile = async () => {
-      if (conflictActiveRef.current || suspendAutoPersistRef.current) return;
+      if (
+        conflictActiveRef.current ||
+        suspendAutoPersistRef.current ||
+        saveInFlightRef.current
+      ) {
+        return;
+      }
       if (Date.now() < conflictCheckCooldownUntilRef.current) return;
+      if (shouldSuppressExternalFilePoll()) return;
 
       const handle = getWorkingFileHandle();
-      if (!handle || shouldSuppressExternalFilePoll()) return;
+      if (!handle) return;
 
       const snap = await readWorkingFileSnapshot(handle);
       if (!snap || !mountedRef.current) return;
 
+      if (isKnownFileRevision(snap.lastModified)) return;
+
       const localJson = boardJsonFromStoreState();
       if (boardStatesEquivalent(snap.text, localJson)) {
         markWorkingFileSynced(snap.text, snap.lastModified);
-        lastPersistKeyRef.current = boardPersistKeyFromStoreState();
-        acknowledgeConflictPair(snap.text);
         syncDirty();
-        return;
-      }
-
-      const plan = planFileReconcile(localJson, snap.text);
-      if (plan.action === "in_sync") {
-        markWorkingFileSynced(snap.text, snap.lastModified);
-        acknowledgeConflictPair(snap.text);
-        return;
-      }
-
-      if (plan.action === "apply_file") {
-        suspendAutoPersistRef.current = true;
-        try {
-          if (snap.text.trim()) applyBoardJsonToStore(snap.text);
-          markWorkingFileSynced(snap.text, snap.lastModified);
-          lastPersistKeyRef.current = boardPersistKeyFromStoreState();
-          acknowledgeConflictPair(snap.text);
-        } finally {
-          suspendAutoPersistRef.current = false;
-        }
-        syncDirty();
-        return;
-      }
-
-      if (plan.action === "push_local") {
-        await flushPersist();
         return;
       }
 
@@ -280,7 +262,6 @@ export function WorkingFileSync({
               try {
                 applyBoardJsonToStore(snap.text);
                 markWorkingFileSynced(snap.text, snap.lastModified);
-                acknowledgeConflictPair(snap.text);
               } finally {
                 suspendAutoPersistRef.current = false;
               }
@@ -337,7 +318,7 @@ export function WorkingFileSync({
         target.removeEventListener(type, listener);
       }
     };
-  }, [acknowledgeConflictPair, onNeedsFileSetup, onSavingChange, openConflictIfNeeded, syncDirty, syncFileLabel]);
+  }, [onNeedsFileSetup, onSavingChange, openConflictIfNeeded, syncDirty, syncFileLabel]);
 
   const workingFileLabel = getWorkingFileHandle()?.name?.trim() || null;
 

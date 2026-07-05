@@ -30,7 +30,7 @@ let lastKnownFileModified = 0;
 /** Kurz nach eigenem Schreiben externes Polling unterdrücken (ms seit Epoch). */
 let suppressExternalPollUntil = 0;
 
-const EXTERNAL_POLL_SUPPRESS_MS = 800;
+const EXTERNAL_POLL_SUPPRESS_MS = 2500;
 
 export type WriteWorkingFileResult =
   | { ok: true; lastModified: number }
@@ -116,6 +116,11 @@ export function shouldSuppressExternalFilePoll(): boolean {
 
 export function getLastKnownFileModified(): number {
   return lastKnownFileModified;
+}
+
+/** Datei auf der Platte seit letztem Abgleich unverändert (gleicher Zeitstempel). */
+export function isKnownFileRevision(fileLastModified: number): boolean {
+  return fileLastModified > 0 && fileLastModified === lastKnownFileModified;
 }
 
 export function getLastSyncedBoardJson(): string | null {

@@ -30,7 +30,7 @@ export function ConfirmDialog({
 
   const layer = (
     <div
-      className="fixed inset-0 z-[1200] flex items-end justify-center bg-slate-900/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-[1300] flex items-end justify-center bg-slate-900/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="presentation"
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) onCancel();

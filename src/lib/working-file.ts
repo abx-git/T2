@@ -18,8 +18,16 @@ const IDB_NAME = "t2-working-file";
 const IDB_VERSION = 1;
 const IDB_STORE = "handles";
 const IDB_KEY = "board-json";
+const IDB_MOBILE_COPY_KEY = "mobile-working-copy";
 
 let memoryHandle: FileSystemFileHandle | null = null;
+let mobileWorkingFileName: string | null = null;
+
+interface MobileWorkingCopyRecord {
+  fileName: string;
+  json: string;
+  sourceLastModified: number;
+}
 
 /** Zuletzt mit der Datei abgeglichener Board-JSON-Text. */
 let lastSyncedBoardJson: string | null = null;
@@ -57,6 +65,25 @@ export function isWorkingFileSupported(): boolean {
     typeof window.showOpenFilePicker === "function" &&
     typeof window.showSaveFilePicker === "function"
   );
+}
+
+/** Smartphone/Tablet: klassischer Datei-Dialog statt File-System-API. */
+export function isMobileWorkingFileEnvironment(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+export function prefersBrowserFilePicker(): boolean {
+  return isMobileWorkingFileEnvironment();
+}
+
+/** Arbeitsdatei-UI (Öffnen/Speichern) — Desktop-API oder mobiler Datei-Dialog. */
+export function isWorkingFileUiAvailable(): boolean {
+  return isWorkingFileSupported() || prefersBrowserFilePicker();
+}
+
+export function isMobileWorkingFileMode(): boolean {
+  return mobileWorkingFileName !== null && memoryHandle === null;
 }
 
 export function isUserAgentLikelyBrave(): boolean {
@@ -102,7 +129,7 @@ export function getWorkingFileHandle(): FileSystemFileHandle | null {
 }
 
 export function isWorkingFileAttached(): boolean {
-  return memoryHandle !== null;
+  return memoryHandle !== null || mobileWorkingFileName !== null;
 }
 
 export function markWorkingFileSynced(json: string, fileLastModified: number): void {
@@ -123,11 +150,17 @@ export function clearWorkingFileSyncState(): void {
 }
 
 export function isWorkingFileDirty(currentJson?: string): boolean {
-  if (!memoryHandle) return false;
+  if (!isWorkingFileAttached()) return false;
   const json = currentJson ?? boardJsonFromStoreState();
   const synced = getLastSyncedBoardJson();
   if (!synced) return json.trim().length > 0;
   return !boardStatesEquivalent(json, synced);
+}
+
+export function getWorkingFileLabel(): string | null {
+  if (memoryHandle) return workingFileDisplayName(memoryHandle);
+  if (mobileWorkingFileName?.trim()) return mobileWorkingFileName.trim();
+  return null;
 }
 
 export function shouldSuppressExternalFilePoll(): boolean {
@@ -216,6 +249,56 @@ async function idbClearHandle(): Promise<void> {
   }
 }
 
+async function idbPutMobileCopy(record: MobileWorkingCopyRecord): Promise<void> {
+  const db = await openIdb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("tx"));
+      tx.objectStore(IDB_STORE).put(record, IDB_MOBILE_COPY_KEY);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function idbGetMobileCopy(): Promise<MobileWorkingCopyRecord | null> {
+  try {
+    const db = await openIdb();
+    try {
+      return await new Promise<MobileWorkingCopyRecord | null>((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE, "readonly");
+        tx.onerror = () => reject(tx.error ?? new Error("tx"));
+        const r = tx.objectStore(IDB_STORE).get(IDB_MOBILE_COPY_KEY);
+        r.onsuccess = () => resolve((r.result as MobileWorkingCopyRecord | undefined) ?? null);
+      });
+    } finally {
+      db.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
+async function idbClearMobileCopy(): Promise<void> {
+  try {
+    const db = await openIdb();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE, "readwrite");
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error ?? new Error("tx"));
+        tx.objectStore(IDB_STORE).delete(IDB_MOBILE_COPY_KEY);
+      });
+    } finally {
+      db.close();
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 async function ensureReadWritePermission(handle: FileSystemFileHandle): Promise<boolean> {
   let ok = (await handle.queryPermission({ mode: "readwrite" })) === "granted";
   if (!ok) ok = (await handle.requestPermission({ mode: "readwrite" })) === "granted";
@@ -276,6 +359,55 @@ function loadBoardFromJsonText(text: string): boolean {
   return applyBoardJsonToStore(text);
 }
 
+function hydrateFromFileText(fileJson: string, fileLastModified: number): HydrateWorkingFileResult {
+  const localJson = boardJsonFromStoreState();
+
+  if (!fileJson.trim()) {
+    markWorkingFileSynced(localJson, fileLastModified);
+    return { status: "empty" };
+  }
+
+  const plan = planFileReconcile(localJson, fileJson);
+  if (plan.action === "in_sync" || plan.action === "apply_file") {
+    loadBoardFromJsonText(fileJson);
+    markWorkingFileSynced(fileJson, fileLastModified);
+    return { status: "loaded" };
+  }
+  if (plan.action === "push_local") {
+    markWorkingFileSynced(localJson, fileLastModified);
+    return { status: "pushed_local" };
+  }
+  return { status: "conflict", fileText: fileJson, fileLastModified };
+}
+
+async function rememberMobileCopy(json: string, fileName: string, sourceLastModified: number): Promise<void> {
+  mobileWorkingFileName = fileName;
+  try {
+    await idbPutMobileCopy({ fileName, json, sourceLastModified });
+  } catch {
+    /* IndexedDB z. B. privat */
+  }
+}
+
+export async function bindMobileWorkingFile(file: File, json?: string): Promise<void> {
+  const fileName = file.name?.trim() || STANDARD_WORKING_FILENAME;
+  const payload = json ?? boardJsonFromStoreState();
+  memoryHandle = null;
+  await idbClearHandle();
+  await rememberMobileCopy(payload, fileName, file.lastModified);
+  markWorkingFileSynced(payload, file.lastModified);
+  markWorkingFileSessionHydrated();
+}
+
+async function clearMobileWorkingFile(): Promise<void> {
+  mobileWorkingFileName = null;
+  try {
+    await idbClearMobileCopy();
+  } catch {
+    /* ignore */
+  }
+}
+
 export type HydrateWorkingFileResult =
   | { status: "loaded" | "empty" | "pushed_local" }
   | { status: "conflict"; fileText: string; fileLastModified: number };
@@ -326,28 +458,56 @@ export async function hydrateStoreFromWorkingFile(handle: FileSystemFileHandle):
   const snap = await readWorkingFileSnapshot(handle);
   if (!snap) return { status: "empty" };
 
-  const localJson = boardJsonFromStoreState();
-  const fileJson = snap.text;
+  const result = hydrateFromFileText(snap.text, snap.lastModified);
+  if (result.status !== "conflict") {
+    markWorkingFileSessionHydrated();
+  }
+  return result;
+}
 
-  if (!fileJson.trim()) {
-    markWorkingFileSynced(localJson, snap.lastModified);
-    markWorkingFileSessionHydrated();
-    return { status: "empty" };
-  }
+/**
+ * Smartphone/Cloud-Sync: JSON über den normalen Datei-Dialog öffnen
+ * (z. B. Proton Drive, Dateien-App).
+ */
+export async function attachWorkingFileFromBrowserFile(file: File): Promise<HydrateWorkingFileResult | null> {
+  try {
+    const text = await file.text();
+    const fileName = file.name?.trim() || STANDARD_WORKING_FILENAME;
+    memoryHandle = null;
+    await idbClearHandle();
 
-  const plan = planFileReconcile(localJson, fileJson);
-  if (plan.action === "in_sync" || plan.action === "apply_file") {
-    loadBoardFromJsonText(fileJson);
-    markWorkingFileSynced(fileJson, snap.lastModified);
+    const result = hydrateFromFileText(text, file.lastModified);
+    if (result.status === "conflict") {
+      return result;
+    }
+
+    const syncedJson = getLastSyncedBoardJson() ?? text;
+    await rememberMobileCopy(syncedJson, fileName, file.lastModified);
     markWorkingFileSessionHydrated();
-    return { status: "loaded" };
+    return result;
+  } catch (e) {
+    console.error("Arbeitsdatei aus Datei-Dialog:", e);
+    return null;
   }
-  if (plan.action === "push_local") {
-    markWorkingFileSynced(localJson, snap.lastModified);
-    markWorkingFileSessionHydrated();
-    return { status: "pushed_local" };
+}
+
+/** Schreibt in verknüpfte Datei (Desktop) oder mobile Zwischenkopie. */
+export async function persistWorkingFileJson(json: string): Promise<WriteWorkingFileResult> {
+  if (memoryHandle) {
+    return writeWorkingFileJson(json);
   }
-  return { status: "conflict", fileText: fileJson, fileLastModified: snap.lastModified };
+  if (!mobileWorkingFileName) {
+    return { ok: false, reason: "no_handle" };
+  }
+  try {
+    const sourceLastModified = lastKnownFileModified || Date.now();
+    await rememberMobileCopy(json, mobileWorkingFileName, sourceLastModified);
+    noteOwnWriteToWorkingFile(json, sourceLastModified);
+    return { ok: true, lastModified: sourceLastModified };
+  } catch (e) {
+    console.error("Mobile Arbeitsdatei speichern:", e);
+    return { ok: false, reason: "io_error" };
+  }
 }
 
 export async function attachWorkingFileFromPicker(): Promise<{
@@ -373,24 +533,41 @@ export async function createAndAttachWorkingFile(initialJson: string): Promise<F
 }
 
 export async function restoreWorkingFileFromDisk(): Promise<FileSystemFileHandle | null> {
-  if (!isWorkingFileSupported()) return null;
-  const handle = await idbGetHandle();
-  if (!handle) return null;
-  try {
-    if (!(await ensureReadWritePermission(handle))) return null;
-    memoryHandle = handle;
-    return handle;
-  } catch {
+  if (isWorkingFileSupported()) {
+    const handle = await idbGetHandle();
+    if (handle) {
+      try {
+        if (await ensureReadWritePermission(handle)) {
+          memoryHandle = handle;
+          await clearMobileWorkingFile();
+          return handle;
+        }
+      } catch {
+        /* fallback mobile */
+      }
+    }
+  }
+
+  const mobile = await idbGetMobileCopy();
+  if (mobile?.fileName) {
+    memoryHandle = null;
+    mobileWorkingFileName = mobile.fileName;
+    lastSyncedBoardJson = mobile.json;
+    lastKnownFileModified = mobile.sourceLastModified;
     return null;
   }
+
+  return null;
 }
 
 export async function detachWorkingFile(): Promise<void> {
   memoryHandle = null;
+  mobileWorkingFileName = null;
   clearWorkingFileSyncState();
   clearWorkingFileSessionHydrated();
   try {
     await idbClearHandle();
+    await idbClearMobileCopy();
   } catch {
     /* ignore */
   }

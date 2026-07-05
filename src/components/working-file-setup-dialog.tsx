@@ -6,17 +6,21 @@ import { FilePlus, FolderOpen } from "lucide-react";
 
 export interface WorkingFileSetupDialogProps {
   open: boolean;
+  mobileMode: boolean;
   fsAccessSupported: boolean;
   unavailableMessage: string;
-  onOpenExisting: () => void;
+  onPickExistingMobile: () => void;
+  onOpenExistingDesktop: () => void;
   onCreateNew: () => void;
 }
 
 export function WorkingFileSetupDialog({
   open,
+  mobileMode,
   fsAccessSupported,
   unavailableMessage,
-  onOpenExisting,
+  onPickExistingMobile,
+  onOpenExistingDesktop,
   onCreateNew,
 }: WorkingFileSetupDialogProps) {
   const titleId = useId();
@@ -38,26 +42,38 @@ export function WorkingFileSetupDialog({
           Arbeitsdatei wählen
         </h2>
         <p className="mt-3 text-sm leading-relaxed text-slate-600">
-          T2 speichert alle Daten ausschließlich in einer lokalen JSON-Datei auf Ihrem Rechner.
-          Beim nächsten Start wird dieselbe Datei automatisch wieder geöffnet.
+          {mobileMode
+            ? "Wählen Sie Ihre JSON-Datei aus Proton Drive, „Dateien“ oder Downloads. Änderungen werden automatisch zwischengespeichert; zum Cloud-Sync exportieren Sie die Datei unter „Daten & Speicher“."
+            : "T2 speichert alle Daten in einer lokalen JSON-Datei. Beim nächsten Start wird dieselbe Datei automatisch wieder geöffnet."}
         </p>
-        {fsAccessSupported ? (
+        {fsAccessSupported || mobileMode ? (
           <div className="mt-5 flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={onOpenExisting}
-              className="inline-flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-4 py-2.5 text-left text-sm font-medium text-sky-950 hover:bg-sky-100"
-            >
-              <FolderOpen className="h-4 w-4 shrink-0" aria-hidden />
-              Bestehende Datei öffnen
-            </button>
+            {mobileMode ? (
+              <button
+                type="button"
+                onClick={onPickExistingMobile}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-4 py-2.5 text-left text-sm font-medium text-sky-950 hover:bg-sky-100 active:bg-sky-100"
+              >
+                <FolderOpen className="h-4 w-4 shrink-0" aria-hidden />
+                JSON-Datei auswählen …
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onOpenExistingDesktop}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-4 py-2.5 text-left text-sm font-medium text-sky-950 hover:bg-sky-100 active:bg-sky-100"
+              >
+                <FolderOpen className="h-4 w-4 shrink-0" aria-hidden />
+                Bestehende Datei öffnen
+              </button>
+            )}
             <button
               type="button"
               onClick={onCreateNew}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50"
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 active:bg-slate-50"
             >
               <FilePlus className="h-4 w-4 shrink-0" aria-hidden />
-              Neue Datei anlegen
+              {mobileMode ? "Neue Datei herunterladen" : "Neue Datei anlegen"}
             </button>
           </div>
         ) : (

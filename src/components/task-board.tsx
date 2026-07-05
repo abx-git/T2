@@ -37,19 +37,25 @@ import {
 } from "@/lib/task-tree-json";
 import { parseFreemindMmToRoots, taskRootsToFreemindMm } from "@/lib/freemind-mm";
 import {
+  attachWorkingFileFromBrowserFile,
   attachWorkingFileFromPicker,
+  bindMobileWorkingFile,
   createAndAttachWorkingFile,
   detachWorkingFile,
   fileSystemAccessUnavailableMessage,
   fileSystemAccessUnavailableTooltip,
   getWorkingFileHandle,
+  getWorkingFileLabel,
+  isMobileWorkingFileMode,
   isWorkingFileAttached,
   isWorkingFileDirty,
   isWorkingFileSupported,
+  isWorkingFileUiAvailable,
   markWorkingFileSessionHydrated,
   markWorkingFileSynced,
+  persistWorkingFileJson,
+  prefersBrowserFilePicker,
   STANDARD_WORKING_FILENAME,
-  writeWorkingFileJson,
 } from "@/lib/working-file";
 import {
   buildMindmapDropPreview,
@@ -241,6 +247,7 @@ export function TaskBoard() {
   const [openWorkingFileConfirmOpen, setOpenWorkingFileConfirmOpen] = useState(false);
   const boardColumnsRef = useRef<HTMLDivElement>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
+  const workingFilePickRef = useRef<HTMLInputElement>(null);
   const dropPreviewRef = useRef<BoardDropPreview | null>(null);
 
   const onWorkingFileDirtyChange = useCallback((dirty: boolean) => {
@@ -252,7 +259,7 @@ export function TaskBoard() {
   }, []);
 
   useEffect(() => {
-    setFsAccessSupportedForUi(isWorkingFileSupported());
+    setFsAccessSupportedForUi(isWorkingFileUiAvailable());
     setWorkingFileUiReady(true);
   }, []);
 
@@ -348,17 +355,25 @@ export function TaskBoard() {
 
   const attachWorkingFileLink = useCallback(
     async (createNew: boolean) => {
-      if (!isWorkingFileSupported()) {
+      if (createNew && prefersBrowserFilePicker()) {
+        downloadJsonFile(STANDARD_WORKING_FILENAME, boardSnapshotTextFromStore());
+        window.alert(
+          `„${STANDARD_WORKING_FILENAME}“ wurde heruntergeladen.\n\nLegen Sie die Datei in Ihren Proton-Drive-Ordner und wählen Sie danach „JSON-Datei auswählen“.`,
+        );
+        return true;
+      }
+
+      if (!isWorkingFileUiAvailable()) {
         window.alert(fileSystemAccessUnavailableMessage());
         return false;
       }
       try {
         const json = boardSnapshotTextFromStore();
         if (!createNew && isWorkingFileAttached() && isWorkingFileDirty()) {
-          const saved = await writeWorkingFileJson(boardSnapshotTextFromStore());
+          const saved = await persistWorkingFileJson(boardSnapshotTextFromStore());
           if (!saved.ok) {
             window.alert(
-              "Dateiwechsel abgebrochen: ungespeicherte Änderungen konnten nicht in die aktuelle Datei geschrieben werden.",
+              "Dateiwechsel abgebrochen: ungespeicherte Änderungen konnten nicht gespeichert werden.",
             );
             return false;
           }
@@ -390,7 +405,7 @@ export function TaskBoard() {
             return false;
           }
         } else if (picked.hydrate.status === "pushed_local") {
-          const result = await writeWorkingFileJson(boardSnapshotTextFromStore());
+          const result = await persistWorkingFileJson(boardSnapshotTextFromStore());
           if (!result.ok) window.alert("Speichern in die neue Arbeitsdatei ist fehlgeschlagen.");
           else setWorkingFileDirty(false);
         }
@@ -404,6 +419,54 @@ export function TaskBoard() {
     [boardSnapshotTextFromStore],
   );
 
+  const attachWorkingFileFromMobilePicker = useCallback(
+    async (file: File) => {
+      setStoragePanelBusy(true);
+      try {
+        const result = await attachWorkingFileFromBrowserFile(file);
+        if (!result) {
+          window.alert("Die Datei konnte nicht gelesen werden.");
+          return false;
+        }
+        if (result.status === "conflict") {
+          const loadFile = window.confirm(
+            "Die gewählte Datei unterscheidet sich von Ihrer aktuellen Ansicht.\n\nOK = Inhalt der Datei laden\nAbbrechen = Abbrechen",
+          );
+          if (!loadFile) return false;
+          const text = await file.text();
+          applyBoardJsonToStore(text);
+          await bindMobileWorkingFile(file, text);
+        } else if (result.status === "pushed_local") {
+          const saved = await persistWorkingFileJson(boardSnapshotTextFromStore());
+          if (!saved.ok) {
+            window.alert("Speichern ist fehlgeschlagen.");
+            return false;
+          }
+        }
+        setWorkingFileName(getWorkingFileLabel());
+        setWorkingFileSetupOpen(false);
+        setWorkingFileDirty(false);
+        return true;
+      } catch (err) {
+        window.alert(err instanceof Error ? err.message : "Datei konnte nicht geöffnet werden.");
+        return false;
+      } finally {
+        setStoragePanelBusy(false);
+      }
+    },
+    [boardSnapshotTextFromStore],
+  );
+
+  const handleWorkingFilePickChange = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file) return;
+      await attachWorkingFileFromMobilePicker(file);
+    },
+    [attachWorkingFileFromMobilePicker],
+  );
+
   const runAttachWorkingFileWithBusy = useCallback(
     (createNew: boolean) => {
       setStoragePanelBusy(true);
@@ -413,18 +476,39 @@ export function TaskBoard() {
   );
 
   const beginAttachWorkingFile = useCallback(
-    (createNew: boolean) => {
+    (createNew: boolean, options?: { skipConfirm?: boolean }) => {
+      if (createNew) {
+        if (prefersBrowserFilePicker()) {
+          setWorkingFileSetupOpen(false);
+          void attachWorkingFileLink(true);
+          return;
+        }
+        if (!isWorkingFileSupported()) {
+          window.alert(fileSystemAccessUnavailableMessage());
+          return;
+        }
+        runAttachWorkingFileWithBusy(true);
+        return;
+      }
+
+      if (prefersBrowserFilePicker()) {
+        setWorkingFileSetupOpen(false);
+        workingFilePickRef.current?.click();
+        return;
+      }
+
       if (!isWorkingFileSupported()) {
         window.alert(fileSystemAccessUnavailableMessage());
         return;
       }
-      if (createNew) {
-        runAttachWorkingFileWithBusy(true);
+      if (!options?.skipConfirm && isWorkingFileAttached()) {
+        setOpenWorkingFileConfirmOpen(true);
         return;
       }
-      setOpenWorkingFileConfirmOpen(true);
+      setWorkingFileSetupOpen(false);
+      runAttachWorkingFileWithBusy(false);
     },
-    [runAttachWorkingFileWithBusy],
+    [attachWorkingFileLink, runAttachWorkingFileWithBusy],
   );
 
   const handleConfirmOpenWorkingFile = useCallback(() => {
@@ -443,10 +527,15 @@ export function TaskBoard() {
       return;
     }
     const json = boardSnapshotTextFromStore();
-    const result = await writeWorkingFileJson(json);
+    const result = await persistWorkingFileJson(json);
     if (!result.ok) window.alert("Speichern in die Arbeitsdatei ist fehlgeschlagen.");
     else setWorkingFileDirty(false);
   }, [beginAttachWorkingFile, boardSnapshotTextFromStore]);
+
+  const handleExportWorkingFileForSync = useCallback(() => {
+    const name = getWorkingFileLabel() || STANDARD_WORKING_FILENAME;
+    downloadJsonFile(name, boardSnapshotTextFromStore());
+  }, [boardSnapshotTextFromStore]);
 
   const openEditor = (id: string) => {
     setEditorNodeId(id);
@@ -707,6 +796,7 @@ export function TaskBoard() {
         workingFileDirty,
         workingFileSaving,
         fsAccessSupported: fsAccessSupportedForUi,
+        mobileWorkingFileMode: isMobileWorkingFileMode(),
       }),
     [workingFileLabel, workingFileAttached, workingFileDirty, workingFileSaving, fsAccessSupportedForUi],
   );
@@ -750,6 +840,14 @@ export function TaskBoard() {
             ) : null}
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <input
+              ref={workingFilePickRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              aria-hidden
+              onChange={(e) => void handleWorkingFilePickChange(e)}
+            />
             <input
               ref={importFileRef}
               type="file"
@@ -947,9 +1045,11 @@ export function TaskBoard() {
       />
       <WorkingFileSetupDialog
         open={workingFileSetupOpen && !workingFileAttached}
+        mobileMode={prefersBrowserFilePicker()}
         fsAccessSupported={fsAccessSupportedForUi}
         unavailableMessage={fileSystemAccessUnavailableMessage()}
-        onOpenExisting={() => beginAttachWorkingFile(false)}
+        onPickExistingMobile={() => workingFilePickRef.current?.click()}
+        onOpenExistingDesktop={() => beginAttachWorkingFile(false, { skipConfirm: true })}
         onCreateNew={() => beginAttachWorkingFile(true)}
       />
       <DataStoragePanel
@@ -966,6 +1066,8 @@ export function TaskBoard() {
         onOpenWorkingFile={() => beginAttachWorkingFile(false)}
         onCreateWorkingFile={() => beginAttachWorkingFile(true)}
         onChangeWorkingFile={handleChangeWorkingFile}
+        mobileWorkingFileMode={isMobileWorkingFileMode()}
+        onExportWorkingFileForSync={handleExportWorkingFileForSync}
         onCreateBackup={() => {
           handleExportFullBoard();
         }}

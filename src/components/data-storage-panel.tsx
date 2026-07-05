@@ -17,6 +17,8 @@ export interface DataStoragePanelProps {
   onOpenWorkingFile: () => void;
   onCreateWorkingFile: () => void;
   onChangeWorkingFile: () => void;
+  mobileWorkingFileMode?: boolean;
+  onExportWorkingFileForSync?: () => void;
   onCreateBackup: () => void;
   onRestoreBackupFile: () => void;
   onRestoreBackupPaste: () => void;
@@ -47,6 +49,8 @@ export function DataStoragePanel({
   onOpenWorkingFile,
   onCreateWorkingFile,
   onChangeWorkingFile,
+  mobileWorkingFileMode,
+  onExportWorkingFileForSync,
   onCreateBackup,
   onRestoreBackupFile,
   onRestoreBackupPaste,
@@ -77,8 +81,9 @@ export function DataStoragePanel({
               Daten &amp; Speicher
             </h2>
             <p className="mt-1 text-xs text-slate-600">
-              Alle Daten liegen in einer lokalen JSON-Datei. Änderungen werden sofort geschrieben
-              und externe Dateiänderungen automatisch erkannt.
+              {mobileWorkingFileMode
+                ? "Auf dem Handy werden Änderungen lokal gespeichert. Zum Abgleich mit Proton Drive die Datei exportieren und im Sync-Ordner ersetzen."
+                : "Alle Daten liegen in einer lokalen JSON-Datei. Änderungen werden sofort geschrieben und externe Dateiänderungen automatisch erkannt."}
             </p>
           </div>
           <button
@@ -117,6 +122,20 @@ export function DataStoragePanel({
                       <Link className="h-3.5 w-3.5" aria-hidden />
                       Andere Datei wählen
                     </button>
+                    {mobileWorkingFileMode && onExportWorkingFileForSync ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onExportWorkingFileForSync();
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-900 hover:bg-sky-100"
+                      >
+                        <Download className="h-3.5 w-3.5" aria-hidden />
+                        Für Proton Drive exportieren
+                      </button>
+                    ) : null}
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-2">

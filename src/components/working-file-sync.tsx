@@ -14,6 +14,7 @@ import {
 } from "@/lib/file-board-reconcile";
 import {
   getWorkingFileHandle,
+  getWorkingFileLabel,
   isKnownFileRevision,
   isWorkingFileAttached,
   isWorkingFileDirty,
@@ -24,6 +25,9 @@ import {
   shouldSuppressExternalFilePoll,
   wasWorkingFileSessionHydrated,
   writeWorkingFileJson,
+  persistWorkingFileJson,
+  isMobileWorkingFileMode,
+  getLastSyncedBoardJson,
 } from "@/lib/working-file";
 import { useTaskTreeStore } from "@/store/task-tree-store";
 
@@ -75,8 +79,7 @@ export function WorkingFileSync({
   const lastPersistKeyRef = useRef<string | null>(null);
 
   const syncFileLabel = () => {
-    const h = getWorkingFileHandle();
-    const name = h?.name?.trim() ? h.name : h ? "Arbeitsdatei" : null;
+    const name = getWorkingFileLabel();
     callbacksRef.current.onWorkingFileNameChange(name);
   };
 
@@ -106,7 +109,9 @@ export function WorkingFileSync({
       }
 
       const json = boardJsonFromStoreState();
-      const result = await writeWorkingFileJson(json, handle);
+      const result = isMobileWorkingFileMode()
+        ? await persistWorkingFileJson(json)
+        : await writeWorkingFileJson(json, handle);
       if (!result.ok) {
         window.alert("Speichern ist fehlgeschlagen. Bitte erneut versuchen.");
         setConflictOpen(true);
@@ -142,7 +147,7 @@ export function WorkingFileSync({
       saveInFlightRef.current = true;
       callbacksRef.current.onSavingChange?.(true);
       try {
-        const result = await writeWorkingFileJson(boardJsonFromStoreState());
+        const result = await persistWorkingFileJson(boardJsonFromStoreState());
         if (!mountedRef.current) return false;
         if (result.ok) {
           lastPersistKeyRef.current = boardPersistKeyFromStoreState();
@@ -184,6 +189,7 @@ export function WorkingFileSync({
      * Lokale Bearbeitungen ohne Datei-Änderung werden ignoriert.
      */
     const applyExternalFileIfNeeded = async () => {
+      if (isMobileWorkingFileMode()) return;
       if (
         conflictActiveRef.current ||
         suspendAutoPersistRef.current ||
@@ -229,27 +235,43 @@ export function WorkingFileSync({
       if (wasWorkingFileSessionHydrated()) return;
 
       const handle = getWorkingFileHandle();
-      if (!handle) {
-        callbacksRef.current.onNeedsFileSetup?.();
+      if (handle) {
+        const snap = await readWorkingFileSnapshot(handle);
+        if (!snap || !mountedRef.current) return;
+
+        markWorkingFileSessionHydrated();
+        suspendAutoPersistRef.current = true;
+        try {
+          if (snap.text.trim()) {
+            applyBoardJsonToStore(snap.text);
+            markWorkingFileSynced(snap.text, snap.lastModified);
+          } else {
+            markWorkingFileSynced(boardJsonFromStoreState(), snap.lastModified);
+            await flushPersist();
+          }
+        } finally {
+          suspendAutoPersistRef.current = false;
+        }
         return;
       }
 
-      const snap = await readWorkingFileSnapshot(handle);
-      if (!snap || !mountedRef.current) return;
-
-      markWorkingFileSessionHydrated();
-      suspendAutoPersistRef.current = true;
-      try {
-        if (snap.text.trim()) {
-          applyBoardJsonToStore(snap.text);
-          markWorkingFileSynced(snap.text, snap.lastModified);
-        } else {
-          markWorkingFileSynced(boardJsonFromStoreState(), snap.lastModified);
-          await flushPersist();
+      if (isMobileWorkingFileMode()) {
+        const synced = getLastSyncedBoardJson();
+        if (!synced?.trim()) {
+          callbacksRef.current.onNeedsFileSetup?.();
+          return;
         }
-      } finally {
-        suspendAutoPersistRef.current = false;
+        markWorkingFileSessionHydrated();
+        suspendAutoPersistRef.current = true;
+        try {
+          applyBoardJsonToStore(synced);
+        } finally {
+          suspendAutoPersistRef.current = false;
+        }
+        return;
       }
+
+      callbacksRef.current.onNeedsFileSetup?.();
     };
 
     const addExternalListener = (target: EventTarget, type: string, listener: () => void) => {
@@ -301,7 +323,7 @@ export function WorkingFileSync({
     };
   }, []);
 
-  const workingFileLabel = getWorkingFileHandle()?.name?.trim() || null;
+  const workingFileLabel = getWorkingFileLabel();
 
   return (
     <FileConflictDialog

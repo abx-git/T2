@@ -16,6 +16,7 @@ export interface StorageCoordinatorInput {
   workingFileDirty: boolean;
   workingFileSaving: boolean;
   fsAccessSupported: boolean;
+  mobileWorkingFileMode?: boolean;
 }
 
 export function deriveStorageDisplayStatus(input: StorageCoordinatorInput): StorageDisplayStatus {
@@ -56,7 +57,9 @@ export function deriveStorageDisplayStatus(input: StorageCoordinatorInput): Stor
   return {
     tone: "saved",
     primaryLine: `Gespeichert — ${label}`,
-    secondaryLine: "Änderungen am Board werden automatisch in die Datei geschrieben",
+    secondaryLine: input.mobileWorkingFileMode
+      ? "Lokal zwischengespeichert — für Proton Drive unter „Daten & Speicher“ exportieren"
+      : "Änderungen am Board werden automatisch in die Datei geschrieben",
   };
 }
 

@@ -1,37 +1,31 @@
-# Statische App → Branch gh-pages (Project Pages: https://<user>.github.io/<repo>/)
+# Statische App → GitHub Pages (Project Pages: https://<user>.github.io/<repo>/)
 #
-# Einrichtung:
-#   Settings → Pages → Deploy from branch → gh-pages → / (root)
-# Optional (LOX-Vault):
-#   Settings → Secrets and variables → Actions → Variables
-#   NEXT_PUBLIC_T2_VAULT_API_URL = https://<vault-host>  (ohne Slash am Ende)
-#   NEXT_PUBLIC_BASE_PATH = /MeinRepo  (nur bei abweichendem Pfad, sonst automatisch)
+# Einrichtung (einmalig):
+#   Settings → Pages → Build and deployment → Source: GitHub Actions
+# Optional:
+#   Settings → Actions → Variables → NEXT_PUBLIC_BASE_PATH = /MeinRepo
+#   (Standard: automatisch /{repo-name})
 name: Deploy GitHub Pages
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      vault_api_url:
-        description: "Vault-API-URL (optional, überschreibt Repo-Variable)"
-        required: false
-        type: string
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     env:
-      REPO_NAME: ${{ github.event.repository.name }}
       BASE_PATH: ${{ vars.NEXT_PUBLIC_BASE_PATH || format('/{0}', github.event.repository.name) }}
-      VAULT_API_URL: ${{ inputs.vault_api_url || vars.NEXT_PUBLIC_T2_VAULT_API_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,7 +40,6 @@ jobs:
         run: npm run build:static
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ env.BASE_PATH }}
-          NEXT_PUBLIC_T2_VAULT_API_URL: ${{ env.VAULT_API_URL }}
 
       - name: Verify build output
         run: |
@@ -54,18 +47,18 @@ jobs:
           test -f out/.nojekyll || (echo "Fehlt: out/.nojekyll" && exit 1)
           test -f out/index.html || (echo "Fehlt: out/index.html" && exit 1)
           test -f out/sw.js || (echo "Fehlt: out/sw.js (PWA)" && exit 1)
-          echo "Build OK — basePath=${BASE_PATH} (Assets unter ${BASE_PATH}/ auf GitHub Pages)"
-          if [[ -n "${VAULT_API_URL:-}" ]]; then
-            echo "Vault-API eingebunden: ${VAULT_API_URL}"
-          else
-            echo "Hinweis: Keine Vault-URL — Server-Option in der App ausgeblendet."
-          fi
+          echo "Build OK — basePath=${BASE_PATH}"
 
-      - name: Publish to gh-pages branch
-        uses: JamesIves/github-pages-deploy-action@v4
+      - uses: actions/upload-pages-artifact@v3
         with:
-          folder: out
-          branch: gh-pages
-          clean: true
-          single-commit: true
-          commit-message: "Deploy T2 app (${{ github.sha }})"
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

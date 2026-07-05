@@ -1,8 +1,7 @@
 /**
- * Abgleich zwischen lokalem Board-Stand und Arbeitsdatei — inkl. Zusammenführen.
+ * Abgleich zwischen lokalem Board-Stand und Arbeitsdatei.
  */
 
-import { generateUniqueTaskIdFromTaken } from "@/lib/task-id";
 import {
   boardExportTextsEquivalent,
   boardImportPayloadFromExportText,
@@ -10,15 +9,13 @@ import {
   buildBoardSnapshot,
   isBoardSnapshot,
   parseExportedDocument,
-  remapTaskNodeIds,
   stableBoardStateKey,
   stringifyExportedDocument,
   type BoardSnapshotV1,
 } from "@/lib/task-tree-json";
-import type { TaskNode } from "@/types/task-node";
 import { useTaskTreeStore } from "@/store/task-tree-store";
 
-export type FileConflictResolution = "load_file" | "keep_local" | "merge" | "cancel";
+export type FileConflictChoice = "load_file" | "keep_local" | "defer";
 
 export type FileReconcilePlan =
   | { action: "in_sync" }
@@ -27,7 +24,7 @@ export type FileReconcilePlan =
   | { action: "conflict" };
 
 export interface BoardImportPayload {
-  roots: TaskNode[];
+  roots: import("@/types/task-node").TaskNode[];
   pathIds: string[];
   collapsedIds?: string[];
   columnTitleOverrides: Record<number, string>;
@@ -73,80 +70,6 @@ export function planFileReconcile(localJson: string, fileJson: string): FileReco
   return { action: "conflict" };
 }
 
-function mergeStampLabel(): string {
-  return new Date().toLocaleString(undefined, {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-/** Alle Wurzeln beider Stände unter einem neuen Merge-Knoten zusammenführen (IDs neu vergeben). */
-export function mergeBoardPayloads(
-  local: BoardImportPayload,
-  file: BoardImportPayload,
-): BoardImportPayload {
-  const taken = new Set<string>();
-  const remappedRoots: TaskNode[] = [];
-
-  for (const root of local.roots) {
-    const remapped = remapTaskNodeIds(root);
-    const walk = (n: TaskNode) => {
-      taken.add(n.id);
-      n.children.forEach(walk);
-    };
-    walk(remapped);
-    remappedRoots.push(remapped);
-  }
-
-  for (const root of file.roots) {
-    const remapped = remapTaskNodeIdsWithTaken(root, taken);
-    remappedRoots.push(remapped);
-  }
-
-  const mergeRootId = generateUniqueTaskIdFromTaken(taken);
-  const mergeRoot: TaskNode = {
-    id: mergeRootId,
-    title: `Zusammengeführt ${mergeStampLabel()}`,
-    link: "",
-    description: "Automatisch zusammengeführte Daten aus lokalem Stand und Arbeitsdatei.",
-    tags: [],
-    dueDate: null,
-    reminderDate: null,
-    effort: 0,
-    children: remappedRoots,
-  };
-
-  return {
-    roots: [mergeRoot],
-    pathIds: [mergeRootId],
-    collapsedIds: [],
-    columnTitleOverrides: { ...file.columnTitleOverrides, ...local.columnTitleOverrides },
-    cardFieldVisibility: local.cardFieldVisibility ?? file.cardFieldVisibility,
-    hideCompletedTasks: local.hideCompletedTasks ?? file.hideCompletedTasks,
-    filterTags: local.filterTags?.length ? local.filterTags : file.filterTags,
-    completedTag: local.completedTag ?? file.completedTag,
-    effortOnTasksEnabled: local.effortOnTasksEnabled ?? file.effortOnTasksEnabled,
-  };
-}
-
-function remapTaskNodeIdsWithTaken(root: TaskNode, taken: Set<string>): TaskNode {
-  function walk(n: TaskNode): TaskNode {
-    const id = generateUniqueTaskIdFromTaken(taken);
-    taken.add(id);
-    return {
-      ...n,
-      id,
-      dueDate: n.dueDate ? new Date(n.dueDate.getTime()) : null,
-      reminderDate: n.reminderDate ? new Date(n.reminderDate.getTime()) : null,
-      children: n.children.map(walk),
-    };
-  }
-  return walk(root);
-}
-
 export function applyBoardPayloadToStore(payload: BoardImportPayload): void {
   useTaskTreeStore.getState().replaceBoardFromImport(payload);
 }
@@ -184,26 +107,6 @@ export function parseBoardSnapshotFromText(text: string): BoardSnapshotV1 | null
   } catch {
     return null;
   }
-}
-
-export function mergeBoardJsonTexts(localJson: string, fileJson: string): string | null {
-  const local = payloadFromExportText(localJson);
-  const file = payloadFromExportText(fileJson);
-  if (!local || !file) return null;
-  const merged = mergeBoardPayloads(local, file);
-  return stringifyExportedDocument(
-    buildBoardSnapshot(
-      merged.roots,
-      merged.pathIds,
-      merged.columnTitleOverrides,
-      merged.cardFieldVisibility ?? useTaskTreeStore.getState().cardFieldVisibility,
-      merged.hideCompletedTasks ?? false,
-      merged.effortOnTasksEnabled !== false,
-      merged.filterTags ?? [],
-      merged.completedTag,
-      merged.collapsedIds ?? [],
-    ),
-  );
 }
 
 export function boardPayloadFromSnapshot(snap: BoardSnapshotV1): BoardImportPayload {

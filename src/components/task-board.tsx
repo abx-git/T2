@@ -21,7 +21,7 @@ import {
 import { HardDrive, Settings2, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 
-import { boardJsonFromStoreState } from "@/lib/file-board-reconcile";
+import { applyBoardJsonToStore, boardJsonFromStoreState } from "@/lib/file-board-reconcile";
 import type { BoardSnapshotV1 } from "@/lib/task-tree-json";
 import {
   boardSnapshotToReplacePayload,
@@ -39,6 +39,7 @@ import { parseFreemindMmToRoots, taskRootsToFreemindMm } from "@/lib/freemind-mm
 import {
   attachWorkingFileFromPicker,
   createAndAttachWorkingFile,
+  detachWorkingFile,
   fileSystemAccessUnavailableMessage,
   fileSystemAccessUnavailableTooltip,
   getLastKnownFileModified,
@@ -46,6 +47,7 @@ import {
   isWorkingFileAttached,
   isWorkingFileDirty,
   isWorkingFileSupported,
+  markWorkingFileSynced,
   STANDARD_WORKING_FILENAME,
   writeWorkingFileJson,
 } from "@/lib/working-file";
@@ -71,7 +73,6 @@ import { useTaskTreeStore } from "@/store/task-tree-store";
 import { dropIntentLabel, type BoardDropPreview } from "@/types/dnd-preview";
 import type { TaskNode } from "@/types/task-node";
 
-import { FileConflictDialog } from "./file-conflict-dialog";
 import { TagFilterBar } from "./tag-filter-bar";
 import { TaskSearch } from "./task-search";
 import { MindmapGrid } from "./mindmap-grid";
@@ -83,7 +84,7 @@ import { ImportSubtreeDialog } from "./import-subtree-dialog";
 import { AppointmentsListDialog } from "./appointments-list-dialog";
 import { BranchExportDialog, JsonExportPreviewDialog, JsonPasteImportDialog } from "./json-clipboard-dialog";
 import { LevelNamesSetupDialog } from "./level-names-setup-dialog";
-import { WorkingFileSync, type PendingFileConflict } from "./working-file-sync";
+import { WorkingFileSync } from "./working-file-sync";
 import { WorkingFileSetupDialog } from "./working-file-setup-dialog";
 import { DataStoragePanel } from "./data-storage-panel";
 import { PostImportSaveDialog } from "./post-import-save-dialog";
@@ -227,10 +228,6 @@ export function TaskBoard() {
   /** Nach useEffect: dynamische Tooltips (UA/Brave) erst clientseitig. */
   const [workingFileUiReady, setWorkingFileUiReady] = useState(false);
   const [workingFileSetupOpen, setWorkingFileSetupOpen] = useState(false);
-  const [fileConflictOpen, setFileConflictOpen] = useState(false);
-  const conflictResolutionRef = useRef<
-    ((resolution: "load_file" | "keep_local" | "merge" | "cancel") => Promise<void>) | null
-  >(null);
   const [titleEditNodeId, setTitleEditNodeId] = useState<string | null>(null);
   const [boardJsonExportOpen, setBoardJsonExportOpen] = useState(false);
   const [pasteImportOpen, setPasteImportOpen] = useState(false);
@@ -345,10 +342,6 @@ export function TaskBoard() {
 
   const boardSnapshotTextFromStore = useCallback(() => boardJsonFromStoreState(), []);
 
-  const handleFileConflict = useCallback((_conflict: PendingFileConflict) => {
-    setFileConflictOpen(true);
-  }, []);
-
   const attachWorkingFileLink = useCallback(
     async (createNew: boolean) => {
       if (!isWorkingFileSupported()) {
@@ -381,10 +374,18 @@ export function TaskBoard() {
         setWorkingFileName(picked.handle.name?.trim() ? picked.handle.name : "Arbeitsdatei");
         setWorkingFileSetupOpen(false);
         if (picked.hydrate.status === "conflict") {
-          handleFileConflict({
-            fileText: picked.hydrate.fileText,
-            fileLastModified: picked.hydrate.fileLastModified,
-          });
+          const loadFile = window.confirm(
+            "Die gewählte Datei unterscheidet sich von Ihrer aktuellen Ansicht.\n\nOK = Inhalt der Datei laden\nAbbrechen = Verknüpfung aufheben",
+          );
+          if (loadFile) {
+            applyBoardJsonToStore(picked.hydrate.fileText);
+            markWorkingFileSynced(picked.hydrate.fileText, picked.hydrate.fileLastModified);
+            setWorkingFileDirty(false);
+          } else {
+            await detachWorkingFile();
+            setWorkingFileName(null);
+            return false;
+          }
         } else if (picked.hydrate.status === "pushed_local") {
           const result = await writeWorkingFileJson(boardSnapshotTextFromStore());
           if (!result.ok) window.alert("Speichern in die neue Arbeitsdatei ist fehlgeschlagen.");
@@ -397,7 +398,7 @@ export function TaskBoard() {
         return false;
       }
     },
-    [boardSnapshotTextFromStore, handleFileConflict],
+    [boardSnapshotTextFromStore],
   );
 
   const runAttachWorkingFileWithBusy = useCallback(
@@ -443,14 +444,6 @@ export function TaskBoard() {
     if (!result.ok) window.alert("Speichern in die Arbeitsdatei ist fehlgeschlagen.");
     else setWorkingFileDirty(false);
   }, [beginAttachWorkingFile, boardSnapshotTextFromStore]);
-
-  const resolveFileConflict = useCallback(
-    async (resolution: "load_file" | "keep_local" | "merge" | "cancel") => {
-      setFileConflictOpen(false);
-      await conflictResolutionRef.current?.(resolution);
-    },
-    [],
-  );
 
   const openEditor = (id: string) => {
     setEditorNodeId(id);
@@ -737,8 +730,6 @@ export function TaskBoard() {
         onDirtyChange={onWorkingFileDirtyChange}
         onSavingChange={setWorkingFileSaving}
         onNeedsFileSetup={() => setWorkingFileSetupOpen(true)}
-        onConflict={handleFileConflict}
-        conflictResolutionRef={conflictResolutionRef}
       />
       {/* Header + Board in einer Spalte: Board kann den Header nicht überdecken (kein z-Index gegen Toolbar). */}
       <div className="flex min-h-0 flex-1 flex-col">
@@ -957,14 +948,6 @@ export function TaskBoard() {
         unavailableMessage={fileSystemAccessUnavailableMessage()}
         onOpenExisting={() => beginAttachWorkingFile(false)}
         onCreateNew={() => beginAttachWorkingFile(true)}
-      />
-      <FileConflictDialog
-        open={fileConflictOpen}
-        fileName={workingFileLabel}
-        onLoadFile={() => void resolveFileConflict("load_file")}
-        onKeepLocal={() => void resolveFileConflict("keep_local")}
-        onMerge={() => void resolveFileConflict("merge")}
-        onCancel={() => void resolveFileConflict("cancel")}
       />
       <DataStoragePanel
         open={dataStoragePanelOpen}

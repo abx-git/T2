@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  mergeBoardPayloads,
   planFileReconcile,
   type BoardImportPayload,
 } from "./file-board-reconcile";
@@ -73,33 +72,6 @@ describe("planFileReconcile", () => {
     const local = jsonFromPayload(payloadWithRoot("Lokal"));
     const file = jsonFromPayload(payloadWithRoot("Datei"));
     expect(planFileReconcile(local, file)).toEqual({ action: "conflict" });
-  });
-});
-
-describe("mergeBoardPayloads", () => {
-  it("creates a single merge root containing both sides", () => {
-    const merged = mergeBoardPayloads(
-      payloadWithRoot("Lokal"),
-      payloadWithRoot("Datei"),
-    );
-    expect(merged.roots).toHaveLength(1);
-    expect(merged.roots[0]?.title).toMatch(/^Zusammengeführt /);
-    expect(merged.roots[0]?.children).toHaveLength(2);
-    expect(merged.roots[0]?.children.map((c) => c.title).sort()).toEqual(["Datei", "Lokal"]);
-  });
-
-  it("remaps ids to avoid collisions", () => {
-    const merged = mergeBoardPayloads(
-      payloadWithRoot("A"),
-      payloadWithRoot("B"),
-    );
-    const ids = new Set<string>();
-    const walk = (n: { id: string; children: typeof merged.roots }) => {
-      expect(ids.has(n.id)).toBe(false);
-      ids.add(n.id);
-      for (const c of n.children) walk(c);
-    };
-    for (const r of merged.roots) walk(r);
   });
 });
 

@@ -46,6 +46,7 @@ import {
   isWorkingFileAttached,
   isWorkingFileDirty,
   isWorkingFileSupported,
+  markWorkingFileSessionHydrated,
   markWorkingFileSynced,
   STANDARD_WORKING_FILENAME,
   writeWorkingFileJson,
@@ -246,6 +247,10 @@ export function TaskBoard() {
     setWorkingFileDirty(dirty);
   }, []);
 
+  const onNeedsWorkingFileSetup = useCallback(() => {
+    setWorkingFileSetupOpen(true);
+  }, []);
+
   useEffect(() => {
     setFsAccessSupportedForUi(isWorkingFileSupported());
     setWorkingFileUiReady(true);
@@ -377,6 +382,7 @@ export function TaskBoard() {
           if (loadFile) {
             applyBoardJsonToStore(picked.hydrate.fileText);
             markWorkingFileSynced(picked.hydrate.fileText, picked.hydrate.fileLastModified);
+            markWorkingFileSessionHydrated();
             setWorkingFileDirty(false);
           } else {
             await detachWorkingFile();
@@ -726,7 +732,7 @@ export function TaskBoard() {
         onWorkingFileNameChange={setWorkingFileName}
         onDirtyChange={onWorkingFileDirtyChange}
         onSavingChange={setWorkingFileSaving}
-        onNeedsFileSetup={() => setWorkingFileSetupOpen(true)}
+        onNeedsFileSetup={onNeedsWorkingFileSetup}
       />
       {/* Header + Board in einer Spalte: Board kann den Header nicht überdecken (kein z-Index gegen Toolbar). */}
       <div className="flex min-h-0 flex-1 flex-col">

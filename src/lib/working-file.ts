@@ -30,7 +30,22 @@ let lastKnownFileModified = 0;
 /** Kurz nach eigenem Schreiben externes Polling unterdrücken (ms seit Epoch). */
 let suppressExternalPollUntil = 0;
 
-const EXTERNAL_POLL_SUPPRESS_MS = 2500;
+/** Einmaliges Laden der Arbeitsdatei pro Browser-Tab (verhindert Re-Hydrate bei Re-Renders). */
+let sessionHydrated = false;
+
+export function wasWorkingFileSessionHydrated(): boolean {
+  return sessionHydrated;
+}
+
+export function markWorkingFileSessionHydrated(): void {
+  sessionHydrated = true;
+}
+
+export function clearWorkingFileSessionHydrated(): void {
+  sessionHydrated = false;
+}
+
+const OWN_WRITE_SUPPRESS_MS = 1500;
 
 export type WriteWorkingFileResult =
   | { ok: true; lastModified: number }
@@ -93,7 +108,12 @@ export function isWorkingFileAttached(): boolean {
 export function markWorkingFileSynced(json: string, fileLastModified: number): void {
   lastSyncedBoardJson = json;
   lastKnownFileModified = fileLastModified;
-  suppressExternalPollUntil = Date.now() + EXTERNAL_POLL_SUPPRESS_MS;
+}
+
+/** Nach eigenem Schreiben: Sync-Stand setzen und kurz externe Prüfung aussetzen. */
+export function noteOwnWriteToWorkingFile(json: string, fileLastModified: number): void {
+  markWorkingFileSynced(json, fileLastModified);
+  suppressExternalPollUntil = Date.now() + OWN_WRITE_SUPPRESS_MS;
 }
 
 export function clearWorkingFileSyncState(): void {
@@ -244,7 +264,7 @@ export async function writeWorkingFileJson(
     await writable.write(json);
     await writable.close();
     const file = await handle.getFile();
-    markWorkingFileSynced(json, file.lastModified);
+    noteOwnWriteToWorkingFile(json, file.lastModified);
     return { ok: true, lastModified: file.lastModified };
   } catch (e) {
     console.error("Arbeitsdatei schreiben:", e);
@@ -311,6 +331,7 @@ export async function hydrateStoreFromWorkingFile(handle: FileSystemFileHandle):
 
   if (!fileJson.trim()) {
     markWorkingFileSynced(localJson, snap.lastModified);
+    markWorkingFileSessionHydrated();
     return { status: "empty" };
   }
 
@@ -318,10 +339,12 @@ export async function hydrateStoreFromWorkingFile(handle: FileSystemFileHandle):
   if (plan.action === "in_sync" || plan.action === "apply_file") {
     loadBoardFromJsonText(fileJson);
     markWorkingFileSynced(fileJson, snap.lastModified);
+    markWorkingFileSessionHydrated();
     return { status: "loaded" };
   }
   if (plan.action === "push_local") {
     markWorkingFileSynced(localJson, snap.lastModified);
+    markWorkingFileSessionHydrated();
     return { status: "pushed_local" };
   }
   return { status: "conflict", fileText: fileJson, fileLastModified: snap.lastModified };
@@ -345,6 +368,7 @@ export async function createAndAttachWorkingFile(initialJson: string): Promise<F
     await detachWorkingFile();
     return null;
   }
+  markWorkingFileSessionHydrated();
   return handle;
 }
 
@@ -364,6 +388,7 @@ export async function restoreWorkingFileFromDisk(): Promise<FileSystemFileHandle
 export async function detachWorkingFile(): Promise<void> {
   memoryHandle = null;
   clearWorkingFileSyncState();
+  clearWorkingFileSessionHydrated();
   try {
     await idbClearHandle();
   } catch {

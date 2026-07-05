@@ -36,11 +36,11 @@ export function FileConflictDialog({
         onPointerDown={(e) => e.stopPropagation()}
       >
         <h2 id={titleId} className="text-base font-semibold text-slate-900">
-          Welche Version soll gelten?
+          Datei und T2 wurden gleichzeitig geändert
         </h2>
         <p className="mt-3 text-sm leading-relaxed text-slate-600">
-          T2 und {label} enthalten <strong className="font-medium text-slate-800">verschiedene Daten</strong>.
-          Bitte wählen Sie, welche Version übernommen werden soll.
+          {label} wurde von einem anderen Programm geändert, während Sie in T2 ebenfalls
+          ungespeicherte Änderungen haben.
         </p>
         <ul className="mt-3 space-y-1.5 text-xs leading-relaxed text-slate-500">
           <li>• <span className="text-slate-700">T2 → Datei:</span> Was Sie jetzt sehen, wird in die Datei geschrieben.</li>

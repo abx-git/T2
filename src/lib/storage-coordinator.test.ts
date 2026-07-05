@@ -1,152 +1,72 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  dataStorageButtonClassName,
   deriveStorageDisplayStatus,
-  formatStorageRelativeTime,
   formatStorageStatusTooltip,
-  hasUnsavedPrimaryTarget,
-  resolveAutoSaveTarget,
-  storageModeFromFlags,
+  hasUnsavedWorkingFile,
+  dataStorageButtonClassName,
 } from "./storage-coordinator";
-
-describe("storageModeFromFlags", () => {
-  it("prefers server when connected", () => {
-    expect(
-      storageModeFromFlags({ serverBoardEnabled: true, workingFileAttached: true }),
-    ).toBe("server");
-  });
-
-  it("keeps server mode for offline draft", () => {
-    expect(
-      storageModeFromFlags({
-        serverBoardEnabled: false,
-        workingFileAttached: false,
-        serverOfflinePending: true,
-      }),
-    ).toBe("server");
-  });
-
-  it("uses file when server off", () => {
-    expect(
-      storageModeFromFlags({ serverBoardEnabled: false, workingFileAttached: true }),
-    ).toBe("file");
-  });
-
-  it("falls back to browser", () => {
-    expect(
-      storageModeFromFlags({ serverBoardEnabled: false, workingFileAttached: false }),
-    ).toBe("browser");
-  });
-});
-
-describe("resolveAutoSaveTarget", () => {
-  it("maps server offline pending to server target", () => {
-    expect(
-      resolveAutoSaveTarget({
-        serverBoardEnabled: false,
-        workingFileAttached: false,
-        serverOfflinePending: true,
-      }),
-    ).toBe("server");
-  });
-});
 
 describe("deriveStorageDisplayStatus", () => {
   const base = {
     workingFileLabel: null,
+    workingFileAttached: false,
     workingFileDirty: false,
     workingFileSaving: false,
-    serverBoardDirty: false,
-    serverBoardSaving: false,
-    serverOfflinePending: false,
-    serverBoardAutoPaused: false,
-    localMirrorSavedAt: null,
+    fsAccessSupported: true,
   };
 
-  it("shows dirty server state", () => {
+  it("shows no-file when nothing attached", () => {
+    const s = deriveStorageDisplayStatus(base);
+    expect(s.tone).toBe("no-file");
+    expect(s.primaryLine).toContain("Keine Arbeitsdatei");
+  });
+
+  it("shows dirty file state", () => {
     const s = deriveStorageDisplayStatus({
       ...base,
-      storageMode: "server",
-      serverBoardDirty: true,
+      workingFileAttached: true,
+      workingFileLabel: "board.json",
+      workingFileDirty: true,
     });
     expect(s.tone).toBe("dirty");
-    expect(s.secondaryLine).toContain("Tab nicht schließen");
   });
 
-  it("shows offline draft under server mode", () => {
+  it("shows saved file state", () => {
     const s = deriveStorageDisplayStatus({
       ...base,
-      storageMode: "server",
-      serverOfflinePending: true,
+      workingFileAttached: true,
+      workingFileLabel: "board.json",
     });
-    expect(s.tone).toBe("offline");
-    expect(s.primaryLine).toContain("Offline-Entwurf");
-  });
-
-  it("shows browser-only default", () => {
-    const s = deriveStorageDisplayStatus({
-      ...base,
-      storageMode: "browser",
-    });
-    expect(s.tone).toBe("local-only");
-    expect(s.primaryLine).toBe("Nur im Browser");
+    expect(s.tone).toBe("saved");
+    expect(s.primaryLine).toContain("board.json");
   });
 });
 
-describe("hasUnsavedPrimaryTarget", () => {
-  it("warns only for active dirty targets", () => {
-    expect(
-      hasUnsavedPrimaryTarget({
-        storageMode: "file",
-        workingFileDirty: true,
-        serverBoardDirty: false,
-      }),
-    ).toBe(true);
-    expect(
-      hasUnsavedPrimaryTarget({
-        storageMode: "browser",
-        workingFileDirty: true,
-        serverBoardDirty: true,
-      }),
-    ).toBe(false);
+describe("hasUnsavedWorkingFile", () => {
+  it("warns only when attached and dirty", () => {
+    expect(hasUnsavedWorkingFile(true, true)).toBe(true);
+    expect(hasUnsavedWorkingFile(true, false)).toBe(false);
+    expect(hasUnsavedWorkingFile(false, true)).toBe(false);
   });
 });
 
 describe("formatStorageStatusTooltip", () => {
-  it("joins primary, secondary and action hint", () => {
+  it("includes action hint", () => {
     const status = deriveStorageDisplayStatus({
-      storageMode: "server",
-      workingFileLabel: null,
+      workingFileLabel: "t2-board.json",
+      workingFileAttached: true,
       workingFileDirty: false,
       workingFileSaving: false,
-      serverBoardDirty: false,
-      serverBoardSaving: false,
-      serverOfflinePending: false,
-      serverBoardAutoPaused: false,
-      localMirrorSavedAt: new Date().toISOString(),
+      fsAccessSupported: true,
     });
     const tip = formatStorageStatusTooltip(status);
-    expect(tip).toContain("Gespeichert — Server (LOX-ID)");
-    expect(tip).toContain("Browser-Notfallkopie");
     expect(tip).toContain("Klick:");
-  });
-});
-
-describe("formatStorageRelativeTime", () => {
-  it("returns gerade eben for recent", () => {
-    const now = Date.parse("2026-05-28T12:00:05Z");
-    expect(formatStorageRelativeTime("2026-05-28T12:00:00Z", now)).toBe("gerade eben");
   });
 });
 
 describe("dataStorageButtonClassName", () => {
   it("uses emerald styling when saved", () => {
     expect(dataStorageButtonClassName("saved")).toContain("bg-emerald-50");
-  });
-
-  it("uses neutral styling otherwise", () => {
-    expect(dataStorageButtonClassName("dirty")).toContain("bg-slate-50");
-    expect(dataStorageButtonClassName("local-only")).not.toContain("bg-emerald-50");
   });
 });

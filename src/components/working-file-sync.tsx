@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type MutableRefObject } from "react";
 
 import {
   applyBoardJsonToStore,
@@ -38,7 +38,9 @@ export interface WorkingFileSyncProps {
   onNeedsFileSetup?: () => void;
   onConflict?: (conflict: PendingFileConflict) => void;
   /** Wird gesetzt, wenn ein Konflikt gelöst wurde und die Datei neu geschrieben werden soll. */
-  conflictResolutionRef?: React.MutableRefObject<((resolution: "load_file" | "keep_local" | "merge") => Promise<void>) | null>;
+  conflictResolutionRef?: MutableRefObject<
+    ((resolution: "load_file" | "keep_local" | "merge" | "cancel") => Promise<void>) | null
+  >;
 }
 
 /**
@@ -161,7 +163,16 @@ export function WorkingFileSync({
       noteExternalFileRevision(snap.lastModified);
     };
 
-    const resolveConflict = async (resolution: "load_file" | "keep_local" | "merge") => {
+    const resolveConflict = async (resolution: "load_file" | "keep_local" | "merge" | "cancel") => {
+      if (resolution === "cancel") {
+        conflictPendingRef.current = false;
+        const handle = getWorkingFileHandle();
+        if (handle) {
+          const snap = await readWorkingFileSnapshot(handle);
+          if (snap) noteExternalFileRevision(snap.lastModified);
+        }
+        return;
+      }
       conflictPendingRef.current = false;
       const handle = getWorkingFileHandle();
       if (!handle) return;

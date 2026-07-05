@@ -5,11 +5,10 @@
  */
 
 import {
-  boardSnapshotToReplacePayload,
-  isBoardSnapshot,
-  parseExportedDocument,
-} from "@/lib/task-tree-json";
-import { useTaskTreeStore } from "@/store/task-tree-store";
+  applyBoardJsonToStore,
+  boardJsonFromStoreState,
+  planFileReconcile,
+} from "@/lib/file-board-reconcile";
 
 /** Vorgeschlagener Dateiname beim Anlegen einer neuen Arbeitsdatei. */
 export const STANDARD_WORKING_FILENAME = "t2-board.json";
@@ -245,17 +244,12 @@ export async function writeWorkingFileJson(
 }
 
 function loadBoardFromJsonText(text: string): boolean {
-  const trimmed = text.trim();
-  if (!trimmed) return false;
-  try {
-    const doc = parseExportedDocument(trimmed);
-    if (!isBoardSnapshot(doc)) return false;
-    useTaskTreeStore.getState().replaceBoardFromImport(boardSnapshotToReplacePayload(doc));
-    return true;
-  } catch {
-    return false;
-  }
+  return applyBoardJsonToStore(text);
 }
+
+export type HydrateWorkingFileResult =
+  | { status: "loaded" | "empty" | "pushed_local" }
+  | { status: "conflict"; fileText: string; fileLastModified: number };
 
 async function rememberHandle(handle: FileSystemFileHandle): Promise<void> {
   memoryHandle = handle;
@@ -299,23 +293,39 @@ export async function attachWorkingFileCreate(): Promise<FileSystemFileHandle | 
 }
 
 /** Nach Handle-Wahl: Inhalt laden und Sync-Zustand setzen. */
-export async function hydrateStoreFromWorkingFile(handle: FileSystemFileHandle): Promise<void> {
+export async function hydrateStoreFromWorkingFile(handle: FileSystemFileHandle): Promise<HydrateWorkingFileResult> {
   const snap = await readWorkingFileSnapshot(handle);
-  if (snap?.text.trim()) {
-    loadBoardFromJsonText(snap.text);
-    markWorkingFileSynced(snap.text, snap.lastModified);
-    return;
+  if (!snap) return { status: "empty" };
+
+  const localJson = boardJsonFromStoreState();
+  const fileJson = snap.text;
+
+  if (!fileJson.trim()) {
+    markWorkingFileSynced(localJson, snap.lastModified);
+    return { status: "empty" };
   }
-  const emptyJson = ""; // caller should pass current export after attach if new file
-  const file = await handle.getFile();
-  markWorkingFileSynced(emptyJson, file.lastModified);
+
+  const plan = planFileReconcile(localJson, fileJson);
+  if (plan.action === "in_sync" || plan.action === "apply_file") {
+    loadBoardFromJsonText(fileJson);
+    markWorkingFileSynced(fileJson, snap.lastModified);
+    return { status: "loaded" };
+  }
+  if (plan.action === "push_local") {
+    markWorkingFileSynced(localJson, snap.lastModified);
+    return { status: "pushed_local" };
+  }
+  return { status: "conflict", fileText: fileJson, fileLastModified: snap.lastModified };
 }
 
-export async function attachWorkingFileFromPicker(): Promise<FileSystemFileHandle | null> {
+export async function attachWorkingFileFromPicker(): Promise<{
+  handle: FileSystemFileHandle;
+  hydrate: HydrateWorkingFileResult;
+} | null> {
   const handle = await attachWorkingFileOpen();
   if (!handle) return null;
-  await hydrateStoreFromWorkingFile(handle);
-  return handle;
+  const hydrate = await hydrateStoreFromWorkingFile(handle);
+  return { handle, hydrate };
 }
 
 export async function createAndAttachWorkingFile(initialJson: string): Promise<FileSystemFileHandle | null> {

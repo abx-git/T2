@@ -21,7 +21,7 @@ import {
 import { HardDrive, Settings2, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 
-import { parseBoardVaultLoxIdFromInput } from "@/lib/lox-id";
+import { boardJsonFromStoreState } from "@/lib/file-board-reconcile";
 import type { BoardSnapshotV1 } from "@/lib/task-tree-json";
 import {
   boardSnapshotToReplacePayload,
@@ -39,9 +39,9 @@ import { parseFreemindMmToRoots, taskRootsToFreemindMm } from "@/lib/freemind-mm
 import {
   attachWorkingFileFromPicker,
   createAndAttachWorkingFile,
-  detachWorkingFile,
   fileSystemAccessUnavailableMessage,
   fileSystemAccessUnavailableTooltip,
+  getLastKnownFileModified,
   getWorkingFileHandle,
   isWorkingFileAttached,
   isWorkingFileDirty,
@@ -61,46 +61,17 @@ import {
   type TreeDragOverKind,
 } from "@/lib/tree-utils";
 import { getBoardMaxVisibleLevels } from "@/lib/tree-depth-collapse";
-import type { VaultStatusInfo } from "@/lib/server-board";
-import {
-  getLocalBoardBackupEntry,
-  listLocalBoardBackups,
-  type LocalBoardBackupListItem,
-} from "@/lib/board-local-backup";
-import { flushLocalBoardMirror, readLocalBoardMirror } from "@/lib/board-local-mirror";
 import {
   dataStorageButtonClassName,
   deriveStorageDisplayStatus,
-  formatStorageRelativeTime,
   formatStorageStatusTooltip,
-  hasUnsavedPrimaryTarget,
-  resolveAutoSaveTarget,
-  storageModeFromFlags,
+  hasUnsavedWorkingFile,
 } from "@/lib/storage-coordinator";
-import {
-  clearOfflinePauseState,
-  hasOfflinePauseState,
-  hasOfflinePendingChanges,
-  pauseServerBoardOffline,
-} from "@/lib/server-board-offline";
-import { readStorageMode, writeStorageMode } from "@/lib/storage-session";
-import { readVaultLoxId, writeVaultLoxId } from "@/lib/lox-vault-session";
-import {
-  detachServerBoard,
-  fetchVaultStatus,
-  getLastKnownEtag,
-  getLastSyncedBoardJson,
-  isServerBoardDirty,
-  setLinkedVaultLoxId,
-  setPendingVaultLinkIntent,
-  type VaultLinkIntent,
-  writeBoardToServer,
-} from "@/lib/server-board";
 import { useTaskTreeStore } from "@/store/task-tree-store";
 import { dropIntentLabel, type BoardDropPreview } from "@/types/dnd-preview";
 import type { TaskNode } from "@/types/task-node";
 
-import { BoardLocalPersist } from "./board-local-persist";
+import { FileConflictDialog } from "./file-conflict-dialog";
 import { TagFilterBar } from "./tag-filter-bar";
 import { TaskSearch } from "./task-search";
 import { MindmapGrid } from "./mindmap-grid";
@@ -112,11 +83,8 @@ import { ImportSubtreeDialog } from "./import-subtree-dialog";
 import { AppointmentsListDialog } from "./appointments-list-dialog";
 import { BranchExportDialog, JsonExportPreviewDialog, JsonPasteImportDialog } from "./json-clipboard-dialog";
 import { LevelNamesSetupDialog } from "./level-names-setup-dialog";
-import { ServerBoardNetworkSync } from "./server-board-network-sync";
-import { ServerBoardOfflineSync } from "./server-board-offline-sync";
-import { ServerBoardSync, saveServerBoardToVault } from "./server-board-sync";
-import { LoxVaultDialog, type LoxVaultDialogMode } from "./lox-vault-dialog";
-import { WorkingFileSync } from "./working-file-sync";
+import { WorkingFileSync, type PendingFileConflict } from "./working-file-sync";
+import { WorkingFileSetupDialog } from "./working-file-setup-dialog";
 import { DataStoragePanel } from "./data-storage-panel";
 import { PostImportSaveDialog } from "./post-import-save-dialog";
 import { TaskEditorDialog } from "./task-editor-dialog";
@@ -258,16 +226,11 @@ export function TaskBoard() {
   const [fsAccessSupportedForUi, setFsAccessSupportedForUi] = useState(false);
   /** Nach useEffect: dynamische Tooltips (UA/Brave) erst clientseitig. */
   const [workingFileUiReady, setWorkingFileUiReady] = useState(false);
-  const [vaultStatus, setVaultStatus] = useState<VaultStatusInfo | null>(null);
-  const [vaultLoxId, setVaultLoxId] = useState<string | null>(null);
-  const [serverBoardEnabled, setServerBoardEnabled] = useState(false);
-  const [serverBoardDirty, setServerBoardDirty] = useState(false);
-  const [serverBoardSaving, setServerBoardSaving] = useState(false);
-  const [vaultDialogOpen, setVaultDialogOpen] = useState(false);
-  const [vaultDialogMode, setVaultDialogMode] = useState<LoxVaultDialogMode>("connect");
-  const [serverOfflinePending, setServerOfflinePending] = useState(false);
-  const [serverBoardAutoPaused, setServerBoardAutoPaused] = useState(false);
-  const [serverSaveError, setServerSaveError] = useState<string | null>(null);
+  const [workingFileSetupOpen, setWorkingFileSetupOpen] = useState(false);
+  const [fileConflictOpen, setFileConflictOpen] = useState(false);
+  const conflictResolutionRef = useRef<
+    ((resolution: "load_file" | "keep_local" | "merge" | "cancel") => Promise<void>) | null
+  >(null);
   const [titleEditNodeId, setTitleEditNodeId] = useState<string | null>(null);
   const [boardJsonExportOpen, setBoardJsonExportOpen] = useState(false);
   const [pasteImportOpen, setPasteImportOpen] = useState(false);
@@ -277,9 +240,6 @@ export function TaskBoard() {
   const [scrollToNodeId, setScrollToNodeId] = useState<string | null>(null);
   const [dataStoragePanelOpen, setDataStoragePanelOpen] = useState(false);
   const [storagePanelBusy, setStoragePanelBusy] = useState(false);
-  const [localMirrorSavedAt, setLocalMirrorSavedAt] = useState<string | null>(null);
-  const [localBackupEntries, setLocalBackupEntries] = useState<LocalBoardBackupListItem[]>([]);
-  const [pendingLocalBackupSavedAt, setPendingLocalBackupSavedAt] = useState<string | null>(null);
   const [postImportSaveOpen, setPostImportSaveOpen] = useState(false);
   const [openWorkingFileConfirmOpen, setOpenWorkingFileConfirmOpen] = useState(false);
   const boardColumnsRef = useRef<HTMLDivElement>(null);
@@ -293,52 +253,6 @@ export function TaskBoard() {
   useEffect(() => {
     setFsAccessSupportedForUi(isWorkingFileSupported());
     setWorkingFileUiReady(true);
-  }, []);
-
-  useEffect(() => {
-    const refreshLocalCopies = () => {
-      setLocalMirrorSavedAt(readLocalBoardMirror()?.savedAt ?? null);
-      setLocalBackupEntries(listLocalBoardBackups());
-    };
-    refreshLocalCopies();
-    const timer = setInterval(refreshLocalCopies, 2000);
-    const unsub = useTaskTreeStore.subscribe(() => {
-      refreshLocalCopies();
-    });
-    return () => {
-      clearInterval(timer);
-      unsub();
-    };
-  }, []);
-
-  useEffect(() => {
-    void (async () => {
-      const status = await fetchVaultStatus();
-      setVaultStatus(status);
-      const storedLoxId = readVaultLoxId();
-      if (storedLoxId) {
-        detachServerBoard();
-        setVaultLoxId(storedLoxId);
-        setLinkedVaultLoxId(storedLoxId);
-      }
-      const mode = readStorageMode();
-      if (
-        mode === "server" &&
-        status.configured &&
-        storedLoxId &&
-        !hasOfflinePauseState()
-      ) {
-        setServerBoardEnabled(true);
-      }
-    })();
-  }, []);
-
-  const onServerBoardDirtyChange = useCallback((dirty: boolean) => {
-    setServerBoardDirty(dirty);
-  }, []);
-
-  const onServerBoardConnectFailed = useCallback(() => {
-    setServerBoardEnabled(false);
   }, []);
 
   useEffect(() => {
@@ -429,142 +343,11 @@ export function TaskBoard() {
     [expandToNode],
   );
 
-  const boardSnapshotTextFromStore = useCallback(() => {
-    const s = useTaskTreeStore.getState();
-    return stringifyExportedDocument(
-      buildBoardSnapshot(
-        s.roots,
-        s.pathIds,
-        s.columnTitleOverrides,
-        s.cardFieldVisibility,
-        s.hideCompletedTasks,
-        s.effortOnTasksEnabled,
-        s.filterTags,
-        s.completedTag,
-        s.collapsedIds,
-      ),
-    );
+  const boardSnapshotTextFromStore = useCallback(() => boardJsonFromStoreState(), []);
+
+  const handleFileConflict = useCallback((_conflict: PendingFileConflict) => {
+    setFileConflictOpen(true);
   }, []);
-
-  const enterServerBoardOfflineMode = useCallback(
-    (options?: { auto?: boolean }) => {
-      if (!serverBoardEnabled) return;
-      const json = boardSnapshotTextFromStore();
-      pauseServerBoardOffline({
-        baselineJson: getLastSyncedBoardJson() ?? json,
-        baselineEtag: getLastKnownEtag(),
-        currentJson: json,
-        autoPaused: options?.auto ?? false,
-      });
-      detachServerBoard();
-      setServerBoardEnabled(false);
-      setServerBoardDirty(false);
-      setServerOfflinePending(hasOfflinePendingChanges(json));
-      setServerBoardAutoPaused(options?.auto ?? false);
-      flushLocalBoardMirror(json);
-    },
-    [boardSnapshotTextFromStore, serverBoardEnabled],
-  );
-
-  const reconnectServerBoard = useCallback(() => {
-    if (!vaultLoxId) return;
-    setServerBoardAutoPaused(false);
-    setServerBoardEnabled(true);
-  }, [vaultLoxId]);
-
-  const detachWorkingFileWithSave = useCallback(async (): Promise<boolean> => {
-    if (!isWorkingFileAttached()) return true;
-    const json = boardSnapshotTextFromStore();
-    if (isWorkingFileDirty(json)) {
-      const ok = await writeWorkingFileJson(json);
-      if (!ok) {
-        window.alert(
-          "Trennen nicht möglich: letzter Schreibvorgang in die Arbeitsdatei ist fehlgeschlagen.",
-        );
-        return false;
-      }
-    }
-    await detachWorkingFile();
-    setWorkingFileName(null);
-    setWorkingFileDirty(false);
-    writeStorageMode("browser");
-    return true;
-  }, [boardSnapshotTextFromStore]);
-
-  const disconnectServerBoardLink = useCallback(
-    async (options?: { saveFirst?: boolean; offline?: boolean }) => {
-      if (!serverBoardEnabled) return true;
-      const json = boardSnapshotTextFromStore();
-      if (options?.saveFirst !== false && isServerBoardDirty(json)) {
-        try {
-          await writeBoardToServer(json, getLastKnownEtag());
-        } catch {
-          if (options?.offline) {
-            const cont = window.confirm(
-              "Speichern auf den Server ist fehlgeschlagen.\n\nTrotzdem trennen? Ihre Änderungen bleiben als Offline-Entwurf auf diesem Gerät erhalten.",
-            );
-            if (!cont) return false;
-          } else {
-            window.alert("Trennen nicht möglich: letzter Schreibvorgang auf den Server ist fehlgeschlagen.");
-            return false;
-          }
-        }
-      }
-      if (options?.offline !== false) {
-        enterServerBoardOfflineMode({ auto: false });
-      } else {
-        detachServerBoard();
-        setServerBoardEnabled(false);
-        setServerBoardDirty(false);
-        writeStorageMode("browser");
-      }
-      return true;
-    },
-    [boardSnapshotTextFromStore, enterServerBoardOfflineMode, serverBoardEnabled],
-  );
-
-  const beginVaultLink = useCallback(
-    async (loxId: string, intent: VaultLinkIntent = "connect") => {
-      if (!vaultStatus?.configured) {
-        window.alert(
-          "LOX-Vault ist nicht verfügbar. Auf dem Host T2_VAULT_ENABLED setzen oder NEXT_PUBLIC_T2_VAULT_API_URL konfigurieren.",
-        );
-        return false;
-      }
-      const canonical = parseBoardVaultLoxIdFromInput(loxId);
-      if (!canonical) {
-        window.alert(
-          "Ungültige Board-LOX-ID — Format BRD-XXXX-XXXX.\nDie gekürzte Anzeige in „Daten“ reicht nicht zum Verbinden.",
-        );
-        return false;
-      }
-      const detached = await detachWorkingFileWithSave();
-      if (!detached) return false;
-      detachServerBoard();
-      setServerSaveError(null);
-      writeVaultLoxId(canonical);
-      setVaultLoxId(canonical);
-      setLinkedVaultLoxId(canonical);
-      setPendingVaultLinkIntent(intent);
-      setServerBoardAutoPaused(false);
-      setServerBoardEnabled(true);
-      writeStorageMode("server");
-      return true;
-    },
-    [detachWorkingFileWithSave, vaultStatus?.configured],
-  );
-
-  const connectServerBoardLink = useCallback(async () => {
-    if (!vaultStatus?.configured) {
-      window.alert(
-        "LOX-Vault ist nicht verfügbar. Auf dem Host T2_VAULT_ENABLED setzen oder NEXT_PUBLIC_T2_VAULT_API_URL konfigurieren.",
-      );
-      return false;
-    }
-    setVaultDialogMode("connect");
-    setVaultDialogOpen(true);
-    return false;
-  }, [vaultStatus?.configured]);
 
   const attachWorkingFileLink = useCallback(
     async (createNew: boolean) => {
@@ -572,19 +355,41 @@ export function TaskBoard() {
         window.alert(fileSystemAccessUnavailableMessage());
         return false;
       }
-      if (serverBoardEnabled) {
-        const ok = await disconnectServerBoardLink({ offline: true });
-        if (!ok) return false;
-      }
       try {
         const json = boardSnapshotTextFromStore();
-        const handle = createNew
-          ? await createAndAttachWorkingFile(json)
-          : await attachWorkingFileFromPicker();
-        if (!handle) return false;
-        setWorkingFileName(handle.name?.trim() ? handle.name : "Arbeitsdatei");
-        if (createNew) setWorkingFileDirty(false);
-        writeStorageMode("file");
+        if (!createNew && isWorkingFileAttached() && isWorkingFileDirty(json)) {
+          const saved = await writeWorkingFileJson(json, undefined, {
+            expectedLastModified: getLastKnownFileModified(),
+          });
+          if (!saved.ok) {
+            window.alert(
+              "Dateiwechsel abgebrochen: ungespeicherte Änderungen konnten nicht in die aktuelle Datei geschrieben werden.",
+            );
+            return false;
+          }
+        }
+        if (createNew) {
+          const handle = await createAndAttachWorkingFile(json);
+          if (!handle) return false;
+          setWorkingFileName(handle.name?.trim() ? handle.name : "Arbeitsdatei");
+          setWorkingFileSetupOpen(false);
+          setWorkingFileDirty(false);
+          return true;
+        }
+        const picked = await attachWorkingFileFromPicker();
+        if (!picked) return false;
+        setWorkingFileName(picked.handle.name?.trim() ? picked.handle.name : "Arbeitsdatei");
+        setWorkingFileSetupOpen(false);
+        if (picked.hydrate.status === "conflict") {
+          handleFileConflict({
+            fileText: picked.hydrate.fileText,
+            fileLastModified: picked.hydrate.fileLastModified,
+          });
+        } else if (picked.hydrate.status === "pushed_local") {
+          const result = await writeWorkingFileJson(boardSnapshotTextFromStore());
+          if (!result.ok) window.alert("Speichern in die neue Arbeitsdatei ist fehlgeschlagen.");
+          else setWorkingFileDirty(false);
+        }
         return true;
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return false;
@@ -592,7 +397,7 @@ export function TaskBoard() {
         return false;
       }
     },
-    [boardSnapshotTextFromStore, disconnectServerBoardLink, serverBoardEnabled],
+    [boardSnapshotTextFromStore, handleFileConflict],
   );
 
   const runAttachWorkingFileWithBusy = useCallback(
@@ -623,54 +428,9 @@ export function TaskBoard() {
     runAttachWorkingFileWithBusy(false);
   }, [runAttachWorkingFileWithBusy]);
 
-  const handleSelectAutoSaveTarget = useCallback(
-    async (target: "local" | "working-file" | "server") => {
-      if (target === "working-file") {
-        if (isWorkingFileAttached()) return;
-        beginAttachWorkingFile(false);
-        return;
-      }
-
-      setStoragePanelBusy(true);
-      try {
-        if (target === "local") {
-          if (serverBoardEnabled) {
-            const ok = await disconnectServerBoardLink({ saveFirst: true, offline: false });
-            if (!ok) return;
-          }
-          if (serverOfflinePending || hasOfflinePauseState()) {
-            const cont = window.confirm(
-              "Offline-Entwurf für den Server verwerfen und nur im Browser weiterarbeiten?",
-            );
-            if (!cont) return;
-            clearOfflinePauseState();
-            setServerOfflinePending(false);
-            setServerBoardAutoPaused(false);
-          }
-          if (isWorkingFileAttached()) {
-            const ok = await detachWorkingFileWithSave();
-            if (!ok) return;
-          }
-          writeStorageMode("browser");
-          return;
-        }
-        if (target === "server") {
-          if (serverBoardEnabled) return;
-          await connectServerBoardLink();
-        }
-      } finally {
-        setStoragePanelBusy(false);
-      }
-    },
-    [
-      beginAttachWorkingFile,
-      connectServerBoardLink,
-      detachWorkingFileWithSave,
-      disconnectServerBoardLink,
-      serverBoardEnabled,
-      serverOfflinePending,
-    ],
-  );
+  const handleChangeWorkingFile = useCallback(() => {
+    beginAttachWorkingFile(false);
+  }, [beginAttachWorkingFile]);
 
   const handlePostImportSaveToFile = useCallback(async () => {
     setPostImportSaveOpen(false);
@@ -679,54 +439,18 @@ export function TaskBoard() {
       return;
     }
     const json = boardSnapshotTextFromStore();
-    const written = await writeWorkingFileJson(json);
-    if (!written) window.alert("Speichern in die Arbeitsdatei ist fehlgeschlagen.");
-    else {
-      setWorkingFileDirty(false);
-      writeStorageMode("file");
-    }
+    const result = await writeWorkingFileJson(json);
+    if (!result.ok) window.alert("Speichern in die Arbeitsdatei ist fehlgeschlagen.");
+    else setWorkingFileDirty(false);
   }, [beginAttachWorkingFile, boardSnapshotTextFromStore]);
 
-  const handleSaveServerBoard = useCallback(async () => {
-    setStoragePanelBusy(true);
-    setServerSaveError(null);
-    try {
-      const result = await saveServerBoardToVault();
-      if (!result.ok) {
-        setServerSaveError(result.error);
-        if (!result.offline) {
-          window.alert(result.error);
-        }
-      } else {
-        setServerBoardDirty(false);
-      }
-    } finally {
-      setStoragePanelBusy(false);
-    }
-  }, []);
-
-  const handlePostImportSyncServer = useCallback(async () => {
-    setPostImportSaveOpen(false);
-    if (!vaultStatus?.configured) {
-      setVaultDialogMode("connect");
-      setVaultDialogOpen(true);
-      return;
-    }
-    if (!vaultLoxId) {
-      setVaultDialogMode("connect");
-      setVaultDialogOpen(true);
-      return;
-    }
-    await detachWorkingFileWithSave();
-    await beginVaultLink(vaultLoxId);
-    const json = boardSnapshotTextFromStore();
-    try {
-      await writeBoardToServer(json, getLastKnownEtag());
-      setServerBoardDirty(false);
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Speichern auf den Server ist fehlgeschlagen.");
-    }
-  }, [beginVaultLink, boardSnapshotTextFromStore, detachWorkingFileWithSave, vaultLoxId, vaultStatus?.configured]);
+  const resolveFileConflict = useCallback(
+    async (resolution: "load_file" | "keep_local" | "merge" | "cancel") => {
+      setFileConflictOpen(false);
+      await conflictResolutionRef.current?.(resolution);
+    },
+    [],
+  );
 
   const openEditor = (id: string) => {
     setEditorNodeId(id);
@@ -867,27 +591,6 @@ export function TaskBoard() {
     }
   };
 
-  const handleVaultCreate = useCallback(
-    (loxId: string) => {
-      setVaultDialogOpen(false);
-      void beginVaultLink(loxId, "create");
-    },
-    [beginVaultLink],
-  );
-
-  const handleVaultConnect = useCallback(
-    (loxId: string) => {
-      setVaultDialogOpen(false);
-      void beginVaultLink(loxId, "connect");
-    },
-    [beginVaultLink],
-  );
-
-  const openCreateVaultDialog = useCallback(() => {
-    setVaultDialogMode("create");
-    setVaultDialogOpen(true);
-  }, []);
-
   const handleImportFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -1000,93 +703,42 @@ export function TaskBoard() {
       ? workingFileHandle.name
       : null);
 
-  const storageMode = storageModeFromFlags({
-    serverBoardEnabled,
-    workingFileAttached,
-    serverOfflinePending,
-  });
-
-  const autoSaveTarget = resolveAutoSaveTarget({
-    serverBoardEnabled,
-    workingFileAttached,
-    serverOfflinePending,
-  });
-
   const storageDisplayStatus = useMemo(
     () =>
       deriveStorageDisplayStatus({
-        storageMode,
         workingFileLabel,
+        workingFileAttached,
         workingFileDirty,
         workingFileSaving,
-        serverBoardDirty,
-        serverBoardSaving,
-        serverOfflinePending,
-        serverBoardAutoPaused,
-        localMirrorSavedAt,
+        fsAccessSupported: fsAccessSupportedForUi,
       }),
-    [
-      storageMode,
-      workingFileLabel,
-      workingFileDirty,
-      workingFileSaving,
-      serverBoardDirty,
-      serverBoardSaving,
-      serverOfflinePending,
-      serverBoardAutoPaused,
-      localMirrorSavedAt,
-    ],
+    [workingFileLabel, workingFileAttached, workingFileDirty, workingFileSaving, fsAccessSupportedForUi],
   );
 
   useEffect(() => {
     const warnOnLeave = (event: BeforeUnloadEvent) => {
-      const dirty = hasUnsavedPrimaryTarget({
-        storageMode,
-        workingFileDirty,
-        serverBoardDirty,
-      });
-      if (!dirty) return;
+      if (!hasUnsavedWorkingFile(workingFileDirty, workingFileAttached)) return;
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warnOnLeave);
     return () => window.removeEventListener("beforeunload", warnOnLeave);
-  }, [storageMode, workingFileDirty, serverBoardDirty]);
+  }, [workingFileAttached, workingFileDirty]);
 
   const dataStorageTooltip = useMemo(
     () => formatStorageStatusTooltip(storageDisplayStatus),
     [storageDisplayStatus],
   );
 
-  const localMirrorHint = formatStorageRelativeTime(localMirrorSavedAt);
-
   return (
     <div className="flex h-screen min-h-0 flex-col">
-      <BoardLocalPersist />
       <WorkingFileSync
         onWorkingFileNameChange={setWorkingFileName}
         onDirtyChange={onWorkingFileDirtyChange}
         onSavingChange={setWorkingFileSaving}
-      />
-      <ServerBoardOfflineSync
-        serverBoardEnabled={serverBoardEnabled}
-        onOfflinePendingChange={setServerOfflinePending}
-      />
-      <ServerBoardNetworkSync
-        serverBoardEnabled={serverBoardEnabled}
-        vaultLinked={Boolean(vaultLoxId)}
-        onAutoOffline={() => enterServerBoardOfflineMode({ auto: true })}
-        onAutoReconnect={reconnectServerBoard}
-        onAutoPausedChange={setServerBoardAutoPaused}
-      />
-      <ServerBoardSync
-        enabled={serverBoardEnabled}
-        vaultLoxId={vaultLoxId}
-        onDirtyChange={onServerBoardDirtyChange}
-        onSavingChange={setServerBoardSaving}
-        onConnectFailed={onServerBoardConnectFailed}
-        onNetworkUnavailable={() => enterServerBoardOfflineMode({ auto: true })}
-        onSaveError={setServerSaveError}
+        onNeedsFileSetup={() => setWorkingFileSetupOpen(true)}
+        onConflict={handleFileConflict}
+        conflictResolutionRef={conflictResolutionRef}
       />
       {/* Header + Board in einer Spalte: Board kann den Header nicht überdecken (kein z-Index gegen Toolbar). */}
       <div className="flex min-h-0 flex-1 flex-col">
@@ -1264,9 +916,7 @@ export function TaskBoard() {
         open={openWorkingFileConfirmOpen}
         title="Bestehende Arbeitsdatei öffnen?"
         message={
-          serverBoardEnabled
-            ? "Die gewählte JSON-Datei ersetzt die aktuelle Board-Ansicht in T2.\n\nDer Server wird getrennt. Offene Änderungen werden zuvor auf den Server geschrieben (sofern möglich); der letzte Stand auf dem Server bleibt erhalten.\n\nUm stattdessen den aktuellen Stand in eine neue Datei zu schreiben, wählen Sie „Neue Datei“."
-            : "Die gewählte JSON-Datei ersetzt die aktuelle Board-Ansicht in T2. Der Inhalt der Datei wird geladen — nicht der zuletzt sichtbare Stand, sofern er abweicht.\n\nUm den aktuellen Stand in eine neue Datei zu schreiben, wählen Sie „Neue Datei“."
+          "Die gewählte JSON-Datei ersetzt die aktuelle Board-Ansicht in T2, sofern sich die Stände unterscheiden.\n\nBei Konflikten werden Sie gefragt — nichts wird still überschrieben.\n\nUm den aktuellen Stand in eine neue Datei zu schreiben, wählen Sie „Neue Datei“."
         }
         confirmLabel="Datei öffnen"
         cancelLabel="Abbrechen"
@@ -1275,47 +925,11 @@ export function TaskBoard() {
         onConfirm={handleConfirmOpenWorkingFile}
       />
       <ConfirmDialog
-        open={pendingLocalBackupSavedAt !== null}
-        title="Notfall-Sicherung wiederherstellen?"
-        message={
-          pendingLocalBackupSavedAt
-            ? `Board-Stand vom ${new Date(pendingLocalBackupSavedAt).toLocaleString()} laden? Alle aktuellen Karten werden ersetzt. Server und Arbeitsdatei werden nicht automatisch angepasst.`
-            : ""
-        }
-        confirmLabel="Wiederherstellen"
-        cancelLabel="Abbrechen"
-        confirmClassName="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-        onCancel={() => setPendingLocalBackupSavedAt(null)}
-        onConfirm={() => {
-          const savedAt = pendingLocalBackupSavedAt;
-          setPendingLocalBackupSavedAt(null);
-          if (!savedAt) return;
-          const entry = getLocalBoardBackupEntry(savedAt);
-          if (!entry) {
-            window.alert("Diese Sicherung ist nicht mehr verfügbar.");
-            setLocalBackupEntries(listLocalBoardBackups());
-            return;
-          }
-          try {
-            const doc = parseExportedDocument(entry.json);
-            if (!isBoardSnapshot(doc)) {
-              window.alert("Ungültige Sicherung — kein Board-Export.");
-              return;
-            }
-            replaceBoardFromImport(boardSnapshotToReplacePayload(doc));
-            closeEditor();
-            setPostImportSaveOpen(true);
-          } catch (err) {
-            window.alert(err instanceof Error ? err.message : "Wiederherstellen fehlgeschlagen.");
-          }
-        }}
-      />
-      <ConfirmDialog
         open={pendingBoardImport !== null}
         title="Backup einspielen?"
         message={
           pendingBoardImport
-            ? `Alle Karten, Drill-Pfad, Ebenen-Namen und Einstellungen werden ersetzt (${pendingBoardImport.roots.length} Wurzelkarten). Weder Server noch Arbeitsdatei werden automatisch angepasst — danach können Sie ein Speicherziel wählen. Nicht rückgängig machbar.`
+            ? `Alle Karten, Drill-Pfad, Ebenen-Namen und Einstellungen werden ersetzt (${pendingBoardImport.roots.length} Wurzelkarten). Die Arbeitsdatei wird nicht automatisch angepasst — danach können Sie speichern. Nicht rückgängig machbar.`
             : ""
         }
         confirmLabel="Einspielen"
@@ -1333,55 +947,39 @@ export function TaskBoard() {
       />
       <PostImportSaveDialog
         open={postImportSaveOpen}
-        workingFileAvailable={fsAccessSupportedForUi}
-        serverConfigured={Boolean(vaultStatus?.configured)}
-        onSaveToWorkingFile={() => void handlePostImportSaveToFile()}
-        onSyncToServer={() => void handlePostImportSyncServer()}
-        onKeepLocalOnly={() => {
-          setPostImportSaveOpen(false);
-          writeStorageMode("browser");
-        }}
+        workingFileAttached={workingFileAttached}
+        onWriteToFile={() => void handlePostImportSaveToFile()}
+        onDismiss={() => setPostImportSaveOpen(false)}
+      />
+      <WorkingFileSetupDialog
+        open={workingFileSetupOpen && !workingFileAttached}
+        fsAccessSupported={fsAccessSupportedForUi}
+        unavailableMessage={fileSystemAccessUnavailableMessage()}
+        onOpenExisting={() => beginAttachWorkingFile(false)}
+        onCreateNew={() => beginAttachWorkingFile(true)}
+      />
+      <FileConflictDialog
+        open={fileConflictOpen}
+        fileName={workingFileLabel}
+        onLoadFile={() => void resolveFileConflict("load_file")}
+        onKeepLocal={() => void resolveFileConflict("keep_local")}
+        onMerge={() => void resolveFileConflict("merge")}
+        onCancel={() => void resolveFileConflict("cancel")}
       />
       <DataStoragePanel
         open={dataStoragePanelOpen}
         onClose={() => setDataStoragePanelOpen(false)}
-        autoSaveTarget={autoSaveTarget}
         fsAccessSupported={fsAccessSupportedForUi}
         workingFileUiReady={workingFileUiReady}
         workingFileUnavailableTooltip={fileSystemAccessUnavailableTooltip()}
         workingFileLabel={workingFileLabel}
+        workingFileAttached={workingFileAttached}
         workingFileDirty={workingFileDirty}
         workingFileSaving={workingFileSaving}
-        vaultStatus={vaultStatus}
-        vaultLoxId={vaultLoxId}
-        serverBoardEnabled={serverBoardEnabled}
-        serverBoardDirty={serverBoardDirty}
-        serverBoardSaving={serverBoardSaving}
-        serverOfflinePending={serverOfflinePending}
-        serverBoardAutoPaused={serverBoardAutoPaused}
-        localMirrorHint={localMirrorHint}
-        localBackupEntries={localBackupEntries}
-        onRestoreLocalBackup={(savedAt) => {
-          setPendingLocalBackupSavedAt(savedAt);
-        }}
         busy={storagePanelBusy}
-        onSelectTarget={(target) => void handleSelectAutoSaveTarget(target)}
-        onAttachWorkingFile={(createNew) => beginAttachWorkingFile(createNew)}
-        onDetachWorkingFile={() => {
-          setStoragePanelBusy(true);
-          void detachWorkingFileWithSave().finally(() => setStoragePanelBusy(false));
-        }}
-        onCreateVault={openCreateVaultDialog}
-        onConnectVault={() => {
-          setStoragePanelBusy(true);
-          void connectServerBoardLink().finally(() => setStoragePanelBusy(false));
-        }}
-        onDisconnectServer={() => {
-          setStoragePanelBusy(true);
-          void disconnectServerBoardLink({ offline: true }).finally(() => setStoragePanelBusy(false));
-        }}
-        onSaveServer={() => void handleSaveServerBoard()}
-        serverSaveError={serverSaveError}
+        onOpenWorkingFile={() => beginAttachWorkingFile(false)}
+        onCreateWorkingFile={() => beginAttachWorkingFile(true)}
+        onChangeWorkingFile={handleChangeWorkingFile}
         onCreateBackup={() => {
           handleExportFullBoard();
         }}
@@ -1419,14 +1017,6 @@ export function TaskBoard() {
           setEffortOnTasksEnabled(effortOn);
           setCompletedTag(doneTag);
         }}
-      />
-      <LoxVaultDialog
-        open={vaultDialogOpen}
-        mode={vaultDialogMode}
-        initialConnectId={vaultLoxId}
-        onClose={() => setVaultDialogOpen(false)}
-        onCreate={handleVaultCreate}
-        onConnect={handleVaultConnect}
       />
       <TaskEditorDialog
         open={editorOpen}

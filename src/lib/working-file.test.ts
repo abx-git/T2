@@ -7,6 +7,7 @@ import {
   markWorkingFileSessionHydrated,
   markWorkingFileSynced,
   normalizeImportedFileText,
+  userFacingFileReadError,
   wasWorkingFileSessionHydrated,
 } from "./working-file";
 
@@ -29,6 +30,18 @@ describe("isKnownFileRevision", () => {
 describe("normalizeImportedFileText", () => {
   it("strips UTF-8 BOM", () => {
     expect(normalizeImportedFileText("\uFEFF{\"a\":1}")).toBe("{\"a\":1}");
+  });
+});
+
+describe("userFacingFileReadError", () => {
+  it("translates NotReadableError for cloud storage", () => {
+    const err = new DOMException(
+      "The requested file could not be read, typically due to permission problems",
+      "NotReadableError",
+    );
+    const msg = userFacingFileReadError(err);
+    expect(msg).toContain("Proton Drive");
+    expect(msg).toContain("Downloads");
   });
 });
 

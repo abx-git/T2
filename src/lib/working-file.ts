@@ -425,6 +425,41 @@ export function normalizeImportedFileText(text: string): string {
   return trimmed;
 }
 
+/** Chrome-NotReadableError (Cloud-Dateien) in verständliche Anleitung übersetzen. */
+export function userFacingFileReadError(error: unknown): string {
+  const name = error instanceof DOMException ? error.name : "";
+  const msg = error instanceof Error ? error.message : String(error);
+  const lower = msg.toLowerCase();
+
+  if (
+    name === "NotReadableError" ||
+    lower.includes("could not be read") ||
+    lower.includes("permission problem") ||
+    lower.includes("permission")
+  ) {
+    return [
+      "Chrome darf diese Datei nicht lesen — das passiert oft, wenn Sie sie direkt aus „Proton Drive“ wählen.",
+      "",
+      "So funktioniert es:",
+      "1. In der Proton-Drive-App die Datei herunterladen oder „Offline verfügbar“ aktivieren",
+      "2. In T2 die Datei aus „Downloads“ oder „Dateien auf diesem Gerät“ wählen — nicht aus dem Proton-Drive-Eintrag",
+      "",
+      "Alternativ: „JSON einfügen“ nutzen (Text aus der Datei auf dem PC kopieren).",
+    ].join("\n");
+  }
+
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return "Datei konnte nicht gelesen werden.";
+}
+
+/**
+ * Lesen sofort beim Datei-Dialog starten (noch im Event-Handler).
+ * Auf Android darf vor dem ersten file.text() kein await liegen.
+ */
+export function beginUserPickedFileRead(file: File): Promise<string> {
+  return readUserPickedFileText(file);
+}
+
 /** Liest eine per Datei-Dialog gewählte Datei (Android/Cloud-tauglich). */
 export async function readUserPickedFileText(file: File): Promise<string> {
   if (file.size === 0) {
@@ -473,6 +508,33 @@ export async function readUserPickedFileText(file: File): Promise<string> {
 
   if (lastError instanceof Error) throw lastError;
   throw new Error("Datei konnte nicht gelesen werden.");
+}
+
+async function attachWorkingFileFromText(
+  text: string,
+  fileName: string,
+  fileLastModified: number,
+): Promise<BrowserFileAttachResult> {
+  memoryHandle = null;
+  await idbClearHandle();
+
+  if (text.trim() && !boardImportPayloadFromExportText(text)) {
+    return {
+      status: "read_error",
+      message:
+        "Die Datei ist keine gültige T2-Arbeitsdatei (JSON-Format „hierarchical-task-manager“ erwartet).",
+    };
+  }
+
+  const result = hydrateFromFileText(text, fileLastModified);
+  if (result.status === "conflict") {
+    return result;
+  }
+
+  const syncedJson = getLastSyncedBoardJson() ?? text;
+  await rememberMobileCopy(syncedJson, fileName, fileLastModified);
+  markWorkingFileSessionHydrated();
+  return result;
 }
 
 async function rememberHandle(handle: FileSystemFileHandle): Promise<void> {
@@ -532,38 +594,36 @@ export async function hydrateStoreFromWorkingFile(handle: FileSystemFileHandle):
  * Smartphone/Cloud-Sync: JSON über den normalen Datei-Dialog öffnen
  * (z. B. Proton Drive, Dateien-App).
  */
-export async function attachWorkingFileFromBrowserFile(file: File): Promise<BrowserFileAttachResult> {
+export async function attachWorkingFileFromBrowserFile(
+  file: File,
+  preReadText?: string,
+): Promise<BrowserFileAttachResult> {
   try {
-    const text = await readUserPickedFileText(file);
+    const text = preReadText ?? (await readUserPickedFileText(file));
     const fileName = file.name?.trim() || STANDARD_WORKING_FILENAME;
-    memoryHandle = null;
-    await idbClearHandle();
-
-    if (text.trim() && !boardImportPayloadFromExportText(text)) {
-      return {
-        status: "read_error",
-        message:
-          "Die Datei ist keine gültige T2-Arbeitsdatei (JSON-Format „hierarchical-task-manager“ erwartet).",
-      };
-    }
-
-    const result = hydrateFromFileText(text, file.lastModified);
-    if (result.status === "conflict") {
-      return result;
-    }
-
-    const syncedJson = getLastSyncedBoardJson() ?? text;
-    await rememberMobileCopy(syncedJson, fileName, file.lastModified);
-    markWorkingFileSessionHydrated();
-    return result;
+    return await attachWorkingFileFromText(text, fileName, file.lastModified);
   } catch (e) {
     console.error("Arbeitsdatei aus Datei-Dialog:", e);
     return {
       status: "read_error",
-      message:
-        e instanceof Error
-          ? e.message
-          : "Datei konnte nicht gelesen werden. Bei Proton Drive die Datei offline verfügbar machen.",
+      message: userFacingFileReadError(e),
+    };
+  }
+}
+
+/** Arbeitsdatei aus eingefügtem JSON (Fallback ohne Dateizugriff). */
+export async function attachWorkingFileFromPastedText(
+  rawText: string,
+  fileName: string = STANDARD_WORKING_FILENAME,
+): Promise<BrowserFileAttachResult> {
+  try {
+    const text = normalizeImportedFileText(rawText);
+    return await attachWorkingFileFromText(text, fileName, Date.now());
+  } catch (e) {
+    console.error("Arbeitsdatei aus Text:", e);
+    return {
+      status: "read_error",
+      message: userFacingFileReadError(e),
     };
   }
 }

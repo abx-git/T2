@@ -2,7 +2,7 @@
 
 import { useId } from "react";
 import { createPortal } from "react-dom";
-import { FilePlus, FolderOpen } from "lucide-react";
+import { ClipboardPaste, FilePlus, FolderOpen } from "lucide-react";
 
 export interface WorkingFileSetupDialogProps {
   open: boolean;
@@ -10,6 +10,8 @@ export interface WorkingFileSetupDialogProps {
   fsAccessSupported: boolean;
   unavailableMessage: string;
   onPickExistingMobile: () => void;
+  onPickFromDownloads: () => void;
+  onPasteJson: () => void;
   onOpenExistingDesktop: () => void;
   onCreateNew: () => void;
 }
@@ -20,6 +22,8 @@ export function WorkingFileSetupDialog({
   fsAccessSupported,
   unavailableMessage,
   onPickExistingMobile,
+  onPickFromDownloads,
+  onPasteJson,
   onOpenExistingDesktop,
   onCreateNew,
 }: WorkingFileSetupDialogProps) {
@@ -43,20 +47,38 @@ export function WorkingFileSetupDialog({
         </h2>
         <p className="mt-3 text-sm leading-relaxed text-slate-600">
           {mobileMode
-            ? "Wählen Sie Ihre JSON-Datei aus Proton Drive, „Dateien“ oder Downloads. Änderungen werden automatisch zwischengespeichert; zum Cloud-Sync exportieren Sie die Datei unter „Daten & Speicher“."
+            ? "Proton Drive: Datei in der App offline verfügbar machen oder herunterladen, dann aus „Downloads“ wählen — nicht direkt aus „Proton Drive“. Alternativ JSON-Text einfügen."
             : "T2 speichert alle Daten in einer lokalen JSON-Datei. Beim nächsten Start wird dieselbe Datei automatisch wieder geöffnet."}
         </p>
         {fsAccessSupported || mobileMode ? (
           <div className="mt-5 flex flex-col gap-2">
             {mobileMode ? (
-              <button
-                type="button"
-                onClick={onPickExistingMobile}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-4 py-2.5 text-left text-sm font-medium text-sky-950 hover:bg-sky-100 active:bg-sky-100"
-              >
-                <FolderOpen className="h-4 w-4 shrink-0" aria-hidden />
-                JSON-Datei auswählen …
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={onPickExistingMobile}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-4 py-2.5 text-left text-sm font-medium text-sky-950 hover:bg-sky-100 active:bg-sky-100"
+                >
+                  <FolderOpen className="h-4 w-4 shrink-0" aria-hidden />
+                  JSON-Datei öffnen (System)
+                </button>
+                <button
+                  type="button"
+                  onClick={onPickFromDownloads}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 active:bg-slate-50"
+                >
+                  <FolderOpen className="h-4 w-4 shrink-0" aria-hidden />
+                  Aus Downloads / Dateien wählen
+                </button>
+                <button
+                  type="button"
+                  onClick={onPasteJson}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 active:bg-slate-50"
+                >
+                  <ClipboardPaste className="h-4 w-4 shrink-0" aria-hidden />
+                  JSON einfügen
+                </button>
+              </>
             ) : (
               <button
                 type="button"

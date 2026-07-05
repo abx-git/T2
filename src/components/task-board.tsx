@@ -38,9 +38,12 @@ import {
 import { parseFreemindMmToRoots, taskRootsToFreemindMm } from "@/lib/freemind-mm";
 import {
   attachWorkingFileFromBrowserFile,
+  attachWorkingFileFromPastedText,
   attachWorkingFileFromPicker,
+  beginUserPickedFileRead,
   bindMobileWorkingFile,
   readUserPickedFileText,
+  userFacingFileReadError,
   createAndAttachWorkingFile,
   detachWorkingFile,
   fileSystemAccessUnavailableMessage,
@@ -238,6 +241,7 @@ export function TaskBoard() {
   const [titleEditNodeId, setTitleEditNodeId] = useState<string | null>(null);
   const [boardJsonExportOpen, setBoardJsonExportOpen] = useState(false);
   const [pasteImportOpen, setPasteImportOpen] = useState(false);
+  const [workingFilePasteOpen, setWorkingFilePasteOpen] = useState(false);
   const [pasteSubtreeParentId, setPasteSubtreeParentId] = useState<string | null>(null);
   const [branchExportNode, setBranchExportNode] = useState<TaskNode | null>(null);
   const [appointmentsListOpen, setAppointmentsListOpen] = useState(false);
@@ -421,10 +425,10 @@ export function TaskBoard() {
   );
 
   const attachWorkingFileFromMobilePicker = useCallback(
-    async (file: File) => {
+    async (file: File, preReadText?: string) => {
       setStoragePanelBusy(true);
       try {
-        const result = await attachWorkingFileFromBrowserFile(file);
+        const result = await attachWorkingFileFromBrowserFile(file, preReadText);
         if (result.status === "read_error") {
           window.alert(result.message);
           return false;
@@ -434,7 +438,7 @@ export function TaskBoard() {
             "Die gewählte Datei unterscheidet sich von Ihrer aktuellen Ansicht.\n\nOK = Inhalt der Datei laden\nAbbrechen = Abbrechen",
           );
           if (!loadFile) return false;
-          const text = await readUserPickedFileText(file);
+          const text = preReadText ?? (await readUserPickedFileText(file));
           applyBoardJsonToStore(text);
           await bindMobileWorkingFile(file, text);
         } else if (result.status === "pushed_local") {
@@ -449,7 +453,7 @@ export function TaskBoard() {
         setWorkingFileDirty(false);
         return true;
       } catch (err) {
-        window.alert(err instanceof Error ? err.message : "Datei konnte nicht geöffnet werden.");
+        window.alert(userFacingFileReadError(err));
         return false;
       } finally {
         setStoragePanelBusy(false);
@@ -458,16 +462,55 @@ export function TaskBoard() {
     [boardSnapshotTextFromStore],
   );
 
+  const applyWorkingFilePastedText = useCallback(
+    async (text: string) => {
+      setWorkingFilePasteOpen(false);
+      setStoragePanelBusy(true);
+      try {
+        const result = await attachWorkingFileFromPastedText(text);
+        if (result.status === "read_error") {
+          window.alert(result.message);
+          return;
+        }
+        if (result.status === "conflict") {
+          const loadFile = window.confirm(
+            "Der eingefügte Text unterscheidet sich von Ihrer aktuellen Ansicht.\n\nOK = Eingefügten Stand laden\nAbbrechen = Abbrechen",
+          );
+          if (!loadFile) return;
+          applyBoardJsonToStore(text);
+          await attachWorkingFileFromPastedText(text);
+        } else if (result.status === "pushed_local") {
+          const saved = await persistWorkingFileJson(boardSnapshotTextFromStore());
+          if (!saved.ok) window.alert("Speichern ist fehlgeschlagen.");
+        }
+        setWorkingFileName(getWorkingFileLabel());
+        setWorkingFileSetupOpen(false);
+        setWorkingFileDirty(false);
+      } finally {
+        setStoragePanelBusy(false);
+      }
+    },
+    [boardSnapshotTextFromStore],
+  );
+
   const handleWorkingFilePickChange = useCallback(
-    async (e: ChangeEvent<HTMLInputElement>) => {
+    (e: ChangeEvent<HTMLInputElement>) => {
       const input = e.currentTarget;
       const file = input.files?.[0];
       if (!file) return;
-      try {
-        await attachWorkingFileFromMobilePicker(file);
-      } finally {
-        input.value = "";
-      }
+
+      const readPromise = beginUserPickedFileRead(file);
+
+      void (async () => {
+        try {
+          const text = await readPromise;
+          await attachWorkingFileFromMobilePicker(file, text);
+        } catch (err) {
+          window.alert(userFacingFileReadError(err));
+        } finally {
+          input.value = "";
+        }
+      })();
     },
     [attachWorkingFileFromMobilePicker],
   );
@@ -496,22 +539,20 @@ export function TaskBoard() {
         return;
       }
 
-      if (prefersBrowserFilePicker()) {
-        setWorkingFileSetupOpen(false);
-        workingFilePickRef.current?.click();
-        return;
-      }
-
-      if (!isWorkingFileSupported()) {
-        window.alert(fileSystemAccessUnavailableMessage());
-        return;
-      }
       if (!options?.skipConfirm && isWorkingFileAttached()) {
         setOpenWorkingFileConfirmOpen(true);
         return;
       }
       setWorkingFileSetupOpen(false);
-      runAttachWorkingFileWithBusy(false);
+      if (isWorkingFileSupported()) {
+        runAttachWorkingFileWithBusy(false);
+        return;
+      }
+      if (prefersBrowserFilePicker()) {
+        workingFilePickRef.current?.click();
+        return;
+      }
+      window.alert(fileSystemAccessUnavailableMessage());
     },
     [attachWorkingFileLink, runAttachWorkingFileWithBusy],
   );
@@ -986,6 +1027,13 @@ export function TaskBoard() {
         onClose={() => setAppointmentsListOpen(false)}
       />
       <JsonPasteImportDialog
+        open={workingFilePasteOpen}
+        title="Arbeitsdatei einfügen"
+        hint="JSON-Inhalt Ihrer t2-board.json hier einfügen (z. B. vom PC kopiert). Nur Board-JSON (scope „board“)."
+        onClose={() => setWorkingFilePasteOpen(false)}
+        onApplyPastedText={(text) => void applyWorkingFilePastedText(text)}
+      />
+      <JsonPasteImportDialog
         open={pasteImportOpen}
         title="Backup einspielen (Text)"
         hint="Board-JSON (scope „board“), Teilbaum-JSON (scope „subtree“) oder FreeMind-/Freeplane-XML (.mm). Ein vollständiges Board ersetzt alle Karten nach Bestätigung."
@@ -1059,7 +1107,15 @@ export function TaskBoard() {
         mobileMode={prefersBrowserFilePicker()}
         fsAccessSupported={fsAccessSupportedForUi}
         unavailableMessage={fileSystemAccessUnavailableMessage()}
-        onPickExistingMobile={() => workingFilePickRef.current?.click()}
+        onPickExistingMobile={() => beginAttachWorkingFile(false, { skipConfirm: true })}
+        onPickFromDownloads={() => {
+          setWorkingFileSetupOpen(false);
+          workingFilePickRef.current?.click();
+        }}
+        onPasteJson={() => {
+          setWorkingFileSetupOpen(false);
+          setWorkingFilePasteOpen(true);
+        }}
         onOpenExistingDesktop={() => beginAttachWorkingFile(false, { skipConfirm: true })}
         onCreateNew={() => beginAttachWorkingFile(true)}
       />

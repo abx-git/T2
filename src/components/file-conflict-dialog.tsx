@@ -3,7 +3,7 @@
 import { useId } from "react";
 import { createPortal } from "react-dom";
 
-export type FileConflictChoice = "keep_local" | "load_file" | "defer";
+export type FileConflictChoice = "keep_local" | "load_file";
 
 export interface FileConflictDialogProps {
   open: boolean;
@@ -21,7 +21,7 @@ export function FileConflictDialog({
   const titleId = useId();
   if (!open) return null;
 
-  const label = fileName?.trim() ? `„${fileName.trim()}“` : "die Arbeitsdatei";
+  const label = fileName?.trim() ? `„${fileName.trim()}“` : "Ihre Datei";
 
   const layer = (
     <div
@@ -36,11 +36,16 @@ export function FileConflictDialog({
         onPointerDown={(e) => e.stopPropagation()}
       >
         <h2 id={titleId} className="text-base font-semibold text-slate-900">
-          Unterschiedliche Stände
+          Welche Version soll gelten?
         </h2>
-        <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-600">
-          {`Was Sie in T2 sehen, weicht von ${label} ab. Es wird nichts automatisch überschrieben — bitte eine Option wählen.`}
+        <p className="mt-3 text-sm leading-relaxed text-slate-600">
+          T2 und {label} enthalten <strong className="font-medium text-slate-800">verschiedene Daten</strong>.
+          Bitte wählen Sie, welche Version übernommen werden soll.
         </p>
+        <ul className="mt-3 space-y-1.5 text-xs leading-relaxed text-slate-500">
+          <li>• <span className="text-slate-700">T2 → Datei:</span> Was Sie jetzt sehen, wird in die Datei geschrieben.</li>
+          <li>• <span className="text-slate-700">Datei → T2:</span> Der Datei-Inhalt ersetzt die Anzeige in T2.</li>
+        </ul>
         <div className="mt-5 flex flex-col gap-2">
           <button
             type="button"
@@ -48,10 +53,7 @@ export function FileConflictDialog({
             onClick={() => onChoose("keep_local")}
             className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2.5 text-left text-sm font-medium text-sky-950 hover:bg-sky-100 disabled:opacity-60"
           >
-            Meine aktuelle Ansicht speichern
-            <span className="mt-0.5 block text-xs font-normal text-sky-900/80">
-              Überschreibt die Datei mit dem, was Sie jetzt in T2 sehen.
-            </span>
+            T2-Stand in die Datei schreiben
           </button>
           <button
             type="button"
@@ -59,18 +61,7 @@ export function FileConflictDialog({
             onClick={() => onChoose("load_file")}
             className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-60"
           >
-            Inhalt der Datei laden
-            <span className="mt-0.5 block text-xs font-normal text-slate-500">
-              Ersetzt die Anzeige in T2 — nicht gespeicherte Änderungen gehen verloren.
-            </span>
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onChoose("defer")}
-            className="rounded-lg border border-transparent px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60"
-          >
-            Später entscheiden
+            Datei in T2 laden
           </button>
         </div>
       </div>

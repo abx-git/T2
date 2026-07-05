@@ -42,7 +42,6 @@ import {
   detachWorkingFile,
   fileSystemAccessUnavailableMessage,
   fileSystemAccessUnavailableTooltip,
-  getLastKnownFileModified,
   getWorkingFileHandle,
   isWorkingFileAttached,
   isWorkingFileDirty,
@@ -350,10 +349,8 @@ export function TaskBoard() {
       }
       try {
         const json = boardSnapshotTextFromStore();
-        if (!createNew && isWorkingFileAttached() && isWorkingFileDirty(json)) {
-          const saved = await writeWorkingFileJson(json, undefined, {
-            expectedLastModified: getLastKnownFileModified(),
-          });
+        if (!createNew && isWorkingFileAttached() && isWorkingFileDirty()) {
+          const saved = await writeWorkingFileJson(boardSnapshotTextFromStore());
           if (!saved.ok) {
             window.alert(
               "Dateiwechsel abgebrochen: ungespeicherte Änderungen konnten nicht in die aktuelle Datei geschrieben werden.",

@@ -73,6 +73,13 @@ describe("planFileReconcile", () => {
     const file = jsonFromPayload(payloadWithRoot("Datei"));
     expect(planFileReconcile(local, file)).toEqual({ action: "conflict" });
   });
+
+  it("treats exports as in_sync when only exportedAt differs", () => {
+    const payload = payloadWithRoot("Gleich");
+    const a = jsonFromPayload(payload);
+    const b = jsonFromPayload(payload);
+    expect(planFileReconcile(a, b)).toEqual({ action: "in_sync" });
+  });
 });
 
 describe("boardPersistKeyFromStoreState", () => {

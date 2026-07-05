@@ -7,6 +7,7 @@
 import {
   applyBoardJsonToStore,
   boardJsonFromStoreState,
+  boardStatesEquivalent,
   planFileReconcile,
 } from "@/lib/file-board-reconcile";
 
@@ -101,9 +102,12 @@ export function clearWorkingFileSyncState(): void {
   suppressExternalPollUntil = 0;
 }
 
-export function isWorkingFileDirty(currentJson: string): boolean {
+export function isWorkingFileDirty(currentJson?: string): boolean {
   if (!memoryHandle) return false;
-  return lastSyncedBoardJson !== currentJson;
+  const json = currentJson ?? boardJsonFromStoreState();
+  const synced = getLastSyncedBoardJson();
+  if (!synced) return json.trim().length > 0;
+  return !boardStatesEquivalent(json, synced);
 }
 
 export function shouldSuppressExternalFilePoll(): boolean {

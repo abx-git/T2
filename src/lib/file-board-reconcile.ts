@@ -15,7 +15,7 @@ import {
 } from "@/lib/task-tree-json";
 import { useTaskTreeStore } from "@/store/task-tree-store";
 
-export type FileConflictChoice = "load_file" | "keep_local" | "defer";
+export type FileConflictChoice = "load_file" | "keep_local";
 
 export type FileReconcilePlan =
   | { action: "in_sync" }

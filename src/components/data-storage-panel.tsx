@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Copy, Download, Link, Loader2, Route, Upload, X } from "lucide-react";
 
+import { formatAppVersionLabel } from "@/lib/app-version";
+
 export interface DataStoragePanelProps {
   open: boolean;
   onClose: () => void;
@@ -235,6 +237,10 @@ export function DataStoragePanel({
               </button>
             </div>
           </Section>
+
+          <section className="border-t border-slate-100 pt-6">
+            <p className="text-xs text-slate-500">{formatAppVersionLabel()}</p>
+          </section>
         </div>
 
         {busy ? (

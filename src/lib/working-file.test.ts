@@ -45,6 +45,7 @@ describe("userFacingFileReadError", () => {
   });
 });
 
+
 describe("working file session", () => {
   afterEach(() => {
     clearWorkingFileSyncState();

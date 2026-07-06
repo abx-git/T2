@@ -20,6 +20,7 @@ const IDB_VERSION = 1;
 const IDB_STORE = "handles";
 const IDB_KEY = "board-json";
 const IDB_MOBILE_COPY_KEY = "mobile-working-copy";
+const LS_LAST_FILE_NAME = "t2-last-working-file-name";
 
 let memoryHandle: FileSystemFileHandle | null = null;
 let mobileWorkingFileName: string | null = null;
@@ -142,6 +143,7 @@ export function markWorkingFileSynced(json: string, fileLastModified: number): v
 export function noteOwnWriteToWorkingFile(json: string, fileLastModified: number): void {
   markWorkingFileSynced(json, fileLastModified);
   suppressExternalPollUntil = Date.now() + OWN_WRITE_SUPPRESS_MS;
+  void persistBrowserMirror(json, fileLastModified);
 }
 
 export function clearWorkingFileSyncState(): void {
@@ -161,7 +163,41 @@ export function isWorkingFileDirty(currentJson?: string): boolean {
 export function getWorkingFileLabel(): string | null {
   if (memoryHandle) return workingFileDisplayName(memoryHandle);
   if (mobileWorkingFileName?.trim()) return mobileWorkingFileName.trim();
-  return null;
+  return getRememberedWorkingFileName();
+}
+
+/** Zuletzt verwendeter Dateiname (localStorage, über Browser-Neustarts). */
+export function getRememberedWorkingFileName(): string | null {
+  if (typeof localStorage === "undefined") return null;
+  const name = localStorage.getItem(LS_LAST_FILE_NAME)?.trim();
+  return name || null;
+}
+
+function rememberLastFileNameInStorage(fileName: string): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(LS_LAST_FILE_NAME, fileName);
+  } catch {
+    /* privat / voll */
+  }
+}
+
+function clearRememberedFileNameInStorage(): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.removeItem(LS_LAST_FILE_NAME);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function persistBrowserMirror(json: string, fileLastModified: number): Promise<void> {
+  const fileName =
+    workingFileDisplayName(memoryHandle) ??
+    mobileWorkingFileName?.trim() ??
+    getRememberedWorkingFileName() ??
+    STANDARD_WORKING_FILENAME;
+  await rememberMobileCopy(json, fileName, fileLastModified);
 }
 
 export function shouldSuppressExternalFilePoll(): boolean {
@@ -382,9 +418,11 @@ function hydrateFromFileText(fileJson: string, fileLastModified: number): Hydrat
 }
 
 async function rememberMobileCopy(json: string, fileName: string, sourceLastModified: number): Promise<void> {
-  mobileWorkingFileName = fileName;
+  const trimmedName = fileName.trim() || STANDARD_WORKING_FILENAME;
+  mobileWorkingFileName = trimmedName;
+  rememberLastFileNameInStorage(trimmedName);
   try {
-    await idbPutMobileCopy({ fileName, json, sourceLastModified });
+    await idbPutMobileCopy({ fileName: trimmedName, json, sourceLastModified });
   } catch {
     /* IndexedDB z. B. privat */
   }
@@ -539,10 +577,16 @@ async function attachWorkingFileFromText(
 
 async function rememberHandle(handle: FileSystemFileHandle): Promise<void> {
   memoryHandle = handle;
+  const fileName = handle.name?.trim() || STANDARD_WORKING_FILENAME;
+  rememberLastFileNameInStorage(fileName);
   try {
     await idbPutHandle(handle);
   } catch {
     /* IndexedDB z. B. privat — nur Sitzung im RAM */
+  }
+  const existing = await idbGetMobileCopy();
+  if (existing?.json?.trim()) {
+    await rememberMobileCopy(existing.json, fileName, existing.sourceLastModified);
   }
 }
 
@@ -586,6 +630,9 @@ export async function hydrateStoreFromWorkingFile(handle: FileSystemFileHandle):
   const result = hydrateFromFileText(snap.text, snap.lastModified);
   if (result.status !== "conflict") {
     markWorkingFileSessionHydrated();
+    const syncedJson = getLastSyncedBoardJson() ?? snap.text;
+    const fileName = handle.name?.trim() || STANDARD_WORKING_FILENAME;
+    await rememberMobileCopy(syncedJson, fileName, snap.lastModified);
   }
   return result;
 }
@@ -670,30 +717,44 @@ export async function createAndAttachWorkingFile(initialJson: string): Promise<F
 }
 
 export async function restoreWorkingFileFromDisk(): Promise<FileSystemFileHandle | null> {
-  if (isWorkingFileSupported()) {
-    const handle = await idbGetHandle();
-    if (handle) {
-      try {
-        if (await ensureReadWritePermission(handle)) {
-          memoryHandle = handle;
-          await clearMobileWorkingFile();
-          return handle;
-        }
-      } catch {
-        /* fallback mobile */
-      }
+  const persisted = await idbGetMobileCopy();
+  if (persisted?.fileName?.trim()) {
+    mobileWorkingFileName = persisted.fileName.trim();
+    rememberLastFileNameInStorage(mobileWorkingFileName);
+    if (persisted.json?.trim()) {
+      lastSyncedBoardJson = persisted.json;
+      lastKnownFileModified = persisted.sourceLastModified;
     }
   }
 
-  const mobile = await idbGetMobileCopy();
-  if (mobile?.fileName) {
-    memoryHandle = null;
-    mobileWorkingFileName = mobile.fileName;
-    lastSyncedBoardJson = mobile.json;
-    lastKnownFileModified = mobile.sourceLastModified;
+  if (!isWorkingFileSupported()) {
     return null;
   }
 
+  const handle = await idbGetHandle();
+  if (!handle) return null;
+
+  try {
+    let granted = (await handle.queryPermission({ mode: "readwrite" })) === "granted";
+    if (!granted) {
+      granted = (await handle.requestPermission({ mode: "readwrite" })) === "granted";
+    }
+    if (granted) {
+      memoryHandle = handle;
+      const fileName = handle.name?.trim() || mobileWorkingFileName || STANDARD_WORKING_FILENAME;
+      rememberLastFileNameInStorage(fileName);
+      return handle;
+    }
+  } catch {
+    /* Spiegelkopie / Dateiname bleiben erhalten */
+  }
+
+  const nameFromHandle = handle.name?.trim();
+  if (nameFromHandle) {
+    mobileWorkingFileName = nameFromHandle;
+    rememberLastFileNameInStorage(nameFromHandle);
+  }
+  memoryHandle = null;
   return null;
 }
 
@@ -702,6 +763,7 @@ export async function detachWorkingFile(): Promise<void> {
   mobileWorkingFileName = null;
   clearWorkingFileSyncState();
   clearWorkingFileSessionHydrated();
+  clearRememberedFileNameInStorage();
   try {
     await idbClearHandle();
     await idbClearMobileCopy();

@@ -49,6 +49,7 @@ import {
   fileSystemAccessUnavailableMessage,
   fileSystemAccessUnavailableTooltip,
   getWorkingFileHandle,
+  getRememberedWorkingFileName,
   getWorkingFileLabel,
   isMobileWorkingFileMode,
   isWorkingFileAttached,
@@ -97,6 +98,7 @@ import { LevelNamesSetupDialog } from "./level-names-setup-dialog";
 import { WorkingFileSync } from "./working-file-sync";
 import { WorkingFileSetupDialog } from "./working-file-setup-dialog";
 import { DataStoragePanel } from "./data-storage-panel";
+import { BetaBanner } from "./beta-banner";
 import { PostImportSaveDialog } from "./post-import-save-dialog";
 import { TaskEditorDialog } from "./task-editor-dialog";
 
@@ -230,7 +232,9 @@ export function TaskBoard() {
   const [cardFieldsOpen, setCardFieldsOpen] = useState(false);
   const [pendingBoardImport, setPendingBoardImport] = useState<BoardSnapshotV1 | null>(null);
   const [pendingSubtreeImport, setPendingSubtreeImport] = useState<TaskNode | null>(null);
-  const [workingFileName, setWorkingFileName] = useState<string | null>(null);
+  const [workingFileName, setWorkingFileName] = useState<string | null>(() =>
+    typeof window !== "undefined" ? getRememberedWorkingFileName() : null,
+  );
   const [workingFileDirty, setWorkingFileDirty] = useState(false);
   const [workingFileSaving, setWorkingFileSaving] = useState(false);
   /** Server + erste Client-Zeichnung false — gleiches Markup wie SSR, vermeidet Hydration-Mismatch. */
@@ -878,6 +882,7 @@ export function TaskBoard() {
       />
       {/* Header + Board in einer Spalte: Board kann den Header nicht überdecken (kein z-Index gegen Toolbar). */}
       <div className="flex min-h-0 flex-1 flex-col">
+        <BetaBanner />
         <header className="shrink-0 border-b border-slate-200/80 bg-white px-6 py-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
@@ -1116,6 +1121,7 @@ export function TaskBoard() {
           setWorkingFileSetupOpen(false);
           setWorkingFilePasteOpen(true);
         }}
+        lastUsedFileName={getRememberedWorkingFileName()}
         onOpenExistingDesktop={() => beginAttachWorkingFile(false, { skipConfirm: true })}
         onCreateNew={() => beginAttachWorkingFile(true)}
       />

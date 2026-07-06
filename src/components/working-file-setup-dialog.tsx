@@ -12,6 +12,7 @@ export interface WorkingFileSetupDialogProps {
   onPickExistingMobile: () => void;
   onPickFromDownloads: () => void;
   onPasteJson: () => void;
+  lastUsedFileName?: string | null;
   onOpenExistingDesktop: () => void;
   onCreateNew: () => void;
 }
@@ -24,6 +25,7 @@ export function WorkingFileSetupDialog({
   onPickExistingMobile,
   onPickFromDownloads,
   onPasteJson,
+  lastUsedFileName,
   onOpenExistingDesktop,
   onCreateNew,
 }: WorkingFileSetupDialogProps) {
@@ -50,6 +52,11 @@ export function WorkingFileSetupDialog({
             ? "Proton Drive: Datei in der App offline verfügbar machen oder herunterladen, dann aus „Downloads“ wählen — nicht direkt aus „Proton Drive“. Alternativ JSON-Text einfügen."
             : "T2 speichert alle Daten in einer lokalen JSON-Datei. Beim nächsten Start wird dieselbe Datei automatisch wieder geöffnet."}
         </p>
+        {lastUsedFileName ? (
+          <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            Zuletzt verwendet: <span className="font-medium text-slate-800">„{lastUsedFileName}“</span>
+          </p>
+        ) : null}
         {fsAccessSupported || mobileMode ? (
           <div className="mt-5 flex flex-col gap-2">
             {mobileMode ? (

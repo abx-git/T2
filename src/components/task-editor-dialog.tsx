@@ -88,7 +88,13 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
     if (!open || !node || node.title.trim()) return;
     const t = window.setTimeout(() => titleInputRef.current?.focus({ preventScroll: true }), 0);
     return () => clearTimeout(t);
-  }, [open, node?.id]);
+  }, [open, node]);
+
+  const allTags = useMemo(() => collectAllTagsFromForest(roots), [roots]);
+  const pickableTags = useMemo(
+    () => tagsAvailableForFilter(allTags, tags),
+    [allTags, tags],
+  );
 
   if (!open || !nodeId) return null;
   if (!node) {
@@ -134,11 +140,6 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
 
   const isDone = isTaskMarkedDone({ tags }, completedTag);
   const displayTags = tagsWithoutCompletedTag(tags, completedTag);
-  const allTags = useMemo(() => collectAllTagsFromForest(roots), [roots]);
-  const pickableTags = useMemo(
-    () => tagsAvailableForFilter(allTags, tags),
-    [allTags, tags],
-  );
 
   const addTag = (t: string) => {
     setTags(uniqNonEmptyTags([...tags, t]));

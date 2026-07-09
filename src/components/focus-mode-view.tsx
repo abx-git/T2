@@ -58,6 +58,11 @@ import {
   tagsWithoutCompletedTag,
 } from "@/lib/task-tags";
 import { collectSubtreeNodeIds } from "@/lib/tree-utils";
+import {
+  focusTargetAfterRemoving,
+  navigateOutlineCard,
+  shouldIgnoreCardKeyboard,
+} from "@/lib/card-keyboard-nav";
 import { useTaskTreeStore } from "@/store/task-tree-store";
 import type { TaskNode } from "@/types/task-node";
 
@@ -66,6 +71,15 @@ import { DepthLevelsControl } from "./depth-levels-control";
 
 const focusActionBtnClass =
   "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition";
+
+function isInteractiveFocusTarget(target: EventTarget | null): boolean {
+  if (!target) return false;
+  const el =
+    target instanceof Element ? target : target instanceof Text ? target.parentElement : null;
+  return Boolean(
+    el?.closest("button, input, textarea, select, a, [role='menu'], [role='menuitem']"),
+  );
+}
 
 /** Breite einer Baum-Einrückungsstufe in der Fokus-Outline. */
 const FOCUS_TREE_GUIDE_COL_REM = 1.375;
@@ -207,6 +221,8 @@ interface FocusRowProps {
   dropActive: boolean;
   isNestDropTarget: boolean;
   isBranchCollapsed: boolean;
+  isKeyboardFocus?: boolean;
+  onKeyboardFocus?: () => void;
   onToggleCollapsed: () => void;
   onToggleDone: () => void;
   onStartEdit: () => void;
@@ -228,6 +244,8 @@ function FocusRow({
   dropActive,
   isNestDropTarget,
   isBranchCollapsed,
+  isKeyboardFocus = false,
+  onKeyboardFocus,
   onToggleCollapsed,
   onToggleDone,
   onStartEdit,
@@ -296,10 +314,17 @@ function FocusRow({
       />
       <div
         ref={setNodeRef}
+        data-focus-row-id={node.id}
+        tabIndex={isKeyboardFocus ? -1 : undefined}
         style={style}
+        onPointerDown={(e) => {
+          if (isInteractiveFocusTarget(e.target)) return;
+          onKeyboardFocus?.();
+        }}
         className={[
           "group relative flex min-w-0 items-start gap-1 rounded-lg border px-1 py-1 transition",
           isDragging ? "z-20 border-dashed border-sky-300 bg-sky-50/50 opacity-40 shadow-none" : "",
+          isKeyboardFocus ? "border-sky-400 bg-sky-50/80 ring-2 ring-sky-300/90" : "",
           isNestDropTarget || isNestOver
             ? "border-violet-400 bg-violet-50/90 ring-2 ring-violet-300/80"
             : done
@@ -494,6 +519,7 @@ export function FocusModeView({
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [nestDropTargetId, setNestDropTargetId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [keyboardFocusId, setKeyboardFocusId] = useState<string | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const focusRootInputRef = useRef<HTMLInputElement>(null);
@@ -525,6 +551,18 @@ export function FocusModeView({
   const focusRootCollapsed = collapsedSet.has(focusNodeId);
   const focusRootHasChildren = Boolean(focusNode?.children.length);
 
+  useEffect(() => {
+    setKeyboardFocusId(focusNodeId);
+  }, [focusNodeId]);
+
+  const scrollFocusRowIntoView = useCallback((nodeId: string) => {
+    const el = document.querySelector(`[data-focus-row-id="${nodeId}"]`);
+    if (el instanceof HTMLElement) {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      el.focus({ preventScroll: true });
+    }
+  }, []);
+
   const stats = focusNode ? countFocusSubtree(focusNode, completedTag) : { total: 0, done: 0, open: 0 };
 
   const sensors = useSensors(
@@ -534,13 +572,111 @@ export function FocusModeView({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !titleEditId && !focusRootEditing) {
+      if (e.key === "Escape" && !titleEditId && !focusRootEditing && !pendingDeleteId) {
         onClose();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, titleEditId, focusRootEditing]);
+  }, [onClose, titleEditId, focusRootEditing, pendingDeleteId]);
+
+  useEffect(() => {
+    if (titleEditId || focusRootEditing || pendingDeleteId || activeDragId || exportMenuOpen) {
+      return;
+    }
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (shouldIgnoreCardKeyboard(e)) return;
+
+      const arrowKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"] as const;
+      const isArrow = arrowKeys.includes(e.key as (typeof arrowKeys)[number]);
+      let currentId = keyboardFocusId ?? focusNodeId;
+
+      if (isArrow) {
+        e.preventDefault();
+        const direction =
+          e.key === "ArrowUp"
+            ? "up"
+            : e.key === "ArrowDown"
+              ? "down"
+              : e.key === "ArrowLeft"
+                ? "left"
+                : "right";
+        const { nextId, shouldExpand } = navigateOutlineCard(
+          roots,
+          collapsedSet,
+          focusNodeId,
+          rows,
+          focusRootCollapsed,
+          currentId,
+          direction,
+        );
+        if (!nextId) return;
+        if (shouldExpand) toggleNodeCollapsed(currentId);
+        if (currentId === focusNodeId && direction === "left" && nextId !== focusNodeId) {
+          onFocusNodeChange(nextId);
+          return;
+        }
+        setKeyboardFocusId(nextId);
+        scrollFocusRowIntoView(nextId);
+        return;
+      }
+
+      if (e.key === " " || e.key === "Spacebar") {
+        const node = findNodeById(roots, currentId);
+        if (!node?.children.length) return;
+        e.preventDefault();
+        toggleNodeCollapsed(currentId);
+        return;
+      }
+
+      if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        const newId = addCardAfterSibling(currentId);
+        if (!newId) return;
+        setKeyboardFocusId(newId);
+        setTitleEditId(newId);
+        scrollFocusRowIntoView(newId);
+        return;
+      }
+
+      if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        const newId = addCardAfter(currentId);
+        if (!newId) return;
+        toggleNodeCollapsed(currentId);
+        setKeyboardFocusId(newId);
+        setTitleEditId(newId);
+        scrollFocusRowIntoView(newId);
+        return;
+      }
+
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        setPendingDeleteId(currentId);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    titleEditId,
+    focusRootEditing,
+    pendingDeleteId,
+    activeDragId,
+    exportMenuOpen,
+    keyboardFocusId,
+    focusNodeId,
+    roots,
+    collapsedSet,
+    rows,
+    focusRootCollapsed,
+    toggleNodeCollapsed,
+    addCardAfterSibling,
+    addCardAfter,
+    scrollFocusRowIntoView,
+    onFocusNodeChange,
+  ]);
 
   useEffect(() => {
     if (focusRootEditing && focusNode) {
@@ -644,6 +780,7 @@ export function FocusModeView({
   const confirmDelete = useCallback(() => {
     const id = pendingDeleteId;
     if (!id) return;
+    const nextFocus = focusTargetAfterRemoving(roots, id);
     setPendingDeleteId(null);
     removeCard(id);
     if (id === focusNodeId) {
@@ -652,7 +789,20 @@ export function FocusModeView({
     }
     if (titleEditId === id) setTitleEditId(null);
     if (focusRootEditing) setFocusRootEditing(false);
-  }, [pendingDeleteId, removeCard, focusNodeId, onClose, titleEditId, focusRootEditing]);
+    if (nextFocus) {
+      setKeyboardFocusId(nextFocus);
+      requestAnimationFrame(() => scrollFocusRowIntoView(nextFocus));
+    }
+  }, [
+    pendingDeleteId,
+    removeCard,
+    focusNodeId,
+    onClose,
+    titleEditId,
+    focusRootEditing,
+    roots,
+    scrollFocusRowIntoView,
+  ]);
 
   const pendingDeleteNode = pendingDeleteId ? findNodeById(roots, pendingDeleteId) : null;
 
@@ -839,11 +989,19 @@ export function FocusModeView({
         <div className="mx-auto max-w-3xl space-y-3">
           <section
             ref={setFocusRootDropRef}
+            data-focus-row-id={focusNodeId}
+            tabIndex={keyboardFocusId === focusNodeId ? -1 : undefined}
+            onPointerDown={(e) => {
+              if (isInteractiveFocusTarget(e.target)) return;
+              setKeyboardFocusId(focusNodeId);
+            }}
             className={[
               "rounded-xl border bg-white p-3 shadow-sm ring-1 transition",
-              nestDropTargetId === focusNodeId || isFocusRootNestOver
-                ? "border-violet-400 ring-violet-300/80"
-                : "border-violet-200/70 ring-violet-100/80",
+              keyboardFocusId === focusNodeId
+                ? "border-sky-400 ring-2 ring-sky-300/90"
+                : nestDropTargetId === focusNodeId || isFocusRootNestOver
+                  ? "border-violet-400 ring-violet-300/80"
+                  : "border-violet-200/70 ring-violet-100/80",
             ].join(" ")}
           >
             <div className="flex items-start gap-2">
@@ -996,6 +1154,8 @@ export function FocusModeView({
                     dropActive={Boolean(activeDragId)}
                     isNestDropTarget={nestDropTargetId === row.node.id}
                     isBranchCollapsed={collapsedSet.has(row.node.id)}
+                    isKeyboardFocus={keyboardFocusId === row.node.id}
+                    onKeyboardFocus={() => setKeyboardFocusId(row.node.id)}
                     onToggleCollapsed={() => toggleNodeCollapsed(row.node.id)}
                     onToggleDone={() => toggleDone(row.node.id, row.node)}
                     onStartEdit={() => setTitleEditId(row.node.id)}

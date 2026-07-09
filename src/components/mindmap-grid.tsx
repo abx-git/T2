@@ -75,6 +75,8 @@ export interface MindmapGridProps {
   columnTitleOverrides: Record<number, string>;
   collapsedIds: Set<string>;
   searchFocusNodeId?: string | null;
+  keyboardFocusNodeId?: string | null;
+  onKeyboardFocus?: (nodeId: string) => void;
   onPasteSubtreeUnder: (parentId: string) => void;
   onPasteListUnder: (parentId: string) => void;
   onAddRootCard: () => void;
@@ -97,6 +99,8 @@ export function MindmapGrid({
   columnTitleOverrides,
   collapsedIds,
   searchFocusNodeId = null,
+  keyboardFocusNodeId = null,
+  onKeyboardFocus,
   onPasteSubtreeUnder,
   onPasteListUnder,
   onAddRootCard,
@@ -256,6 +260,10 @@ export function MindmapGrid({
                 columnIndex={entry.column}
                 listParentId={entry.listParentId}
                 isSearchFocus={searchFocusNodeId === entry.node.id}
+                isKeyboardFocus={keyboardFocusNodeId === entry.node.id}
+                onKeyboardFocus={
+                  onKeyboardFocus ? () => onKeyboardFocus(entry.node.id) : undefined
+                }
                 isNestDropTarget={
                   previewHere?.intent === "nest-under" && previewHere.anchorCardId === entry.node.id
                 }

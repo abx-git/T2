@@ -75,6 +75,12 @@ import {
 } from "@/lib/tree-utils";
 import { getBoardMaxVisibleLevels } from "@/lib/tree-depth-collapse";
 import {
+  firstBoardCardId,
+  focusTargetAfterRemoving,
+  navigateBoardCard,
+  shouldIgnoreCardKeyboard,
+} from "@/lib/card-keyboard-nav";
+import {
   dataStorageButtonClassName,
   deriveStorageDisplayStatus,
   formatStorageStatusTooltip,
@@ -225,6 +231,7 @@ export function TaskBoard() {
   const closeFocusMode = useTaskTreeStore((s) => s.closeFocusMode);
 
   const [searchFocusNodeId, setSearchFocusNodeId] = useState<string | null>(null);
+  const [keyboardFocusNodeId, setKeyboardFocusNodeId] = useState<string | null>(null);
 
   const [dropPreview, setDropPreview] = useState<BoardDropPreview | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -336,6 +343,7 @@ export function TaskBoard() {
   useEffect(() => {
     if (!focusNodeId) return;
     setSearchFocusNodeId(null);
+    setKeyboardFocusNodeId(null);
     setTitleEditNodeId(null);
   }, [focusNodeId]);
 
@@ -360,10 +368,15 @@ export function TaskBoard() {
     (nodeId: string) => {
       expandToNode(nodeId);
       setSearchFocusNodeId(nodeId);
+      setKeyboardFocusNodeId(nodeId);
       setScrollToNodeId(nodeId);
     },
     [expandToNode],
   );
+
+  const handleKeyboardFocus = useCallback((nodeId: string) => {
+    setKeyboardFocusNodeId(nodeId);
+  }, []);
 
   const boardSnapshotTextFromStore = useCallback(() => boardJsonFromStoreState(), []);
 
@@ -616,12 +629,14 @@ export function TaskBoard() {
     if (meta?.addSiblingAfter) {
       const newId = addCardAfterSibling(nodeId);
       if (newId) {
+        setKeyboardFocusNodeId(newId);
         setTitleEditNodeId(newId);
         setScrollToNodeId(newId);
         return;
       }
     }
     setTitleEditNodeId(null);
+    setKeyboardFocusNodeId(nodeId);
   };
 
   const handleTitleEditCancel = (nodeId: string) => {
@@ -833,6 +848,119 @@ export function TaskBoard() {
 
   const columnCount = mindmapLayout.columnCount;
 
+  const cardKeyboardBlocked =
+    focusNodeId !== null ||
+    titleEditNodeId !== null ||
+    editorOpen ||
+    pendingDeleteId !== null ||
+    activeDragId !== null ||
+    levelSetupOpen ||
+    cardFieldsOpen ||
+    tagRenameOpen ||
+    pendingBoardImport !== null ||
+    pendingSubtreeImport !== null ||
+    workingFileSetupOpen ||
+    boardJsonExportOpen ||
+    pasteImportOpen ||
+    workingFilePasteOpen ||
+    pasteSubtreeParentId !== null ||
+    pasteListParentId !== null ||
+    branchExportNode !== null ||
+    appointmentsListOpen ||
+    dataStoragePanelOpen ||
+    postImportSaveOpen ||
+    openWorkingFileConfirmOpen;
+
+  useEffect(() => {
+    if (cardKeyboardBlocked) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (shouldIgnoreCardKeyboard(e)) return;
+
+      const arrowKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"] as const;
+      const isArrow = arrowKeys.includes(e.key as (typeof arrowKeys)[number]);
+
+      let currentId = keyboardFocusNodeId;
+      if (isArrow && !currentId) {
+        currentId = firstBoardCardId(mindmapLayout);
+        if (!currentId) return;
+      } else if (!currentId) {
+        return;
+      }
+
+      if (isArrow) {
+        e.preventDefault();
+        const direction =
+          e.key === "ArrowUp"
+            ? "up"
+            : e.key === "ArrowDown"
+              ? "down"
+              : e.key === "ArrowLeft"
+                ? "left"
+                : "right";
+        const { nextId, shouldExpand } = navigateBoardCard(
+          mindmapLayout,
+          collapsedSet,
+          currentId,
+          direction,
+        );
+        if (!nextId) return;
+        if (shouldExpand) toggleNodeCollapsed(currentId);
+        setKeyboardFocusNodeId(nextId);
+        setSearchFocusNodeId(null);
+        setScrollToNodeId(nextId);
+        return;
+      }
+
+      if (e.key === " " || e.key === "Spacebar") {
+        const node = findNodeById(roots, currentId);
+        if (!node?.children.length) return;
+        e.preventDefault();
+        toggleNodeCollapsed(currentId);
+        return;
+      }
+
+      if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        const newId = addCardAfterSibling(currentId);
+        if (!newId) return;
+        setKeyboardFocusNodeId(newId);
+        setTitleEditNodeId(newId);
+        setScrollToNodeId(newId);
+        return;
+      }
+
+      if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        const newId = addCardAfter(currentId);
+        if (!newId) return;
+        expandToNode(newId);
+        setKeyboardFocusNodeId(newId);
+        setTitleEditNodeId(newId);
+        setScrollToNodeId(newId);
+        return;
+      }
+
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        setPendingDeleteId(currentId);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    cardKeyboardBlocked,
+    keyboardFocusNodeId,
+    mindmapLayout,
+    collapsedSet,
+    roots,
+    toggleNodeCollapsed,
+    addCardAfterSibling,
+    addCardAfter,
+    expandToNode,
+  ]);
+
   const boardExportJsonText = boardJsonExportOpen
     ? stringifyExportedDocument(
         buildBoardSnapshot(
@@ -1008,16 +1136,20 @@ export function TaskBoard() {
               columnTitleOverrides={columnTitleOverrides}
               collapsedIds={collapsedSet}
               searchFocusNodeId={searchFocusNodeId}
+              keyboardFocusNodeId={keyboardFocusNodeId}
+              onKeyboardFocus={handleKeyboardFocus}
               onPasteSubtreeUnder={setPasteSubtreeParentId}
               onPasteListUnder={setPasteListParentId}
               onAddRootCard={() => {
                 const id = addCardAfter(null);
+                setKeyboardFocusNodeId(id);
                 setTitleEditNodeId(id);
                 setScrollToNodeId(id);
               }}
               onAddChildCard={(parentId) => {
                 const id = addCardAfter(parentId);
                 expandToNode(id);
+                setKeyboardFocusNodeId(id);
                 setTitleEditNodeId(id);
                 setScrollToNodeId(id);
               }}
@@ -1254,10 +1386,17 @@ export function TaskBoard() {
         onConfirm={() => {
           const id = pendingDeleteId;
           const editing = editorNodeId;
+          const nextFocus = id ? focusTargetAfterRemoving(roots, id) : null;
           setPendingDeleteId(null);
           if (!id) return;
           removeCard(id);
           if (editing === id) closeEditor();
+          if (nextFocus) {
+            setKeyboardFocusNodeId(nextFocus);
+            setScrollToNodeId(nextFocus);
+          } else {
+            setKeyboardFocusNodeId(null);
+          }
         }}
       />
     </div>

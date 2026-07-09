@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 
 export interface ConfirmDialogProps {
@@ -26,6 +26,13 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const titleId = useId();
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    cancelRef.current?.focus();
+  }, [open]);
+
   if (!open) return null;
 
   const layer = (
@@ -42,6 +49,12 @@ export function ConfirmDialog({
         aria-labelledby={titleId}
         className="w-full max-w-md touch-manipulation rounded-t-xl border border-slate-200 bg-white p-5 shadow-xl sm:rounded-xl"
         onPointerDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
       >
         <h2 id={titleId} className="text-base font-semibold text-slate-900">
           {title}
@@ -49,6 +62,7 @@ export function ConfirmDialog({
         <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-600">{message}</p>
         <div className="mt-6 flex justify-end gap-2">
           <button
+            ref={cancelRef}
             type="button"
             onClick={onCancel}
             className="min-h-11 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 active:bg-slate-50"

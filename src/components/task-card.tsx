@@ -119,6 +119,9 @@ export interface TaskCardProps {
   listParentId: string | null;
   /** Aktueller Suchtreffer (Hervorhebung). */
   isSearchFocus?: boolean;
+  /** Tastatur-Fokus für Pfeilnavigation. */
+  isKeyboardFocus?: boolean;
+  onKeyboardFocus?: () => void;
   /** Ziel für „als Unterkarte einhängen“ (nicht für Sortieren). */
   isNestDropTarget?: boolean;
   /** Sichtbare Kartenfelder (außer Titel). */
@@ -148,6 +151,8 @@ export function TaskCard({
   columnIndex,
   listParentId,
   isSearchFocus = false,
+  isKeyboardFocus = false,
+  onKeyboardFocus,
   isNestDropTarget = false,
   fieldVisibility,
   isTitleEditing = false,
@@ -365,6 +370,7 @@ export function TaskCard({
   const handleCardClick = (e: MouseEvent<HTMLElement>) => {
     if (isTitleEditing || isDragging) return;
     if (isInteractiveCardTarget(e.target)) return;
+    onKeyboardFocus?.();
     if (!hasChildren) return;
     scheduleOpenBranch();
   };
@@ -525,6 +531,7 @@ export function TaskCard({
     <article
       ref={setNodeRef}
       data-task-card-id={node.id}
+      tabIndex={isKeyboardFocus ? -1 : undefined}
       aria-labelledby={cardHeadingId}
       onClick={handleCardClick}
       onPointerDown={handleCardPointerDown}
@@ -551,6 +558,12 @@ export function TaskCard({
               : "border-slate-200/80 bg-white",
         isDragging ? "border-dashed border-sky-300/90 bg-sky-50/40 opacity-35 shadow-none" : "opacity-100",
         isSearchFocus ? "z-10 border-amber-400 bg-amber-50/90 ring-2 ring-amber-300/90" : "",
+        isKeyboardFocus && !isSearchFocus
+          ? "z-10 border-sky-400 bg-sky-50/80 ring-2 ring-sky-300/90"
+          : "",
+        isKeyboardFocus && isSearchFocus
+          ? "z-10 border-amber-400 bg-amber-50/90 ring-2 ring-amber-300/90 ring-offset-2 ring-offset-sky-200"
+          : "",
       ].join(" ")}
     >
       {isNestDropTarget ? (

@@ -112,6 +112,48 @@ export function tagsFromLegacyStatus(
   return [];
 }
 
+/** Anzahl Karten im Wald, die ein Tag tragen (case-insensitiv). */
+export function countTagUsagesInForest(
+  roots: { tags: string[]; children: unknown[] }[],
+  label: string,
+): number {
+  const k = tagKey(label);
+  let count = 0;
+  function walk(nodes: { tags: string[]; children: unknown[] }[]) {
+    for (const n of nodes) {
+      if (n.tags.some((t) => tagKey(t) === k)) count++;
+      walk(n.children as { tags: string[]; children: unknown[] }[]);
+    }
+  }
+  walk(roots);
+  return count;
+}
+
+/** Ersetzt ein Tag überall im Wald (case-insensitiv); Schreibweise = `newLabel`. */
+export function renameTagInForest<T extends { tags: string[]; children: T[] }>(
+  roots: T[],
+  oldLabel: string,
+  newLabel: string,
+): T[] {
+  const oldKey = tagKey(oldLabel);
+  const newCanonical = normalizeTagLabel(newLabel);
+  if (!newCanonical) return roots;
+
+  function renameTags(tags: string[]): string[] {
+    return uniqNonEmptyTags(tags.map((t) => (tagKey(t) === oldKey ? newCanonical : t)));
+  }
+
+  function mapNode(node: T): T {
+    return {
+      ...node,
+      tags: renameTags(node.tags),
+      children: node.children.map(mapNode),
+    };
+  }
+
+  return roots.map(mapNode);
+}
+
 /** Tailwind-Klassen für Tag-Chips auf Karten. */
 export function tagChipClass(
   tag: string,

@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   collectAllTagsFromForest,
+  countTagUsagesInForest,
   isTaskMarkedDone,
+  renameTagInForest,
   setCompletedTagOnTags,
   tagsAvailableForFilter,
   tagsWithoutCompletedTag,
@@ -52,8 +54,37 @@ describe("setCompletedTagOnTags", () => {
     expect(setCompletedTagOnTags(["A", "erledigt"], "Erledigt", true)).toEqual(["A", "Erledigt"]);
     expect(setCompletedTagOnTags(["A", "Erledigt"], "Erledigt", false)).toEqual(["A"]);
   });
+});
 
-  it("tagsWithoutCompletedTag strips done label", () => {
+describe("tagsWithoutCompletedTag", () => {
+  it("strips done label", () => {
     expect(tagsWithoutCompletedTag(["x", "Fertig", "y"], "fertig")).toEqual(["x", "y"]);
+  });
+});
+
+describe("countTagUsagesInForest", () => {
+  it("counts cards with matching tag", () => {
+    const roots = [n(["A"]), n(["a", "B"], [n(["A"])])];
+    expect(countTagUsagesInForest(roots, "a")).toBe(3);
+    expect(countTagUsagesInForest(roots, "C")).toBe(0);
+  });
+});
+
+describe("renameTagInForest", () => {
+  it("replaces tag on all cards case-insensitively", () => {
+    const roots = [
+      n(["Alt", "x"]),
+      n(["alt"], [n(["ALT", "y"])]),
+    ];
+    const next = renameTagInForest(roots, "alt", "Neu");
+    expect(next[0].tags).toEqual(["Neu", "x"]);
+    expect(next[1].tags).toEqual(["Neu"]);
+    expect(next[1].children[0].tags).toEqual(["Neu", "y"]);
+  });
+
+  it("merges when target tag already exists on card", () => {
+    const roots = [n(["Alt", "Neu"])];
+    const next = renameTagInForest(roots, "alt", "Neu");
+    expect(next[0].tags).toEqual(["Neu"]);
   });
 });

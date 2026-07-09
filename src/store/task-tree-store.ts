@@ -26,7 +26,13 @@ import {
   defaultBoardCollapsedIds,
 } from "@/lib/tree-depth-collapse";
 import { pruneEmptyUxLeavesInFocusSubtree } from "@/lib/focus-mode-outline";
-import { DEFAULT_COMPLETED_TAG, normalizeCompletedTag, normalizeTagLabel, tagKey } from "@/lib/task-tags";
+import {
+  DEFAULT_COMPLETED_TAG,
+  normalizeCompletedTag,
+  normalizeTagLabel,
+  renameTagInForest,
+  tagKey,
+} from "@/lib/task-tags";
 import type { TaskCardEditableFields, TaskNode } from "@/types/task-node";
 
 export interface TaskTreeState {
@@ -54,6 +60,8 @@ export interface TaskTreeState {
   setFilterTags: (tags: string[]) => void;
   addFilterTag: (tag: string) => void;
   removeFilterTag: (tag: string) => void;
+  /** Tag überall umbenennen (Karten, Filter, Erledigt-Tag). */
+  renameTagGlobally: (from: string, to: string) => void;
 
   /** Sichtbare Kartenfelder (außer Titel) in Karten- und Detailansicht. */
   cardFieldVisibility: CardFieldVisibility;
@@ -197,6 +205,24 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
     set((s) => {
       const filterTags = s.filterTags.filter((t) => tagKey(t) !== k);
       return { filterTags };
+    });
+  },
+
+  renameTagGlobally: (from, to) => {
+    const fromKey = tagKey(from);
+    const toLabel = normalizeTagLabel(to);
+    if (!toLabel || fromKey === tagKey(toLabel)) return;
+    set((s) => {
+      const roots = refreshCalculatedEffortsInTree(
+        renameTagInForest(s.roots, from, toLabel),
+        s.completedTag,
+      );
+      const completedTag =
+        tagKey(s.completedTag) === fromKey ? normalizeCompletedTag(toLabel) : s.completedTag;
+      const filterTags = s.filterTags
+        .map((t) => (tagKey(t) === fromKey ? toLabel : t))
+        .filter((t, i, arr) => arr.findIndex((x) => tagKey(x) === tagKey(t)) === i);
+      return { roots, completedTag, filterTags };
     });
   },
 

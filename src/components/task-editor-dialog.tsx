@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 
 import { mergeCardFieldVisibility } from "@/lib/card-field-visibility";
@@ -21,9 +21,12 @@ import { formatTaskIdForDisplay, isLoxTaskId } from "@/lib/task-id";
 import { normalizeTaskLink } from "@/lib/task-link";
 import { findNodeById } from "@/lib/tree-utils";
 import {
+  collectAllTagsFromForest,
   isTaskMarkedDone,
   MILESTONE_TAG_DISPLAY,
   setCompletedTagOnTags,
+  tagChipClass,
+  tagsAvailableForFilter,
   tagsWithoutCompletedTag,
   uniqNonEmptyTags,
 } from "@/lib/task-tags";
@@ -131,6 +134,15 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
 
   const isDone = isTaskMarkedDone({ tags }, completedTag);
   const displayTags = tagsWithoutCompletedTag(tags, completedTag);
+  const allTags = useMemo(() => collectAllTagsFromForest(roots), [roots]);
+  const pickableTags = useMemo(
+    () => tagsAvailableForFilter(allTags, tags),
+    [allTags, tags],
+  );
+
+  const addTag = (t: string) => {
+    setTags(uniqNonEmptyTags([...tags, t]));
+  };
 
   const setDone = (done: boolean) => {
     setTags(setCompletedTagOnTags(tags, completedTag, done));
@@ -310,6 +322,27 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
                   Hinzufügen
                 </button>
               </div>
+              {pickableTags.length > 0 ? (
+                <div className="mt-2">
+                  <span className="block text-[10px] font-medium text-slate-500">Vorhandene Tags</span>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {pickableTags.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => addTag(t)}
+                        className={[
+                          "rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 transition hover:ring-sky-300/80",
+                          tagChipClass(t, completedTag),
+                        ].join(" ")}
+                        title={`Tag „${t}“ hinzufügen`}
+                      >
+                        + {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
           {showEffortField ? (

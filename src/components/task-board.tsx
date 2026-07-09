@@ -18,7 +18,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { HardDrive, Settings2, SlidersHorizontal } from "lucide-react";
+import { HardDrive, Settings2, SlidersHorizontal, Tag } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 
 import { applyBoardJsonToStore, boardJsonFromStoreState } from "@/lib/file-board-reconcile";
@@ -95,6 +95,7 @@ import { ImportSubtreeDialog } from "./import-subtree-dialog";
 import { AppointmentsListDialog } from "./appointments-list-dialog";
 import { BranchExportDialog, JsonExportPreviewDialog, JsonPasteImportDialog } from "./json-clipboard-dialog";
 import { LevelNamesSetupDialog } from "./level-names-setup-dialog";
+import { TagRenameDialog } from "./tag-rename-dialog";
 import { WorkingFileSync } from "./working-file-sync";
 import { WorkingFileSetupDialog } from "./working-file-setup-dialog";
 import { DataStoragePanel } from "./data-storage-panel";
@@ -230,6 +231,7 @@ export function TaskBoard() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [levelSetupOpen, setLevelSetupOpen] = useState(false);
   const [cardFieldsOpen, setCardFieldsOpen] = useState(false);
+  const [tagRenameOpen, setTagRenameOpen] = useState(false);
   const [pendingBoardImport, setPendingBoardImport] = useState<BoardSnapshotV1 | null>(null);
   const [pendingSubtreeImport, setPendingSubtreeImport] = useState<TaskNode | null>(null);
   const [workingFileName, setWorkingFileName] = useState<string | null>(() =>
@@ -934,6 +936,15 @@ export function TaskBoard() {
             </button>
             <button
               type="button"
+              onClick={() => setTagRenameOpen(true)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
+              title="Tags umbenennen"
+              aria-label="Tags umbenennen"
+            >
+              <Tag className="h-3.5 w-3.5" aria-hidden />
+            </button>
+            <button
+              type="button"
               onClick={() => setCardFieldsOpen(true)}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
               title="Sichtbare Kartenfelder (außer Titel)"
@@ -1167,6 +1178,7 @@ export function TaskBoard() {
         onClose={() => setLevelSetupOpen(false)}
         onApply={applyColumnTitleDraft}
       />
+      <TagRenameDialog open={tagRenameOpen} onClose={() => setTagRenameOpen(false)} />
       <CardFieldVisibilityDialog
         open={cardFieldsOpen}
         value={cardFieldVisibility}

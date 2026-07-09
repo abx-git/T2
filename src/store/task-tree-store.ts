@@ -18,7 +18,7 @@ import {
 import { DEFAULT_CARD_FIELD_VISIBILITY, mergeCardFieldVisibility, type CardFieldVisibility } from "@/lib/card-field-visibility";
 import { compactColumnTitleOverrides } from "@/lib/column-titles";
 import { refreshCalculatedEffortsInTree } from "@/lib/task-effort";
-import { generateUniqueTaskId } from "@/lib/task-id";
+import { collectAllNodeIds, generateUniqueTaskId, generateUniqueTaskIdFromTaken } from "@/lib/task-id";
 import { remapTaskNodeIds } from "@/lib/task-tree-json";
 import {
   collapsedIdsAfterBoardDepthAction,
@@ -119,6 +119,11 @@ export interface TaskTreeState {
    * IDs im `root` werden neu vergeben, um Kollisionen zu vermeiden.
    */
   importSubtreeRoot: (parentId: string | null, root: TaskNode) => void;
+  /** Mehrere Karten unter `parentId` einfügen (`null` = Wurzel). Liefert die neuen IDs. */
+  importPastedCards: (
+    parentId: string | null,
+    cards: { title: string; description: string }[],
+  ) => string[];
 }
 
 /** Hilfe für DnD: ermittelt Spaltenindex anhand einer Knoten-ID. */
@@ -455,6 +460,40 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
     });
     if (applied) {
     }
+  },
+
+  importPastedCards: (parentId, cards) => {
+    if (cards.length === 0) return [];
+    const createdIds: string[] = [];
+    set((s) => {
+      if (parentId !== null && !findNodeById(s.roots, parentId)) return {};
+      let nextRoots = s.roots;
+      const taken = collectAllNodeIds(nextRoots);
+      const startIndex = getSiblingsList(nextRoots, parentId).length;
+      for (let i = 0; i < cards.length; i++) {
+        const card = cards[i]!;
+        const id = generateUniqueTaskIdFromTaken(taken);
+        taken.add(id);
+        createdIds.push(id);
+        const newNode: TaskNode = {
+          id,
+          title: card.title,
+          link: "",
+          description: card.description,
+          tags: [],
+          dueDate: null,
+          reminderDate: null,
+          effort: 0,
+          effortUnit: "hours",
+          effortSource: "manual",
+          children: [],
+        };
+        nextRoots = insertUnderParent(nextRoots, parentId, startIndex + i, newNode);
+      }
+      const refreshed = refreshCalculatedEffortsInTree(nextRoots, s.completedTag);
+      return { roots: refreshed, pathIds: normalizePathIds(refreshed, s.pathIds) };
+    });
+    return createdIds;
   },
 }));
 

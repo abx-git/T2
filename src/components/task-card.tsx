@@ -9,6 +9,7 @@ import {
   ClipboardPaste,
   Copy,
   GripVertical,
+  List,
   ListPlus,
   MoreHorizontal,
   Pencil,
@@ -132,6 +133,8 @@ export interface TaskCardProps {
   onCopySubtree?: () => void;
   /** Teilbaum-JSON als Kind dieser Karte einfügen. */
   onPasteSubtreeUnder?: () => void;
+  /** Zeilenliste als Kind(er) dieser Karte einfügen. */
+  onPasteListUnder?: () => void;
   /** Drill-Pfad bis zu dieser Karte (Kinder-Spalte öffnen). */
   onOpenBranch: () => void;
   /** Löschen (mit Bestätigung im Board). */
@@ -154,6 +157,7 @@ export function TaskCard({
   onOpenDetails,
   onCopySubtree,
   onPasteSubtreeUnder,
+  onPasteListUnder,
   onOpenBranch,
   onRequestDelete,
   isBranchCollapsed = false,
@@ -454,6 +458,23 @@ export function TaskCard({
           >
             <ClipboardPaste className="h-3.5 w-3.5 shrink-0 text-violet-700" aria-hidden />
             Teilbaum einfügen
+          </button>
+        ) : null}
+        {onPasteListUnder ? (
+          <button
+            type="button"
+            role="menuitem"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setMenuOpen(false);
+              onPasteListUnder();
+            }}
+            className={cardMenuItemClass}
+          >
+            <List className="h-3.5 w-3.5 shrink-0 text-violet-700" aria-hidden />
+            Liste einfügen
           </button>
         ) : null}
         {hasChildren && onToggleCollapsed ? (

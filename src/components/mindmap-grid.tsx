@@ -76,6 +76,7 @@ export interface MindmapGridProps {
   collapsedIds: Set<string>;
   searchFocusNodeId?: string | null;
   onPasteSubtreeUnder: (parentId: string) => void;
+  onPasteListUnder: (parentId: string) => void;
   onAddRootCard: () => void;
   onAddChildCard: (parentId: string) => void;
   onOpenDetails: (nodeId: string) => void;
@@ -97,6 +98,7 @@ export function MindmapGrid({
   collapsedIds,
   searchFocusNodeId = null,
   onPasteSubtreeUnder,
+  onPasteListUnder,
   onAddRootCard,
   onAddChildCard,
   onOpenDetails,
@@ -268,6 +270,7 @@ export function MindmapGrid({
                 onOpenBranch={() => onActivateBranch(entry.node.id)}
                 onCopySubtree={onCopySubtree ? () => onCopySubtree(entry.node) : undefined}
                 onPasteSubtreeUnder={() => onPasteSubtreeUnder(entry.node.id)}
+                onPasteListUnder={() => onPasteListUnder(entry.node.id)}
                 onRequestDelete={
                   onRequestDelete ? () => onRequestDelete(entry.node.id) : undefined
                 }

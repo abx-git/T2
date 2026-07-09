@@ -94,6 +94,7 @@ import { DepthLevelsControl } from "./depth-levels-control";
 import { ImportSubtreeDialog } from "./import-subtree-dialog";
 import { AppointmentsListDialog } from "./appointments-list-dialog";
 import { BranchExportDialog, JsonExportPreviewDialog, JsonPasteImportDialog } from "./json-clipboard-dialog";
+import { PasteListDialog } from "./paste-list-dialog";
 import { LevelNamesSetupDialog } from "./level-names-setup-dialog";
 import { TagRenameDialog } from "./tag-rename-dialog";
 import { WorkingFileSync } from "./working-file-sync";
@@ -210,6 +211,7 @@ export function TaskBoard() {
   const applyColumnTitleDraft = useTaskTreeStore((s) => s.applyColumnTitleDraft);
   const replaceBoardFromImport = useTaskTreeStore((s) => s.replaceBoardFromImport);
   const importSubtreeRoot = useTaskTreeStore((s) => s.importSubtreeRoot);
+  const importPastedCards = useTaskTreeStore((s) => s.importPastedCards);
   const cardFieldVisibility = useTaskTreeStore((s) => s.cardFieldVisibility);
   const applyCardFieldVisibility = useTaskTreeStore((s) => s.applyCardFieldVisibility);
   const effortOnTasksEnabled = useTaskTreeStore((s) => s.effortOnTasksEnabled);
@@ -249,6 +251,7 @@ export function TaskBoard() {
   const [pasteImportOpen, setPasteImportOpen] = useState(false);
   const [workingFilePasteOpen, setWorkingFilePasteOpen] = useState(false);
   const [pasteSubtreeParentId, setPasteSubtreeParentId] = useState<string | null>(null);
+  const [pasteListParentId, setPasteListParentId] = useState<string | null>(null);
   const [branchExportNode, setBranchExportNode] = useState<TaskNode | null>(null);
   const [appointmentsListOpen, setAppointmentsListOpen] = useState(false);
   const [scrollToNodeId, setScrollToNodeId] = useState<string | null>(null);
@@ -681,6 +684,20 @@ export function TaskBoard() {
     }
   };
 
+  const applyPastedList = (cards: { title: string; description: string }[]) => {
+    const parentId = pasteListParentId;
+    if (parentId === null) return;
+    const createdIds = importPastedCards(parentId, cards);
+    if (createdIds.length === 0) {
+      window.alert("Karten konnten nicht angelegt werden.");
+      return;
+    }
+    setPasteListParentId(null);
+    expandToNode(parentId);
+    const lastId = createdIds[createdIds.length - 1];
+    if (lastId) setScrollToNodeId(lastId);
+  };
+
   const applyImportedText = (raw: string) => {
     const trimmed = raw.trim();
     if (!trimmed) {
@@ -992,6 +1009,7 @@ export function TaskBoard() {
               collapsedIds={collapsedSet}
               searchFocusNodeId={searchFocusNodeId}
               onPasteSubtreeUnder={setPasteSubtreeParentId}
+              onPasteListUnder={setPasteListParentId}
               onAddRootCard={() => {
                 const id = addCardAfter(null);
                 setTitleEditNodeId(id);
@@ -1066,6 +1084,17 @@ export function TaskBoard() {
         hint="Teilbaum-JSON (scope „subtree“), wie beim Kopieren eines Astes. Wird als Kind(er) der gewählten Karte eingefügt; alle IDs werden neu vergeben."
         onClose={() => setPasteSubtreeParentId(null)}
         onApplyPastedText={applySubtreePastedText}
+      />
+      <PasteListDialog
+        open={pasteListParentId !== null}
+        title={
+          pasteListParentId !== null
+            ? `Liste einfügen unter „${findNodeById(roots, pasteListParentId)?.title?.trim() || "Karte"}“`
+            : "Liste einfügen"
+        }
+        hint="Textzeilen einfügen — z. B. aus Notizen oder einer Aufzählung kopiert. Die Karten werden als Kinder der gewählten Karte angelegt."
+        onClose={() => setPasteListParentId(null)}
+        onApply={applyPastedList}
       />
       <ImportSubtreeDialog
         open={pendingSubtreeImport !== null}

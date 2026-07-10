@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   collectAllTagsFromForest,
   countTagUsagesInForest,
+  defaultTagsForNewCard,
   isTaskMarkedDone,
   renameTagInForest,
   setCompletedTagOnTags,
@@ -86,5 +87,15 @@ describe("renameTagInForest", () => {
     const roots = [n(["Alt", "Neu"])];
     const next = renameTagInForest(roots, "alt", "Neu");
     expect(next[0].tags).toEqual(["Neu"]);
+  });
+});
+
+describe("defaultTagsForNewCard", () => {
+  it("übernimmt aktive Filter-Tags", () => {
+    expect(defaultTagsForNewCard(["Projekt A", "Dringend"])).toEqual(["Projekt A", "Dringend"]);
+  });
+
+  it("liefert leere Tags ohne Filter", () => {
+    expect(defaultTagsForNewCard([])).toEqual([]);
   });
 });

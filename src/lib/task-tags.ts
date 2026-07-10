@@ -102,6 +102,11 @@ export function nodeHasAnyFilterTag(node: { tags: string[] }, filterTags: string
   return node.tags.some((t) => keys.has(tagKey(t)));
 }
 
+/** Aktive Tag-Filter auf neu angelegte Karten übernehmen (OR-Filter sichtbar halten). */
+export function defaultTagsForNewCard(filterTags: readonly string[]): string[] {
+  return filterTags.length ? [...filterTags] : [];
+}
+
 /** Nur für JSON-Import älterer Dateien mit `status`. */
 export function tagsFromLegacyStatus(
   status: string | undefined,

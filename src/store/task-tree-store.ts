@@ -28,6 +28,7 @@ import {
 import { pruneEmptyUxLeavesInFocusSubtree } from "@/lib/focus-mode-outline";
 import {
   DEFAULT_COMPLETED_TAG,
+  defaultTagsForNewCard,
   normalizeCompletedTag,
   normalizeTagLabel,
   renameTagInForest,
@@ -147,7 +148,7 @@ function insertCardAtIndex(
     title: "",
     link: "",
     description: "",
-    tags: [],
+    tags: defaultTagsForNewCard(get().filterTags),
     dueDate: null,
     reminderDate: null,
     effort: 0,
@@ -480,7 +481,7 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
           title: card.title,
           link: "",
           description: card.description,
-          tags: [],
+          tags: defaultTagsForNewCard(s.filterTags),
           dueDate: null,
           reminderDate: null,
           effort: 0,

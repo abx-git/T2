@@ -18,7 +18,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { HardDrive, Settings2, SlidersHorizontal, Tag } from "lucide-react";
+import { CircleHelp, HardDrive, Settings2, SlidersHorizontal, Tag } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 
 import { applyBoardJsonToStore, boardJsonFromStoreState } from "@/lib/file-board-reconcile";
@@ -80,6 +80,7 @@ import {
   navigateBoardCard,
   shouldIgnoreCardKeyboard,
 } from "@/lib/card-keyboard-nav";
+import { saveClipboardLinkToCard } from "@/lib/paste-card-link-from-clipboard";
 import {
   dataStorageButtonClassName,
   deriveStorageDisplayStatus,
@@ -106,9 +107,9 @@ import { TagRenameDialog } from "./tag-rename-dialog";
 import { WorkingFileSync } from "./working-file-sync";
 import { WorkingFileSetupDialog } from "./working-file-setup-dialog";
 import { DataStoragePanel } from "./data-storage-panel";
-import { BetaBanner } from "./beta-banner";
 import { PostImportSaveDialog } from "./post-import-save-dialog";
 import { TaskEditorDialog } from "./task-editor-dialog";
+import { KeyboardShortcutsHelpDialog } from "./keyboard-shortcuts-help-dialog";
 
 /** Einfügelücke vor Karte; schmale Gap-Bänder liegen bewusst zwischen den Karten. */
 const mindmapCollisionDetection: CollisionDetection = (args) => {
@@ -266,6 +267,7 @@ export function TaskBoard() {
   const [storagePanelBusy, setStoragePanelBusy] = useState(false);
   const [postImportSaveOpen, setPostImportSaveOpen] = useState(false);
   const [openWorkingFileConfirmOpen, setOpenWorkingFileConfirmOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const boardColumnsRef = useRef<HTMLDivElement>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
   const workingFilePickRef = useRef<HTMLInputElement>(null);
@@ -869,7 +871,8 @@ export function TaskBoard() {
     appointmentsListOpen ||
     dataStoragePanelOpen ||
     postImportSaveOpen ||
-    openWorkingFileConfirmOpen;
+    openWorkingFileConfirmOpen ||
+    helpOpen;
 
   useEffect(() => {
     if (cardKeyboardBlocked) return;
@@ -941,6 +944,12 @@ export function TaskBoard() {
         return;
       }
 
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        void saveClipboardLinkToCard(currentId, updateCard);
+        return;
+      }
+
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
         setPendingDeleteId(currentId);
@@ -959,6 +968,7 @@ export function TaskBoard() {
     addCardAfterSibling,
     addCardAfter,
     expandToNode,
+    updateCard,
   ]);
 
   const boardExportJsonText = boardJsonExportOpen
@@ -1029,7 +1039,6 @@ export function TaskBoard() {
       />
       {/* Header + Board in einer Spalte: Board kann den Header nicht überdecken (kein z-Index gegen Toolbar). */}
       <div className="flex min-h-0 flex-1 flex-col">
-        <BetaBanner />
         <header className="shrink-0 border-b border-slate-200/80 bg-white px-6 py-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
@@ -1060,6 +1069,15 @@ export function TaskBoard() {
               aria-hidden
               onChange={handleImportFileChange}
             />
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
+              title="Kurzanleitung und Tastaturkürzel"
+              aria-label="Hilfe und Tastaturkürzel"
+            >
+              <CircleHelp className="h-3.5 w-3.5" aria-hidden />
+            </button>
             <button
               type="button"
               onClick={() => setDataStoragePanelOpen(true)}
@@ -1339,6 +1357,7 @@ export function TaskBoard() {
         onClose={() => setLevelSetupOpen(false)}
         onApply={applyColumnTitleDraft}
       />
+      <KeyboardShortcutsHelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
       <TagRenameDialog open={tagRenameOpen} onClose={() => setTagRenameOpen(false)} />
       <CardFieldVisibilityDialog
         open={cardFieldsOpen}

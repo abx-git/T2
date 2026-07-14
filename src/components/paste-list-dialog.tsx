@@ -3,6 +3,7 @@
 import { ClipboardPaste, List } from "lucide-react";
 import { useId, useLayoutEffect, useState } from "react";
 
+import { readClipboardText } from "@/lib/clipboard";
 import {
   buildPasteListCards,
   parsePasteListLines,
@@ -18,17 +19,6 @@ export interface PasteListDialogProps {
 }
 
 type Step = "input" | "mode" | "single-split";
-
-async function readClipboardText(): Promise<string | null> {
-  try {
-    if (typeof navigator !== "undefined" && navigator.clipboard?.readText) {
-      return await navigator.clipboard.readText();
-    }
-  } catch {
-    // Berechtigung verweigert oder nicht verfügbar
-  }
-  return null;
-}
 
 export function PasteListDialog({ open, title, hint, onClose, onApply }: PasteListDialogProps) {
   const titleId = useId();

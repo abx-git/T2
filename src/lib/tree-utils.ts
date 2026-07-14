@@ -521,13 +521,9 @@ export function buildMindmapDropPreview(
 
   if (targetCol === 0) {
     if (pt !== null || listParent !== null) return null;
-    if (sameColumn) {
-      if (subtreeContainsId(activeNode, targetId)) return null;
-      if (!findNodeById(roots, targetId)) return null;
-      return mapIntentToPreview(activeId, "nest-under", 0, 0, targetId, undefined);
-    }
-    const insertIndex = insertIndexBelowCardAmongSiblings(roots, activeId, targetId);
-    return mapIntentToPreview(activeId, "root-sibling", 0, insertIndex, targetId, undefined);
+    if (subtreeContainsId(activeNode, targetId)) return null;
+    if (!findNodeById(roots, targetId)) return null;
+    return mapIntentToPreview(activeId, "nest-under", 0, 0, targetId, undefined);
   }
 
   if (pt !== listParent) return null;
@@ -554,7 +550,8 @@ export function buildMindmapDropPreview(
  * Mindmap-DnD (Spalten):
  * - Lücke in einer Spalte (`columnGap`): Geschwisterliste umsortieren / an Position einfügen.
  * - Karte in derselben Spalte wie Quelle: unter die Zielkarte nesten (Kind).
- * - Karte in anderer Spalte / Kontext: wie zuvor (Wurzel-Geschwister, Geschwister-Reorder über Spaltengrenze, Nest).
+ * - Karte auf Hauptebene (andere Spalte): unter die Zielkarte nesten (Kind).
+ * - Karte in anderer Spalte / Kontext: Geschwister-Reorder über Spaltengrenze oder Nest.
  */
 export function applyMindmapDrop(
   roots: TaskNode[],
@@ -592,10 +589,8 @@ export function applyMindmapDrop(
 
   if (targetCol === 0) {
     if (pt !== null || listParent !== null) return roots;
-    if (sameColumn) {
-      if (subtreeContainsId(activeNode, targetId)) return roots;
-      if (!findNodeById(roots, targetId)) return roots;
-    }
+    if (subtreeContainsId(activeNode, targetId)) return roots;
+    if (!findNodeById(roots, targetId)) return roots;
   } else {
     if (pt !== listParent) return roots;
     if (sameColumn) {
@@ -612,10 +607,6 @@ export function applyMindmapDrop(
   const clone = structuredClone(detached) as TaskNode;
 
   if (targetCol === 0) {
-    if (!sameColumn) {
-      const insertIndex = insertIndexBelowCardAmongSiblings(roots, activeId, targetId);
-      return insertUnderParent(r1, null, insertIndex, clone);
-    }
     const targetAfter = findNodeById(r1, targetId)!;
     return updateNodeChildren(r1, targetId, [...targetAfter.children, clone]);
   }

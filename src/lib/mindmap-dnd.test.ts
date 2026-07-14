@@ -8,6 +8,7 @@ import {
   buildMindmapDropPreview,
   dragOverKindFromPreview,
   columnIndexOfNode,
+  findNodeById,
   gapIndexToInsertAfterDetach,
   getColumnDisplayRows,
   insertIndexBelowCardAmongSiblings,
@@ -100,10 +101,10 @@ describe("applyMindmapDrop — Hauptebene / Wurzeln", () => {
     expect(shape(next)).toBe("b()c(a())");
   });
 
-  it("andere Spalte: Kind auf Wurzelkarte → Hochziehen als Geschwister unter Ziel", () => {
+  it("andere Spalte: Kind auf Wurzelkarte → Nest unter Ziel", () => {
     const roots = [node("a", [node("x")]), node("b")];
     const next = applyMindmapDrop(roots, [], "x", card("b", 0, null));
-    expect(shape(next)).toBe("a()b()x()");
+    expect(shape(next)).toBe("a()b(x())");
   });
 
   it("listParentId muss bei Spalte 0 null sein", () => {
@@ -199,7 +200,7 @@ describe("applyMindmapDrop — Teilbaum bleibt intakt", () => {
   it("structuredClone: Kinder der verschobenen Karte bleiben erhalten", () => {
     const roots = [node("a", [node("x", [node("deep")])]), node("b")];
     const next = applyMindmapDrop(roots, [], "x", card("b", 0, null));
-    const moved = next.find((r) => r.id === "x");
+    const moved = findNodeById(next, "x");
     expect(moved?.children.map((c) => c.id)).toEqual(["deep"]);
   });
 });
@@ -210,8 +211,8 @@ describe("pathIdsAfterNodeMove", () => {
     const oldPath = ["p", "x"];
     const nextRoots = applyMindmapDrop(roots, oldPath, "x", card("q", 0, null));
     expect(normalizePathIds(nextRoots, oldPath)).toEqual(["p"]);
-    expect(pathIdsAfterNodeMove(nextRoots, "x", oldPath)).toEqual(["x"]);
-    expect(columnIndexOfNode(nextRoots, pathIdsAfterNodeMove(nextRoots, "x", oldPath), "x")).toBe(0);
+    expect(pathIdsAfterNodeMove(nextRoots, "x", oldPath)).toEqual(["q", "x"]);
+    expect(columnIndexOfNode(nextRoots, pathIdsAfterNodeMove(nextRoots, "x", oldPath), "x")).toBe(1);
   });
 
   it("A-B-C-D: nach Nest unter C sofort sichtbar ohne Parent-Klick", () => {
@@ -259,11 +260,11 @@ describe("buildMindmapDropPreview — konsistent mit erlaubten Drops", () => {
     expect(p).toMatchObject({ intent: "nest-under", anchorCardId: "b" });
   });
 
-  it("Kind auf Wurzel (andere Spalte) → root-sibling", () => {
+  it("Kind auf Wurzel (andere Spalte) → nest-under", () => {
     const p = buildMindmapDropPreview(roots, pathRoots, "x", card("b", 0, null));
     expect(p).toMatchObject({
-      intent: "root-sibling",
-      targetMode: "column",
+      intent: "nest-under",
+      targetMode: "card",
       anchorCardId: "b",
     });
   });

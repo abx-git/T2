@@ -114,14 +114,26 @@ import { KeyboardShortcutsHelpDialog } from "./keyboard-shortcuts-help-dialog";
 /** Einfügelücke vor Karte; schmale Gap-Bänder liegen bewusst zwischen den Karten. */
 const mindmapCollisionDetection: CollisionDetection = (args) => {
   const activeId = String(args.active.id);
+  const activeCol = args.active.data.current?.columnIndex as number | undefined;
+
   const pickTarget = (hits: ReturnType<typeof pointerWithin>) => {
     if (hits.length === 0) return null;
     const gapHit = hits.find((c) => String(c.id).startsWith(COLUMN_GAP_PREFIX));
-    if (gapHit) return [gapHit];
     const cardHit = hits.find((c) => {
       const id = String(c.id);
       return id !== activeId && !id.startsWith(COLUMN_GAP_PREFIX);
     });
+
+    if (cardHit && activeCol != null) {
+      const cardCol = cardHit.data?.droppableContainer?.data?.current?.columnIndex as
+        | number
+        | undefined;
+      if (cardCol != null && activeCol !== cardCol) {
+        return [cardHit];
+      }
+    }
+
+    if (gapHit) return [gapHit];
     return cardHit ? [cardHit] : null;
   };
 

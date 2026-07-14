@@ -63,6 +63,7 @@ import {
   navigateOutlineCard,
   shouldIgnoreCardKeyboard,
 } from "@/lib/card-keyboard-nav";
+import { saveClipboardLinkToCard } from "@/lib/paste-card-link-from-clipboard";
 import { useTaskTreeStore } from "@/store/task-tree-store";
 import type { TaskNode } from "@/types/task-node";
 
@@ -651,6 +652,12 @@ export function FocusModeView({
         return;
       }
 
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        void saveClipboardLinkToCard(currentId, updateCard);
+        return;
+      }
+
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
         setPendingDeleteId(currentId);
@@ -676,6 +683,7 @@ export function FocusModeView({
     addCardAfter,
     scrollFocusRowIntoView,
     onFocusNodeChange,
+    updateCard,
   ]);
 
   useEffect(() => {

@@ -2,6 +2,7 @@
 
 import { useDroppable } from "@dnd-kit/core";
 import { ClipboardCopy } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 import { CLIPBOARD_DROP_TARGET_ID } from "@/lib/clipboard-dnd";
 
@@ -12,6 +13,7 @@ export interface ClipboardDropTargetProps {
 }
 
 export function ClipboardDropTarget({ count, open, onToggle }: ClipboardDropTargetProps) {
+  const skipClickRef = useRef(false);
   const { setNodeRef, isOver, active } = useDroppable({
     id: CLIPBOARD_DROP_TARGET_ID,
     data: { kind: "clipboardTarget" as const },
@@ -19,11 +21,21 @@ export function ClipboardDropTarget({ count, open, onToggle }: ClipboardDropTarg
 
   const dragging = Boolean(active);
 
+  useEffect(() => {
+    if (dragging) skipClickRef.current = true;
+  }, [dragging]);
+
   return (
     <button
       ref={setNodeRef}
       type="button"
-      onClick={onToggle}
+      onClick={() => {
+        if (skipClickRef.current) {
+          skipClickRef.current = false;
+          return;
+        }
+        onToggle();
+      }}
       className={[
         "flex min-h-8 items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition",
         isOver && dragging

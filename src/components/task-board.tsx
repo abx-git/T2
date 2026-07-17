@@ -83,6 +83,7 @@ import {
 import {
   CLIPBOARD_DROP_TARGET_ID,
   findNodeForestLocation,
+  forestDropTargetFromOverId,
   parseClipboardGapId,
   resolveUnifiedDragDrop,
 } from "@/lib/clipboard-dnd";
@@ -933,7 +934,21 @@ export function TaskBoard() {
     }
 
     const overId = over ? String(over.id) : "";
-    const drop = over ? resolveUnifiedDragDrop(activeId, r, cr, overId, boardOverKind) : null;
+    let drop = over ? resolveUnifiedDragDrop(activeId, r, cr, overId, boardOverKind) : null;
+
+    if (
+      !drop &&
+      preview?.activeId === activeId &&
+      preview.intent === "move-to-clipboard" &&
+      findNodeForestLocation(r, cr, activeId) === "board"
+    ) {
+      if (!overId || overId === CLIPBOARD_DROP_TARGET_ID) {
+        drop = { type: "to-clipboard-end" };
+      } else {
+        const clipTarget = forestDropTargetFromOverId(overId, cr);
+        if (clipTarget) drop = { type: "to-clipboard", target: clipTarget };
+      }
+    }
 
     endDragUi();
     if (!drop) return;
@@ -1149,6 +1164,96 @@ export function TaskBoard() {
     [storageDisplayStatus],
   );
 
+  const appHeader = (
+    <header className="shrink-0 border-b border-slate-200/80 bg-white px-6 py-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+          <h1 className="shrink-0 text-lg font-semibold text-slate-900">T2</h1>
+          <TaskSearch onSelectNode={handleSearchSelect} />
+          {!focusNodeId && boardMaxVisibleLevels > 1 ? (
+            <DepthLevelsControl
+              maxLevel={boardMaxVisibleLevels}
+              onApplyLevel={(level) => applyBoardDepthInView(level)}
+              onExpandAll={() => applyBoardDepthInView(null)}
+            />
+          ) : null}
+          {!focusNodeId ? (
+            <ClipboardDropTarget
+              count={clipboardRoots.length}
+              open={clipboardOpen}
+              onToggle={() => setClipboardOpen((v) => !v)}
+            />
+          ) : null}
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <input
+            ref={workingFilePickRef}
+            type="file"
+            accept=".json,application/json,text/json,application/octet-stream"
+            className="hidden"
+            aria-hidden
+            onChange={(e) => void handleWorkingFilePickChange(e)}
+          />
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".json,application/json,.mm,text/xml,application/xml"
+            className="hidden"
+            aria-hidden
+            onChange={handleImportFileChange}
+          />
+          <button
+            type="button"
+            onClick={() => setHelpOpen(true)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
+            title="Kurzanleitung und Tastaturkürzel"
+            aria-label="Hilfe und Tastaturkürzel"
+          >
+            <CircleHelp className="h-3.5 w-3.5" aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={() => setDataStoragePanelOpen(true)}
+            className={dataStorageButtonClassName(storageDisplayStatus.tone)}
+            title={dataStorageTooltip}
+            aria-label={`Daten und Speicher: ${storageDisplayStatus.primaryLine}`}
+          >
+            <HardDrive className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className="hidden text-xs font-medium sm:inline">Daten</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setLevelSetupOpen(true)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
+            title="Ebenen umbenennen"
+            aria-label="Ebenen umbenennen"
+          >
+            <Settings2 className="h-3.5 w-3.5" aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={() => setTagRenameOpen(true)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
+            title="Tags umbenennen"
+            aria-label="Tags umbenennen"
+          >
+            <Tag className="h-3.5 w-3.5" aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={() => setCardFieldsOpen(true)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
+            title="Sichtbare Kartenfelder (außer Titel)"
+            aria-label="Kartenfelder ein-/ausblenden"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
+          </button>
+        </div>
+      </div>
+      <TagFilterBar onOpenAppointments={() => setAppointmentsListOpen(true)} />
+    </header>
+  );
+
   return (
     <div className="flex h-screen min-h-0 flex-col">
       <WorkingFileSync
@@ -1159,103 +1264,18 @@ export function TaskBoard() {
       />
       {/* Header + Board in einer Spalte: Board kann den Header nicht überdecken (kein z-Index gegen Toolbar). */}
       <div className="flex min-h-0 flex-1 flex-col">
-        <header className="shrink-0 border-b border-slate-200/80 bg-white px-6 py-4 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-            <h1 className="shrink-0 text-lg font-semibold text-slate-900">T2</h1>
-            <TaskSearch onSelectNode={handleSearchSelect} />
-            {!focusNodeId && boardMaxVisibleLevels > 1 ? (
-              <DepthLevelsControl
-                maxLevel={boardMaxVisibleLevels}
-                onApplyLevel={(level) => applyBoardDepthInView(level)}
-                onExpandAll={() => applyBoardDepthInView(null)}
-              />
-            ) : null}
-            {!focusNodeId ? (
-              <ClipboardDropTarget
-                count={clipboardRoots.length}
-                open={clipboardOpen}
-                onToggle={() => setClipboardOpen((v) => !v)}
-              />
-            ) : null}
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <input
-              ref={workingFilePickRef}
-              type="file"
-              accept=".json,application/json,text/json,application/octet-stream"
-              className="hidden"
-              aria-hidden
-              onChange={(e) => void handleWorkingFilePickChange(e)}
-            />
-            <input
-              ref={importFileRef}
-              type="file"
-              accept=".json,application/json,.mm,text/xml,application/xml"
-              className="hidden"
-              aria-hidden
-              onChange={handleImportFileChange}
-            />
-            <button
-              type="button"
-              onClick={() => setHelpOpen(true)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
-              title="Kurzanleitung und Tastaturkürzel"
-              aria-label="Hilfe und Tastaturkürzel"
-            >
-              <CircleHelp className="h-3.5 w-3.5" aria-hidden />
-            </button>
-            <button
-              type="button"
-              onClick={() => setDataStoragePanelOpen(true)}
-              className={dataStorageButtonClassName(storageDisplayStatus.tone)}
-              title={dataStorageTooltip}
-              aria-label={`Daten und Speicher: ${storageDisplayStatus.primaryLine}`}
-            >
-              <HardDrive className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              <span className="hidden text-xs font-medium sm:inline">Daten</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setLevelSetupOpen(true)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
-              title="Ebenen umbenennen"
-              aria-label="Ebenen umbenennen"
-            >
-              <Settings2 className="h-3.5 w-3.5" aria-hidden />
-            </button>
-            <button
-              type="button"
-              onClick={() => setTagRenameOpen(true)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
-              title="Tags umbenennen"
-              aria-label="Tags umbenennen"
-            >
-              <Tag className="h-3.5 w-3.5" aria-hidden />
-            </button>
-            <button
-              type="button"
-              onClick={() => setCardFieldsOpen(true)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
-              title="Sichtbare Kartenfelder (außer Titel)"
-              aria-label="Kartenfelder ein-/ausblenden"
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
-            </button>
-          </div>
-        </div>
-        <TagFilterBar onOpenAppointments={() => setAppointmentsListOpen(true)} />
-      </header>
-
         {focusNodeId ? (
-          <FocusModeView
-            focusNodeId={focusNodeId}
-            hideCompletedTasks={hideCompletedTasks}
-            fieldVisibility={cardFieldVisibility}
-            onClose={handleCloseFocus}
-            onFocusNodeChange={openFocusMode}
-            onOpenDetails={handleOpenDetails}
-          />
+          <>
+            {appHeader}
+            <FocusModeView
+              focusNodeId={focusNodeId}
+              hideCompletedTasks={hideCompletedTasks}
+              fieldVisibility={cardFieldVisibility}
+              onClose={handleCloseFocus}
+              onFocusNodeChange={openFocusMode}
+              onOpenDetails={handleOpenDetails}
+            />
+          </>
         ) : (
         <DndContext
         id="task-board-dnd-aria"
@@ -1267,6 +1287,8 @@ export function TaskBoard() {
         onDragEnd={onDragEnd}
         onDragCancel={onDragCancel}
       >
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {appHeader}
         <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <div
@@ -1326,6 +1348,7 @@ export function TaskBoard() {
         <DragOverlay zIndex={40}>
           {activeDragId ? <DragPreviewCard id={activeDragId} dropPreview={dropPreview} /> : null}
         </DragOverlay>
+        </div>
         </DndContext>
         )}
       </div>

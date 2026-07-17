@@ -11,7 +11,7 @@ import {
   parseClipboardGapId,
   resolveUnifiedDragDrop,
 } from "./clipboard-dnd";
-import { detachNodeById, findNodeById } from "./tree-utils";
+import { buildMindmapInsertPreview, detachNodeById, findNodeById } from "./tree-utils";
 
 function node(id: string, title: string, children: TaskNode[] = []): TaskNode {
   return {
@@ -85,6 +85,59 @@ describe("clipboard-dnd", () => {
     expect(
       resolveUnifiedDragDrop("a", board, clip, clipboardGapId(null, 0), null)?.type,
     ).toBe("to-clipboard");
+  });
+});
+
+describe("buildMindmapInsertPreview", () => {
+  it("shows nest-under when dropping clipboard card onto a board card", () => {
+    const board = [node("a", "A", [node("b", "B")])];
+    const clip = node("x", "X");
+    const preview = buildMindmapInsertPreview(board, "x", clip, {
+      kind: "card",
+      columnIndex: 0,
+      cardId: "a",
+      listParentId: null,
+    });
+    expect(preview).toMatchObject({
+      activeId: "x",
+      intent: "nest-under",
+      targetMode: "card",
+      anchorCardId: "a",
+      toCol: 0,
+    });
+  });
+
+  it("shows nest-under on nested board card", () => {
+    const board = [node("a", "A", [node("b", "B")])];
+    const clip = node("x", "X");
+    const preview = buildMindmapInsertPreview(board, "x", clip, {
+      kind: "card",
+      columnIndex: 1,
+      cardId: "b",
+      listParentId: "a",
+    });
+    expect(preview).toMatchObject({
+      intent: "nest-under",
+      anchorCardId: "b",
+      toCol: 1,
+    });
+  });
+
+  it("shows reorder-gap for column gap", () => {
+    const board = [node("a", "A"), node("b", "B")];
+    const clip = node("x", "X");
+    const preview = buildMindmapInsertPreview(board, "x", clip, {
+      kind: "columnGap",
+      columnIndex: 0,
+      insertIndex: 1,
+      listParentId: null,
+    });
+    expect(preview).toMatchObject({
+      intent: "reorder-gap",
+      targetMode: "column",
+      insertIndex: 1,
+      toCol: 0,
+    });
   });
 });
 

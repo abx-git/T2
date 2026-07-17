@@ -142,6 +142,10 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
   const activeSource = args.active.data.current?.source as string | undefined;
   const { pointerCoordinates, droppableContainers, droppableRects } = args;
 
+  const collisionFor = (container: (typeof droppableContainers)[number]) => [
+    { id: container.id, data: { droppableContainer: container, value: 0 } },
+  ];
+
   // Spezifische Zwischenablage-Ziele (Lücken/Karten) vor der großen Sidebar-Fläche.
   if (pointerCoordinates) {
     for (const container of droppableContainers) {
@@ -149,7 +153,7 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
       if (kind !== "clipboardGap" && kind !== "clipboardCard") continue;
       const rect = droppableRects.get(container.id);
       if (!rect || !pointInClientRect(pointerCoordinates, rect)) continue;
-      return [{ id: container.id, data: { droppableContainer: container, value: 0 } }];
+      return collisionFor(container);
     }
 
     if (activeSource !== "clipboard") {
@@ -157,9 +161,18 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
         const rect = droppableRects.get(id);
         const container = droppableContainers.find((c) => String(c.id) === id);
         if (rect && container && pointInClientRect(pointerCoordinates, rect)) {
-          return [{ id, data: { droppableContainer: container, value: 0 } }];
+          return collisionFor(container);
         }
       }
+    }
+
+    // Pointer auf Board-Karte → Nest-Target (auch aus Zwischenablage; Gaps dürfen nicht „gewinnen“).
+    for (const container of droppableContainers) {
+      if (container.data.current?.kind !== "card") continue;
+      if (String(container.id) === activeId) continue;
+      const rect = droppableRects.get(container.id);
+      if (!rect || !pointInClientRect(pointerCoordinates, rect)) continue;
+      return collisionFor(container);
     }
   }
 
@@ -180,8 +193,10 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
     const gapHit = hits.find((c) => String(c.id).startsWith(COLUMN_GAP_PREFIX));
     const cardHit = hits.find((c) => {
       const id = String(c.id);
+      const kind = c.data?.droppableContainer?.data?.current?.kind as string | undefined;
       return (
         id !== activeId &&
+        kind === "card" &&
         !id.startsWith(COLUMN_GAP_PREFIX) &&
         !id.startsWith("clipboard-gap:") &&
         id !== CLIPBOARD_DROP_TARGET_ID &&
@@ -189,9 +204,10 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
       );
     });
 
+    // Aus der Zwischenablage (kein Spaltenkontext): Karte = nesten hat Vorrang vor Lücke.
     if (activeSource === "clipboard") {
-      if (gapHit) return [gapHit];
       if (cardHit) return [cardHit];
+      if (gapHit) return [gapHit];
       if (clipboardGapHit) return [clipboardGapHit];
       return null;
     }
@@ -223,7 +239,7 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
       const rect = droppableRects.get(id);
       const container = droppableContainers.find((c) => String(c.id) === id);
       if (rect && container && pointInClientRect(pointerCoordinates, rect)) {
-        return [{ id, data: { droppableContainer: container, value: 0 } }];
+        return collisionFor(container);
       }
     }
   }

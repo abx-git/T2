@@ -10,6 +10,7 @@ import type {
 import {
   DndContext,
   DragOverlay,
+  MeasuringStrategy,
   PointerSensor,
   TouchSensor,
   closestCorners,
@@ -82,6 +83,7 @@ import {
 } from "@/lib/card-keyboard-nav";
 import {
   CLIPBOARD_DROP_TARGET_ID,
+  CLIPBOARD_SIDEBAR_DROP_ID,
   findNodeForestLocation,
   forestDropTargetFromOverId,
   parseClipboardGapId,
@@ -120,16 +122,53 @@ import { PostImportSaveDialog } from "./post-import-save-dialog";
 import { TaskEditorDialog } from "./task-editor-dialog";
 import { KeyboardShortcutsHelpDialog } from "./keyboard-shortcuts-help-dialog";
 
+function pointInClientRect(
+  point: { x: number; y: number },
+  rect: { left: number; top: number; width: number; height: number },
+): boolean {
+  return (
+    point.x >= rect.left &&
+    point.x <= rect.left + rect.width &&
+    point.y >= rect.top &&
+    point.y <= rect.top + rect.height
+  );
+}
+
 /** Einfügelücke vor Karte; schmale Gap-Bänder liegen bewusst zwischen den Karten. */
 const mindmapCollisionDetection: CollisionDetection = (args) => {
   const activeId = String(args.active.id);
   const activeCol = args.active.data.current?.columnIndex as number | undefined;
   const activeSource = args.active.data.current?.source as string | undefined;
+  const { pointerCoordinates, droppableContainers, droppableRects } = args;
+
+  // Spezifische Zwischenablage-Ziele (Lücken/Karten) vor der großen Sidebar-Fläche.
+  if (pointerCoordinates) {
+    for (const container of droppableContainers) {
+      const kind = container.data.current?.kind as string | undefined;
+      if (kind !== "clipboardGap" && kind !== "clipboardCard") continue;
+      const rect = droppableRects.get(container.id);
+      if (!rect || !pointInClientRect(pointerCoordinates, rect)) continue;
+      return [{ id: container.id, data: { droppableContainer: container, value: 0 } }];
+    }
+
+    if (activeSource !== "clipboard") {
+      for (const id of [CLIPBOARD_DROP_TARGET_ID, CLIPBOARD_SIDEBAR_DROP_ID]) {
+        const rect = droppableRects.get(id);
+        const container = droppableContainers.find((c) => String(c.id) === id);
+        if (rect && container && pointInClientRect(pointerCoordinates, rect)) {
+          return [{ id, data: { droppableContainer: container, value: 0 } }];
+        }
+      }
+    }
+  }
 
   const pickTarget = (hits: ReturnType<typeof pointerWithin>) => {
     if (hits.length === 0) return null;
 
-    const clipboardTargetHit = hits.find((c) => String(c.id) === CLIPBOARD_DROP_TARGET_ID);
+    const clipboardTargetHit = hits.find(
+      (c) =>
+        String(c.id) === CLIPBOARD_DROP_TARGET_ID || String(c.id) === CLIPBOARD_SIDEBAR_DROP_ID,
+    );
     if (clipboardTargetHit && activeSource !== "clipboard") {
       return [clipboardTargetHit];
     }
@@ -144,7 +183,8 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
         id !== activeId &&
         !id.startsWith(COLUMN_GAP_PREFIX) &&
         !id.startsWith("clipboard-gap:") &&
-        id !== CLIPBOARD_DROP_TARGET_ID
+        id !== CLIPBOARD_DROP_TARGET_ID &&
+        id !== CLIPBOARD_SIDEBAR_DROP_ID
       );
     });
 
@@ -175,6 +215,17 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
   const rectHits = rectIntersection(args);
   const fromRect = pickTarget(rectHits);
   if (fromRect) return fromRect;
+
+  // Kein Blind-closestCorners auf Board, wenn der Pointer über der Zwischenablage liegt.
+  if (pointerCoordinates && activeSource !== "clipboard") {
+    for (const id of [CLIPBOARD_DROP_TARGET_ID, CLIPBOARD_SIDEBAR_DROP_ID]) {
+      const rect = droppableRects.get(id);
+      const container = droppableContainers.find((c) => String(c.id) === id);
+      if (rect && container && pointInClientRect(pointerCoordinates, rect)) {
+        return [{ id, data: { droppableContainer: container, value: 0 } }];
+      }
+    }
+  }
 
   return closestCorners(args);
 };
@@ -220,6 +271,7 @@ function buildPreview(
   if (
     location === "board" &&
     (overId === CLIPBOARD_DROP_TARGET_ID ||
+      overId === CLIPBOARD_SIDEBAR_DROP_ID ||
       parseClipboardGapId(overId) ||
       findNodeById(clipboardRoots, overId))
   ) {
@@ -942,7 +994,7 @@ export function TaskBoard() {
       preview.intent === "move-to-clipboard" &&
       findNodeForestLocation(r, cr, activeId) === "board"
     ) {
-      if (!overId || overId === CLIPBOARD_DROP_TARGET_ID) {
+      if (!overId || overId === CLIPBOARD_DROP_TARGET_ID || overId === CLIPBOARD_SIDEBAR_DROP_ID) {
         drop = { type: "to-clipboard-end" };
       } else {
         const clipTarget = forestDropTargetFromOverId(overId, cr);
@@ -1281,6 +1333,11 @@ export function TaskBoard() {
         id="task-board-dnd-aria"
         sensors={sensors}
         autoScroll
+        measuring={{
+          droppable: {
+            strategy: MeasuringStrategy.Always,
+          },
+        }}
         collisionDetection={mindmapCollisionDetection}
         onDragStart={onDragStart}
         onDragOver={onDragOver}

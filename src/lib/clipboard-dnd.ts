@@ -13,6 +13,8 @@ import {
 } from "./tree-utils";
 
 export const CLIPBOARD_DROP_TARGET_ID = "clipboard-drop-target";
+/** Gesamte geöffnete Seitenleiste als Drop-Fläche (zusätzlich zum Header-Button). */
+export const CLIPBOARD_SIDEBAR_DROP_ID = "clipboard-sidebar-drop";
 export const CLIPBOARD_GAP_PREFIX = "clipboard-gap:";
 
 const CLIPBOARD_GAP_ROOT = "__root__";
@@ -200,7 +202,7 @@ export function resolveUnifiedDragDrop(
 ): UnifiedDragDrop | null {
   const location = findNodeForestLocation(boardRoots, clipboardRoots, activeId);
 
-  if (overId === CLIPBOARD_DROP_TARGET_ID) {
+  if (overId === CLIPBOARD_DROP_TARGET_ID || overId === CLIPBOARD_SIDEBAR_DROP_ID) {
     if (location === "board") return { type: "to-clipboard-end" };
     return null;
   }

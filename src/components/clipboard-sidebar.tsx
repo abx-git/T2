@@ -2,9 +2,9 @@
 
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { ChevronDown, ChevronRight, GripVertical, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
-import { clipboardGapId } from "@/lib/clipboard-dnd";
+import { CLIPBOARD_SIDEBAR_DROP_ID, clipboardGapId } from "@/lib/clipboard-dnd";
 import type { TaskNode } from "@/types/task-node";
 
 function ClipboardGap({
@@ -260,7 +260,7 @@ export function ClipboardSidebar({
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-2">
+      <ClipboardSidebarDropZone empty={roots.length === 0}>
         {roots.length === 0 ? (
           <p className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-6 text-center text-xs text-slate-500">
             Noch leer. Ziehe Karten auf „Zwischenablage“ in der Leiste oder hierher.
@@ -276,7 +276,7 @@ export function ClipboardSidebar({
             activeOverGap={activeOverGap}
           />
         )}
-      </div>
+      </ClipboardSidebarDropZone>
 
       <div className="border-t border-slate-200/80 bg-white p-3">
         <button
@@ -290,5 +290,36 @@ export function ClipboardSidebar({
         </button>
       </div>
     </aside>
+  );
+}
+
+function ClipboardSidebarDropZone({
+  children,
+  empty,
+}: {
+  children: ReactNode;
+  empty: boolean;
+}) {
+  const { setNodeRef, isOver, active } = useDroppable({
+    id: CLIPBOARD_SIDEBAR_DROP_ID,
+    data: { kind: "clipboardSidebar" as const },
+  });
+  const fromBoard = Boolean(active) && active?.data.current?.source !== "clipboard";
+
+  return (
+    <div
+      ref={setNodeRef}
+      data-clipboard-drop="sidebar"
+      className={[
+        "min-h-0 flex-1 overflow-auto p-2 transition-colors",
+        isOver && fromBoard
+          ? "bg-violet-100/80 ring-2 ring-inset ring-violet-400"
+          : empty && fromBoard
+            ? "bg-violet-50/40"
+            : "",
+      ].join(" ")}
+    >
+      {children}
+    </div>
   );
 }

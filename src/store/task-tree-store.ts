@@ -17,6 +17,14 @@ import {
 } from "@/lib/tree-utils";
 import { DEFAULT_CARD_FIELD_VISIBILITY, mergeCardFieldVisibility, type CardFieldVisibility } from "@/lib/card-field-visibility";
 import { compactColumnTitleOverrides } from "@/lib/column-titles";
+import {
+  applyMindmapInsertDrop,
+  applyForestDrop,
+  findNodeForestLocation,
+  insertIntoForest,
+  type ForestDropTarget,
+  type UnifiedDragDrop,
+} from "@/lib/clipboard-dnd";
 import { refreshCalculatedEffortsInTree } from "@/lib/task-effort";
 import { collectAllNodeIds, generateUniqueTaskId, generateUniqueTaskIdFromTaken } from "@/lib/task-id";
 import { remapTaskNodeIds } from "@/lib/task-tree-json";
@@ -38,6 +46,8 @@ import type { TaskCardEditableFields, TaskNode } from "@/types/task-node";
 
 export interface TaskTreeState {
   roots: TaskNode[];
+  /** Zwischenablage: abgelegte Teilbäume (Spezial-Ast, persistiert wie Board-Wurzeln). */
+  clipboardRoots: TaskNode[];
   /** Persistierter Pfad (DnD/Import); keine UI-Hervorhebung mehr. */
   pathIds: string[];
   /** Eingeklappte Knoten-IDs (Kinder ausgeblendet). */
@@ -95,6 +105,12 @@ export interface TaskTreeState {
    */
   applyTreeDrag: (activeId: string, overKind: TreeDragOverKind) => void;
 
+  /** Einheitlicher DnD-Handler für Board, Zwischenablage und Kreuzverschiebungen. */
+  applyUnifiedDrag: (activeId: string, drop: UnifiedDragDrop) => void;
+
+  /** Zwischenablage vollständig leeren. */
+  clearClipboard: () => void;
+
   /** Neue Karte am Ende der Geschwisterliste unter `parentId` (`null` = Wurzel). Liefert die neue ID. */
   addCardAfter: (parentId: string | null) => string;
   /** Neue Geschwisterkarte direkt unter `afterNodeId`. */
@@ -114,6 +130,7 @@ export interface TaskTreeState {
     filterTags?: string[];
     cardFieldVisibility?: CardFieldVisibility;
     effortOnTasksEnabled?: boolean;
+    clipboardRoots?: TaskNode[];
   }) => void;
   /**
    * Teilbaum unter `parentId` einfügen (`null` = neue Wurzel am Ende).
@@ -166,8 +183,44 @@ function insertCardAtIndex(
   return id;
 }
 
+function cleanupAfterSubtreeRemoved(
+  state: TaskTreeState,
+  removedIds: Set<string>,
+  nextRoots: TaskNode[],
+): Partial<TaskTreeState> {
+  const collapsedIds = state.collapsedIds.filter((id) => !removedIds.has(id));
+  const nextFocus =
+    state.focusNodeId && findNodeById(nextRoots, state.focusNodeId) ? state.focusNodeId : null;
+  return {
+    roots: nextRoots,
+    pathIds: normalizePathIds(nextRoots, state.pathIds),
+    collapsedIds,
+    focusNodeId: nextFocus,
+  };
+}
+
+function moveBoardNodeToClipboard(
+  state: TaskTreeState,
+  nodeId: string,
+  target?: ForestDropTarget,
+): Partial<TaskTreeState> | null {
+  const { next: boardNext, detached } = detachNodeById(state.roots, nodeId);
+  if (!detached) return null;
+  const removedIds = collectSubtreeNodeIds(detached);
+  const nextRoots = refreshCalculatedEffortsInTree(boardNext, state.completedTag);
+  const clipNext = refreshCalculatedEffortsInTree(
+    insertIntoForest(state.clipboardRoots, detached, target),
+    state.completedTag,
+  );
+  return {
+    ...cleanupAfterSubtreeRemoved(state, removedIds, nextRoots),
+    clipboardRoots: clipNext,
+  };
+}
+
 export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
   roots: [],
+  clipboardRoots: [],
   pathIds: [],
   collapsedIds: [],
 
@@ -223,12 +276,16 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
         renameTagInForest(s.roots, from, toLabel),
         s.completedTag,
       );
+      const clipboardRoots = refreshCalculatedEffortsInTree(
+        renameTagInForest(s.clipboardRoots, from, toLabel),
+        s.completedTag,
+      );
       const completedTag =
         tagKey(s.completedTag) === fromKey ? normalizeCompletedTag(toLabel) : s.completedTag;
       const filterTags = s.filterTags
         .map((t) => (tagKey(t) === fromKey ? toLabel : t))
         .filter((t, i, arr) => arr.findIndex((x) => tagKey(x) === tagKey(t)) === i);
-      return { roots, completedTag, filterTags };
+      return { roots, clipboardRoots, completedTag, filterTags };
     });
   },
 
@@ -360,6 +417,62 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
     set({ roots: nextRoots, pathIds: nextPath });
   },
 
+  applyUnifiedDrag: (activeId, drop) => {
+    set((s) => {
+      const location = findNodeForestLocation(s.roots, s.clipboardRoots, activeId);
+      if (!location) return {};
+
+      if (drop.type === "to-clipboard-end") {
+        return moveBoardNodeToClipboard(s, activeId) ?? {};
+      }
+
+      if (drop.type === "to-clipboard") {
+        return moveBoardNodeToClipboard(s, activeId, drop.target) ?? {};
+      }
+
+      if (drop.type === "within-clipboard") {
+        const node = findNodeById(s.clipboardRoots, activeId);
+        if (!node) return {};
+        const clipNext = refreshCalculatedEffortsInTree(
+          applyForestDrop(s.clipboardRoots, activeId, drop.target),
+          s.completedTag,
+        );
+        return { clipboardRoots: clipNext };
+      }
+
+      if (drop.type === "from-clipboard-to-board") {
+        const { next: clipNext, detached } = detachNodeById(s.clipboardRoots, activeId);
+        if (!detached) return {};
+        const boardNext = refreshCalculatedEffortsInTree(
+          applyMindmapInsertDrop(s.roots, s.pathIds, detached, drop.overKind),
+          s.completedTag,
+        );
+        const nextPath = pathIdsAfterNodeMove(boardNext, detached.id, s.pathIds);
+        const clipRefreshed = refreshCalculatedEffortsInTree(clipNext, s.completedTag);
+        return {
+          roots: boardNext,
+          pathIds: nextPath,
+          clipboardRoots: clipRefreshed,
+        };
+      }
+
+      if (drop.type === "board") {
+        const nextRoots = refreshCalculatedEffortsInTree(
+          applyMindmapDrop(s.roots, s.pathIds, activeId, drop.overKind),
+          s.completedTag,
+        );
+        const nextPath = pathIdsAfterNodeMove(nextRoots, activeId, s.pathIds);
+        return { roots: nextRoots, pathIds: nextPath };
+      }
+
+      return {};
+    });
+  },
+
+  clearClipboard: () => {
+    set({ clipboardRoots: [] });
+  },
+
   addCardAfter: (parentId) => {
     const index = getSiblingsList(get().roots, parentId).length;
     return insertCardAtIndex(set, get, parentId, index);
@@ -439,6 +552,7 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
         : {}),
       cardFieldVisibility: mergeCardFieldVisibility(incomingVisibility),
       ...(typeof incomingEffort === "boolean" ? { effortOnTasksEnabled: incomingEffort } : {}),
+      clipboardRoots: payload.clipboardRoots ?? [],
     });
   },
 

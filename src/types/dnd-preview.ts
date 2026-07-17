@@ -7,7 +7,9 @@ export type DropIntent =
   | "root-sibling"
   | "reorder-sibling"
   | "reorder-gap"
-  | "nest-under";
+  | "nest-under"
+  | "move-to-clipboard"
+  | "move-from-clipboard";
 
 /** Live-Vorschau während des Ziehens. */
 export interface BoardDropPreview {
@@ -34,6 +36,10 @@ export function dropIntentLabel(intent: DropIntent | undefined): string {
       return "Hier einordnen (Geschwister)";
     case "column-end":
       return "Ans Ende der Spalte";
+    case "move-to-clipboard":
+      return "In Zwischenablage ablegen";
+    case "move-from-clipboard":
+      return "Zurück in den Baum einhängen";
     default:
       return "Zweig verschieben …";
   }

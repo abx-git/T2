@@ -116,6 +116,11 @@
           "items": { "$ref": "#/definitions/TaskNodeJson" },
           "description": "Liste der Wurzelknoten (Hauptebene)."
         },
+        "clipboardRoots": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/TaskNodeJson" },
+          "description": "Optional: Zwischenablage — abgelegte Teilbäume (Spezial-Ast)."
+        },
         "pathIds": {
           "type": "array",
           "items": { "type": "string" },

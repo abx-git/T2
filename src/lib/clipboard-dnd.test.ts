@@ -100,4 +100,17 @@ describe("applyMindmapInsertDrop nest-under", () => {
     });
     expect(findNodeById(next, "a")?.children.map((n) => n.id)).toEqual(["x"]);
   });
+
+  it("nests under nested board card", () => {
+    const board = [node("a", "A", [node("b", "B"), node("c", "C")])];
+    const clipNode = node("x", "X");
+    const next = applyMindmapInsertDrop(board, [], clipNode, {
+      kind: "card",
+      columnIndex: 1,
+      cardId: "b",
+      listParentId: "a",
+    });
+    expect(findNodeById(next, "b")?.children.map((n) => n.id)).toEqual(["x"]);
+    expect(findNodeById(next, "a")?.children.map((n) => n.id)).toEqual(["b", "c"]);
+  });
 });

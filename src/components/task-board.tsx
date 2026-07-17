@@ -65,6 +65,7 @@ import {
 } from "@/lib/working-file";
 import {
   buildMindmapDropPreview,
+  buildMindmapInsertPreview,
   COLUMN_GAP_PREFIX,
   dragOverKindFromPreview,
   findNodeById,
@@ -288,19 +289,10 @@ function buildPreview(
   if (location === "clipboard") {
     const overKind = overToDragKind(over, pathIds);
     if (overKind) {
-      const boardPreview = buildMindmapDropPreview(roots, pathIds, activeId, overKind);
-      if (boardPreview) {
-        return { ...boardPreview, intent: "move-from-clipboard" };
+      const insertNode = findNodeById(clipboardRoots, activeId);
+      if (insertNode) {
+        return buildMindmapInsertPreview(roots, activeId, insertNode, overKind);
       }
-      return {
-        activeId,
-        targetMode: overKind.kind === "card" ? "card" : "column",
-        intent: "move-from-clipboard",
-        toCol: overKind.columnIndex,
-        insertIndex: overKind.kind === "columnGap" ? overKind.insertIndex : 0,
-        anchorCardId: overKind.kind === "card" ? overKind.cardId : null,
-        gapListParentId: overKind.kind === "columnGap" ? overKind.listParentId : undefined,
-      };
     }
     if (parseClipboardGapId(overId) || findNodeById(clipboardRoots, overId)) {
       return {
@@ -312,6 +304,7 @@ function buildPreview(
         anchorCardId: null,
       };
     }
+    return null;
   }
 
   const overKind = overToDragKind(over, pathIds);
@@ -337,13 +330,9 @@ function DragPreviewCard({
       <p
         className={[
           "mt-1 text-[11px] font-medium",
-          intent === "nest-under"
+          intent === "nest-under" || intent === "move-to-clipboard"
             ? "text-violet-700"
-            : intent === "move-to-clipboard"
-              ? "text-violet-700"
-              : intent === "move-from-clipboard"
-                ? "text-sky-700"
-                : "text-sky-700",
+            : "text-sky-700",
         ].join(" ")}
       >
         {dropIntentLabel(intent)}

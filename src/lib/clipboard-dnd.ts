@@ -6,7 +6,6 @@ import {
   findNodeById,
   gapIndexToInsertAfterDetach,
   getSiblingsList,
-  insertIndexBelowCardAmongSiblings,
   insertUnderParent,
   subtreeContainsId,
   type TreeDragOverKind,
@@ -175,12 +174,6 @@ export function applyMindmapInsertDrop(
 
   if (pt !== listParent) return roots;
   if (!findNodeById(roots, targetId)) return roots;
-
-  const sibsBefore = getSiblingsList(roots, listParent);
-  const insertIndex = insertIndexBelowCardAmongSiblings(sibsBefore, clone.id, targetId);
-  if (insertIndex < sibsBefore.length) {
-    return insertUnderParent(roots, listParent, insertIndex, clone);
-  }
 
   const childCount = getSiblingsList(roots, targetId).length;
   return insertUnderParent(roots, targetId, childCount, clone);

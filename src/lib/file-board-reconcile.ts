@@ -33,6 +33,7 @@ export interface BoardImportPayload {
   filterTags?: string[];
   completedTag?: string;
   effortOnTasksEnabled?: boolean;
+  clipboardRoots?: import("@/types/task-node").TaskNode[];
 }
 
 function payloadFromExportText(text: string): BoardImportPayload | null {
@@ -94,6 +95,7 @@ export function boardJsonFromStoreState(): string {
       s.filterTags,
       s.completedTag,
       s.collapsedIds,
+      s.clipboardRoots,
     ),
   );
 }
@@ -136,5 +138,6 @@ export function boardPersistKeyFromStoreState(): string {
     effortOnTasksEnabled: s.effortOnTasksEnabled,
     filterTags: s.filterTags,
     completedTag: s.completedTag,
+    clipboardRoots: s.clipboardRoots,
   });
 }

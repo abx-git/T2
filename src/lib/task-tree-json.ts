@@ -69,6 +69,8 @@ export interface BoardSnapshotV1 {
   completedTag?: string;
   /** Aufwand (Stunden) an Karten erlauben; optional, Standard true. */
   effortOnTasksEnabled?: boolean;
+  /** Zwischenablage: abgelegte Teilbäume (Spezial-Ast). */
+  clipboardRoots?: TaskNodeJson[];
 }
 
 export interface SubtreeSnapshotV1 {
@@ -300,6 +302,13 @@ export function parseExportedDocument(text: string): ExportedDocumentV1 {
           ? { completedTag: normalizeCompletedTag(root.completedTag) }
           : {}),
         ...(effortOn !== undefined ? { effortOnTasksEnabled: effortOn } : {}),
+        ...(Array.isArray(root.clipboardRoots)
+          ? {
+              clipboardRoots: (root.clipboardRoots as unknown[]).map((r, i) =>
+                expectTaskNodeJson(r, `clipboardRoots[${i}]`),
+              ),
+            }
+          : {}),
       };
     }
 
@@ -365,6 +374,7 @@ export function buildBoardSnapshot(
   filterTags: string[] = [],
   completedTag: string = DEFAULT_COMPLETED_TAG,
   collapsedIds: string[] = [],
+  clipboardRoots: TaskNode[] = [],
 ): BoardSnapshotV1 {
   const co: Record<string, string> = {};
   for (const [k, v] of Object.entries(columnTitleOverrides)) {
@@ -387,6 +397,7 @@ export function buildBoardSnapshot(
       ? { completedTag: normalizeCompletedTag(completedTag) }
       : {}),
     ...(effortOnTasksEnabled ? {} : { effortOnTasksEnabled: false }),
+    ...(clipboardRoots.length ? { clipboardRoots: clipboardRoots.map(taskNodeToJson) } : {}),
   };
 }
 
@@ -443,6 +454,7 @@ export type BoardImportPayload = {
   filterTags?: string[];
   completedTag?: string;
   effortOnTasksEnabled?: boolean;
+  clipboardRoots?: TaskNode[];
 };
 
 export function boardSnapshotToReplacePayload(snap: BoardSnapshotV1): BoardImportPayload {
@@ -456,6 +468,9 @@ export function boardSnapshotToReplacePayload(snap: BoardSnapshotV1): BoardImpor
     ...(snap.filterTags?.length ? { filterTags: [...snap.filterTags] } : {}),
     ...(snap.completedTag ? { completedTag: normalizeCompletedTag(snap.completedTag) } : {}),
     ...(snap.effortOnTasksEnabled === false ? { effortOnTasksEnabled: false } : {}),
+    ...(snap.clipboardRoots?.length
+      ? { clipboardRoots: snap.clipboardRoots.map(taskNodeFromJson) }
+      : {}),
   };
 }
 
@@ -478,6 +493,7 @@ export function stableBoardStateKey(payload: BoardImportPayload): string {
     effortOnTasksEnabled: payload.effortOnTasksEnabled !== false,
     filterTags: tags,
     completedTag: normalizeCompletedTag(payload.completedTag ?? DEFAULT_COMPLETED_TAG),
+    clipboardRoots: (payload.clipboardRoots ?? []).map(taskNodeToJson),
   });
 }
 

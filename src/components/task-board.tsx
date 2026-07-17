@@ -80,6 +80,12 @@ import {
   navigateBoardCard,
   shouldIgnoreCardKeyboard,
 } from "@/lib/card-keyboard-nav";
+import {
+  CLIPBOARD_DROP_TARGET_ID,
+  findNodeForestLocation,
+  parseClipboardGapId,
+  resolveUnifiedDragDrop,
+} from "@/lib/clipboard-dnd";
 import { saveClipboardLinkToCard } from "@/lib/paste-card-link-from-clipboard";
 import {
   dataStorageButtonClassName,
@@ -92,6 +98,8 @@ import { dropIntentLabel, type BoardDropPreview } from "@/types/dnd-preview";
 import type { TaskNode } from "@/types/task-node";
 
 import { TagFilterBar } from "./tag-filter-bar";
+import { ClipboardDropTarget } from "./clipboard-drop-target";
+import { ClipboardSidebar } from "./clipboard-sidebar";
 import { TaskSearch } from "./task-search";
 import { MindmapGrid } from "./mindmap-grid";
 import { CardFieldVisibilityDialog } from "./card-field-visibility-dialog";
@@ -115,14 +123,36 @@ import { KeyboardShortcutsHelpDialog } from "./keyboard-shortcuts-help-dialog";
 const mindmapCollisionDetection: CollisionDetection = (args) => {
   const activeId = String(args.active.id);
   const activeCol = args.active.data.current?.columnIndex as number | undefined;
+  const activeSource = args.active.data.current?.source as string | undefined;
 
   const pickTarget = (hits: ReturnType<typeof pointerWithin>) => {
     if (hits.length === 0) return null;
+
+    const clipboardTargetHit = hits.find((c) => String(c.id) === CLIPBOARD_DROP_TARGET_ID);
+    if (clipboardTargetHit && activeSource !== "clipboard") {
+      return [clipboardTargetHit];
+    }
+
+    const clipboardGapHit = hits.find((c) => String(c.id).startsWith("clipboard-gap:"));
+    if (clipboardGapHit) return [clipboardGapHit];
+
     const gapHit = hits.find((c) => String(c.id).startsWith(COLUMN_GAP_PREFIX));
     const cardHit = hits.find((c) => {
       const id = String(c.id);
-      return id !== activeId && !id.startsWith(COLUMN_GAP_PREFIX);
+      return (
+        id !== activeId &&
+        !id.startsWith(COLUMN_GAP_PREFIX) &&
+        !id.startsWith("clipboard-gap:") &&
+        id !== CLIPBOARD_DROP_TARGET_ID
+      );
     });
+
+    if (activeSource === "clipboard") {
+      if (gapHit) return [gapHit];
+      if (cardHit) return [cardHit];
+      if (clipboardGapHit) return [clipboardGapHit];
+      return null;
+    }
 
     if (cardHit && activeCol != null) {
       const cardCol = cardHit.data?.droppableContainer?.data?.current?.columnIndex as
@@ -179,9 +209,58 @@ function overToDragKind(over: Over, pathIds: string[]): TreeDragOverKind | null 
 function buildPreview(
   roots: ReturnType<typeof useTaskTreeStore.getState>["roots"],
   pathIds: ReturnType<typeof useTaskTreeStore.getState>["pathIds"],
+  clipboardRoots: ReturnType<typeof useTaskTreeStore.getState>["clipboardRoots"],
   activeId: string,
   over: Over,
 ): BoardDropPreview | null {
+  const overId = String(over.id);
+  const location = findNodeForestLocation(roots, clipboardRoots, activeId);
+
+  if (
+    location === "board" &&
+    (overId === CLIPBOARD_DROP_TARGET_ID ||
+      parseClipboardGapId(overId) ||
+      findNodeById(clipboardRoots, overId))
+  ) {
+    return {
+      activeId,
+      targetMode: "column",
+      intent: "move-to-clipboard",
+      toCol: 0,
+      insertIndex: 0,
+      anchorCardId: null,
+    };
+  }
+
+  if (location === "clipboard") {
+    const overKind = overToDragKind(over, pathIds);
+    if (overKind) {
+      const boardPreview = buildMindmapDropPreview(roots, pathIds, activeId, overKind);
+      if (boardPreview) {
+        return { ...boardPreview, intent: "move-from-clipboard" };
+      }
+      return {
+        activeId,
+        targetMode: overKind.kind === "card" ? "card" : "column",
+        intent: "move-from-clipboard",
+        toCol: overKind.columnIndex,
+        insertIndex: overKind.kind === "columnGap" ? overKind.insertIndex : 0,
+        anchorCardId: overKind.kind === "card" ? overKind.cardId : null,
+        gapListParentId: overKind.kind === "columnGap" ? overKind.listParentId : undefined,
+      };
+    }
+    if (parseClipboardGapId(overId) || findNodeById(clipboardRoots, overId)) {
+      return {
+        activeId,
+        targetMode: "column",
+        intent: "move-to-clipboard",
+        toCol: 0,
+        insertIndex: 0,
+        anchorCardId: null,
+      };
+    }
+  }
+
   const overKind = overToDragKind(over, pathIds);
   if (!overKind) return null;
   return buildMindmapDropPreview(roots, pathIds, activeId, overKind);
@@ -195,7 +274,8 @@ function DragPreviewCard({
   dropPreview: BoardDropPreview | null;
 }) {
   const roots = useTaskTreeStore((s) => s.roots);
-  const node = findNodeById(roots, id);
+  const clipboardRoots = useTaskTreeStore((s) => s.clipboardRoots);
+  const node = findNodeById(roots, id) ?? findNodeById(clipboardRoots, id);
   if (!node) return null;
   const intent = dropPreview?.activeId === id ? dropPreview.intent : undefined;
   return (
@@ -204,7 +284,13 @@ function DragPreviewCard({
       <p
         className={[
           "mt-1 text-[11px] font-medium",
-          intent === "nest-under" ? "text-violet-700" : "text-sky-700",
+          intent === "nest-under"
+            ? "text-violet-700"
+            : intent === "move-to-clipboard"
+              ? "text-violet-700"
+              : intent === "move-from-clipboard"
+                ? "text-sky-700"
+                : "text-sky-700",
         ].join(" ")}
       >
         {dropIntentLabel(intent)}
@@ -221,7 +307,9 @@ export function TaskBoard() {
   const applyBoardDepthInView = useTaskTreeStore((s) => s.applyBoardDepthInView);
   const activateNode = useTaskTreeStore((s) => s.activateNode);
   const expandToNode = useTaskTreeStore((s) => s.expandToNode);
-  const applyTreeDrag = useTaskTreeStore((s) => s.applyTreeDrag);
+  const applyUnifiedDrag = useTaskTreeStore((s) => s.applyUnifiedDrag);
+  const clearClipboard = useTaskTreeStore((s) => s.clearClipboard);
+  const clipboardRoots = useTaskTreeStore((s) => s.clipboardRoots);
   const addCardAfter = useTaskTreeStore((s) => s.addCardAfter);
   const addCardAfterSibling = useTaskTreeStore((s) => s.addCardAfterSibling);
   const updateCard = useTaskTreeStore((s) => s.updateCard);
@@ -280,6 +368,12 @@ export function TaskBoard() {
   const [postImportSaveOpen, setPostImportSaveOpen] = useState(false);
   const [openWorkingFileConfirmOpen, setOpenWorkingFileConfirmOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [clipboardOpen, setClipboardOpen] = useState(false);
+  const [clearClipboardConfirmOpen, setClearClipboardConfirmOpen] = useState(false);
+  const [clipboardOverGap, setClipboardOverGap] = useState<{
+    listParentId: string | null;
+    insertIndex: number;
+  } | null>(null);
   const boardColumnsRef = useRef<HTMLDivElement>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
   const workingFilePickRef = useRef<HTMLInputElement>(null);
@@ -676,6 +770,7 @@ export function TaskBoard() {
       filterTags,
       completedTag,
       collapsedIds,
+      clipboardRoots,
     );
     downloadJsonFile(STANDARD_WORKING_FILENAME, stringifyExportedDocument(doc));
   };
@@ -748,6 +843,7 @@ export function TaskBoard() {
             s.filterTags,
             s.completedTag,
             s.collapsedIds,
+            s.clipboardRoots,
           ),
         );
         setPasteImportOpen(false);
@@ -799,20 +895,24 @@ export function TaskBoard() {
     if (!over) {
       dropPreviewRef.current = null;
       setDropPreview(null);
+      setClipboardOverGap(null);
       return;
     }
     const activeId = String(active.id);
-    const { roots: r, pathIds: p } = useTaskTreeStore.getState();
-    const preview = buildPreview(r, p, activeId, over);
+    const { roots: r, pathIds: p, clipboardRoots: cr } = useTaskTreeStore.getState();
+    const preview = buildPreview(r, p, cr, activeId, over);
     const next = preview && preview.activeId === activeId ? preview : null;
     dropPreviewRef.current = next;
     setDropPreview(next);
+    const gap = parseClipboardGapId(String(over.id));
+    setClipboardOverGap(gap);
   };
 
   const endDragUi = () => {
     dropPreviewRef.current = null;
     setDropPreview(null);
     setActiveDragId(null);
+    setClipboardOverGap(null);
   };
 
   const onDragCancel = () => {
@@ -822,20 +922,26 @@ export function TaskBoard() {
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     const activeId = String(active.id);
-    const { roots: r, pathIds: p } = useTaskTreeStore.getState();
+    const { roots: r, pathIds: p, clipboardRoots: cr } = useTaskTreeStore.getState();
     const preview = dropPreviewRef.current;
 
-    let overKind: TreeDragOverKind | null = null;
-    if (preview?.activeId === activeId) {
-      overKind = dragOverKindFromPreview(r, preview, p);
+    let boardOverKind: TreeDragOverKind | null = null;
+    if (preview?.activeId === activeId && preview.intent !== "move-to-clipboard") {
+      boardOverKind = dragOverKindFromPreview(r, preview, p);
     } else if (over) {
-      overKind = overToDragKind(over, p);
+      boardOverKind = overToDragKind(over, p);
     }
 
-    endDragUi();
-    if (!overKind) return;
+    const overId = over ? String(over.id) : "";
+    const drop = over ? resolveUnifiedDragDrop(activeId, r, cr, overId, boardOverKind) : null;
 
-    applyTreeDrag(activeId, overKind);
+    endDragUi();
+    if (!drop) return;
+
+    applyUnifiedDrag(activeId, drop);
+    if (drop.type === "to-clipboard-end" || drop.type === "to-clipboard") {
+      setClipboardOpen(true);
+    }
   };
 
   const collapsedSet = useMemo(() => new Set(collapsedIds), [collapsedIds]);
@@ -884,7 +990,8 @@ export function TaskBoard() {
     dataStoragePanelOpen ||
     postImportSaveOpen ||
     openWorkingFileConfirmOpen ||
-    helpOpen;
+    helpOpen ||
+    clearClipboardConfirmOpen;
 
   useEffect(() => {
     if (cardKeyboardBlocked) return;
@@ -995,6 +1102,7 @@ export function TaskBoard() {
           filterTags,
           completedTag,
           collapsedIds,
+          clipboardRoots,
         ),
       )
     : "";
@@ -1061,6 +1169,13 @@ export function TaskBoard() {
                 maxLevel={boardMaxVisibleLevels}
                 onApplyLevel={(level) => applyBoardDepthInView(level)}
                 onExpandAll={() => applyBoardDepthInView(null)}
+              />
+            ) : null}
+            {!focusNodeId ? (
+              <ClipboardDropTarget
+                count={clipboardRoots.length}
+                open={clipboardOpen}
+                onToggle={() => setClipboardOpen((v) => !v)}
               />
             ) : null}
           </div>
@@ -1152,7 +1267,8 @@ export function TaskBoard() {
         onDragEnd={onDragEnd}
         onDragCancel={onDragCancel}
       >
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <div
             ref={boardColumnsRef}
             className={[
@@ -1195,6 +1311,16 @@ export function TaskBoard() {
               onRequestDelete={handleRequestDelete}
             />
           </div>
+        </div>
+
+        <ClipboardSidebar
+          open={clipboardOpen && !focusNodeId}
+          roots={clipboardRoots}
+          activeDragId={activeDragId}
+          activeOverGap={clipboardOverGap}
+          onRequestClear={() => setClearClipboardConfirmOpen(true)}
+          onClose={() => setClipboardOpen(false)}
+        />
         </div>
 
         <DragOverlay zIndex={40}>
@@ -1268,6 +1394,22 @@ export function TaskBoard() {
           if (!root) return;
           importSubtreeRoot(parentId, root);
           setPendingSubtreeImport(null);
+        }}
+      />
+      <ConfirmDialog
+        open={clearClipboardConfirmOpen}
+        title="Zwischenablage leeren?"
+        message={
+          clipboardRoots.length > 0
+            ? `Alle ${clipboardRoots.length} Stammkarte${clipboardRoots.length === 1 ? "" : "n"} in der Zwischenablage werden unwiderruflich gelöscht — inklusive aller Unterkarten.\n\nKarten im Baum bleiben unverändert.`
+            : ""
+        }
+        confirmLabel="Leeren"
+        cancelLabel="Abbrechen"
+        onCancel={() => setClearClipboardConfirmOpen(false)}
+        onConfirm={() => {
+          clearClipboard();
+          setClearClipboardConfirmOpen(false);
         }}
       />
       <ConfirmDialog

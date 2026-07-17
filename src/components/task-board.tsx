@@ -65,6 +65,7 @@ import {
 } from "@/lib/working-file";
 import {
   buildMindmapDropPreview,
+  buildMindmapInsertPreview,
   COLUMN_GAP_PREFIX,
   dragOverKindFromPreview,
   findNodeById,
@@ -141,6 +142,10 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
   const activeSource = args.active.data.current?.source as string | undefined;
   const { pointerCoordinates, droppableContainers, droppableRects } = args;
 
+  const collisionFor = (container: (typeof droppableContainers)[number]) => [
+    { id: container.id, data: { droppableContainer: container, value: 0 } },
+  ];
+
   // Spezifische Zwischenablage-Ziele (Lücken/Karten) vor der großen Sidebar-Fläche.
   if (pointerCoordinates) {
     for (const container of droppableContainers) {
@@ -148,7 +153,7 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
       if (kind !== "clipboardGap" && kind !== "clipboardCard") continue;
       const rect = droppableRects.get(container.id);
       if (!rect || !pointInClientRect(pointerCoordinates, rect)) continue;
-      return [{ id: container.id, data: { droppableContainer: container, value: 0 } }];
+      return collisionFor(container);
     }
 
     if (activeSource !== "clipboard") {
@@ -156,9 +161,18 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
         const rect = droppableRects.get(id);
         const container = droppableContainers.find((c) => String(c.id) === id);
         if (rect && container && pointInClientRect(pointerCoordinates, rect)) {
-          return [{ id, data: { droppableContainer: container, value: 0 } }];
+          return collisionFor(container);
         }
       }
+    }
+
+    // Pointer auf Board-Karte → Nest-Target (auch aus Zwischenablage; Gaps dürfen nicht „gewinnen“).
+    for (const container of droppableContainers) {
+      if (container.data.current?.kind !== "card") continue;
+      if (String(container.id) === activeId) continue;
+      const rect = droppableRects.get(container.id);
+      if (!rect || !pointInClientRect(pointerCoordinates, rect)) continue;
+      return collisionFor(container);
     }
   }
 
@@ -179,8 +193,10 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
     const gapHit = hits.find((c) => String(c.id).startsWith(COLUMN_GAP_PREFIX));
     const cardHit = hits.find((c) => {
       const id = String(c.id);
+      const kind = c.data?.droppableContainer?.data?.current?.kind as string | undefined;
       return (
         id !== activeId &&
+        kind === "card" &&
         !id.startsWith(COLUMN_GAP_PREFIX) &&
         !id.startsWith("clipboard-gap:") &&
         id !== CLIPBOARD_DROP_TARGET_ID &&
@@ -188,9 +204,10 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
       );
     });
 
+    // Aus der Zwischenablage (kein Spaltenkontext): Karte = nesten hat Vorrang vor Lücke.
     if (activeSource === "clipboard") {
-      if (gapHit) return [gapHit];
       if (cardHit) return [cardHit];
+      if (gapHit) return [gapHit];
       if (clipboardGapHit) return [clipboardGapHit];
       return null;
     }
@@ -222,7 +239,7 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
       const rect = droppableRects.get(id);
       const container = droppableContainers.find((c) => String(c.id) === id);
       if (rect && container && pointInClientRect(pointerCoordinates, rect)) {
-        return [{ id, data: { droppableContainer: container, value: 0 } }];
+        return collisionFor(container);
       }
     }
   }
@@ -288,19 +305,10 @@ function buildPreview(
   if (location === "clipboard") {
     const overKind = overToDragKind(over, pathIds);
     if (overKind) {
-      const boardPreview = buildMindmapDropPreview(roots, pathIds, activeId, overKind);
-      if (boardPreview) {
-        return { ...boardPreview, intent: "move-from-clipboard" };
+      const insertNode = findNodeById(clipboardRoots, activeId);
+      if (insertNode) {
+        return buildMindmapInsertPreview(roots, activeId, insertNode, overKind);
       }
-      return {
-        activeId,
-        targetMode: overKind.kind === "card" ? "card" : "column",
-        intent: "move-from-clipboard",
-        toCol: overKind.columnIndex,
-        insertIndex: overKind.kind === "columnGap" ? overKind.insertIndex : 0,
-        anchorCardId: overKind.kind === "card" ? overKind.cardId : null,
-        gapListParentId: overKind.kind === "columnGap" ? overKind.listParentId : undefined,
-      };
     }
     if (parseClipboardGapId(overId) || findNodeById(clipboardRoots, overId)) {
       return {
@@ -312,6 +320,7 @@ function buildPreview(
         anchorCardId: null,
       };
     }
+    return null;
   }
 
   const overKind = overToDragKind(over, pathIds);
@@ -337,13 +346,9 @@ function DragPreviewCard({
       <p
         className={[
           "mt-1 text-[11px] font-medium",
-          intent === "nest-under"
+          intent === "nest-under" || intent === "move-to-clipboard"
             ? "text-violet-700"
-            : intent === "move-to-clipboard"
-              ? "text-violet-700"
-              : intent === "move-from-clipboard"
-                ? "text-sky-700"
-                : "text-sky-700",
+            : "text-sky-700",
         ].join(" ")}
       >
         {dropIntentLabel(intent)}

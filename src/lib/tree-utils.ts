@@ -547,6 +547,46 @@ export function buildMindmapDropPreview(
 }
 
 /**
+ * Drop-Vorschau für Knoten, die noch nicht im Board-Baum liegen (z. B. Zwischenablage).
+ * Gleiche visuelle Semantik wie Board-DnD: Lücken = einordnen, Karte = nesten.
+ */
+export function buildMindmapInsertPreview(
+  roots: TaskNode[],
+  activeId: string,
+  insertNode: TaskNode,
+  overKind: TreeDragOverKind,
+): BoardDropPreview | null {
+  if (overKind.kind === "columnGap") {
+    const { columnIndex: c, insertIndex: gapIdx, listParentId: lp } = overKind;
+    if (!gapListParentValid(roots, c, lp, insertNode)) return null;
+    const sibs = getSiblingsList(roots, lp);
+    if (gapIdx < 0 || gapIdx > sibs.length) return null;
+    const intent: DropIntent = c === 0 && gapIdx === sibs.length ? "column-end" : "reorder-gap";
+    return mapIntentToPreview(activeId, intent, c, gapIdx, null, lp);
+  }
+
+  const targetId = overKind.cardId;
+  const targetCol = overKind.columnIndex;
+  if (targetId === activeId) return null;
+  if (subtreeContainsId(insertNode, targetId)) return null;
+
+  const pt = findDirectParentId(roots, targetId);
+  if (pt === undefined) return null;
+
+  const listParent = overKind.listParentId;
+
+  if (targetCol === 0) {
+    if (pt !== null || listParent !== null) return null;
+    if (!findNodeById(roots, targetId)) return null;
+    return mapIntentToPreview(activeId, "nest-under", 0, 0, targetId, undefined);
+  }
+
+  if (pt !== listParent) return null;
+  if (!findNodeById(roots, targetId)) return null;
+  return mapIntentToPreview(activeId, "nest-under", targetCol, 0, targetId, undefined);
+}
+
+/**
  * Mindmap-DnD (Spalten):
  * - Lücke in einer Spalte (`columnGap`): Geschwisterliste umsortieren / an Position einfügen.
  * - Karte in derselben Spalte wie Quelle: unter die Zielkarte nesten (Kind).

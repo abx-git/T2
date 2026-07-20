@@ -60,6 +60,14 @@ describe("task-tree-json", () => {
     expect(back.children[0].tags).toEqual(["In Arbeit"]);
   });
 
+  it("roundtrips optional cardColor", () => {
+    const n: TaskNode = { ...sampleNode("c"), cardColor: "emerald" };
+    const back = taskNodeFromJson(taskNodeToJson(n));
+    expect(back.cardColor).toBe("emerald");
+    const plain = taskNodeFromJson(taskNodeToJson(sampleNode("d")));
+    expect(plain.cardColor).toBeUndefined();
+  });
+
   it("boardExportTextsEquivalent ignores exportedAt", () => {
     const roots: TaskNode[] = [sampleNode("r1")];
     const snap = buildBoardSnapshot(roots, [], {}, mergeCardFieldVisibility({}), false, true);

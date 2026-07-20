@@ -35,6 +35,7 @@ import {
   isDueOverdue,
 } from "@/lib/aggregates";
 import type { CardFieldVisibility } from "@/lib/card-field-visibility";
+import { cardColorClass } from "@/lib/card-color";
 import { taskLinkHref } from "@/lib/task-link";
 import { criticalPathTotals, formatCriticalPathHint } from "@/lib/critical-path";
 import {
@@ -58,6 +59,8 @@ import { useTaskTreeStore } from "@/store/task-tree-store";
 import type { TaskNode } from "@/types/task-node";
 
 const CARD_CLICK_DELAY_MS = 280;
+
+type CardMenuAnchor = { top: number; left: number; fromCursor: boolean };
 
 function isInteractiveCardTarget(target: EventTarget | null): boolean {
   if (!target) return false;
@@ -182,7 +185,7 @@ export function TaskCard({
   const [titleDraft, setTitleDraft] = useState(node.title);
   const [coarsePointer, setCoarsePointer] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [menuAnchor, setMenuAnchor] = useState<{ top: number; right: number } | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<CardMenuAnchor | null>(null);
 
   useEffect(() => {
     setCoarsePointer(isCoarsePointerDevice());
@@ -210,15 +213,12 @@ export function TaskCard({
   }, []);
 
   useLayoutEffect(() => {
-    if (!menuOpen) {
-      setMenuAnchor(null);
-      return;
-    }
+    if (!menuOpen || !menuAnchor || menuAnchor.fromCursor) return;
     const updateAnchor = () => {
       const anchor = menuRef.current;
       if (!anchor) return;
       const rect = anchor.getBoundingClientRect();
-      setMenuAnchor({ top: rect.bottom + 4, right: rect.right });
+      setMenuAnchor({ top: rect.bottom + 4, left: rect.right, fromCursor: false });
     };
     updateAnchor();
     window.addEventListener("scroll", updateAnchor, true);
@@ -227,7 +227,7 @@ export function TaskCard({
       window.removeEventListener("scroll", updateAnchor, true);
       window.removeEventListener("resize", updateAnchor);
     };
-  }, [menuOpen]);
+  }, [menuOpen, menuAnchor?.fromCursor]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -236,9 +236,14 @@ export function TaskCard({
       if (!(target instanceof Node)) return;
       if (menuRef.current?.contains(target) || menuPanelRef.current?.contains(target)) return;
       setMenuOpen(false);
+      setMenuAnchor(null);
     };
     document.addEventListener("pointerdown", onDocPointerDown);
     return () => document.removeEventListener("pointerdown", onDocPointerDown);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!menuOpen) setMenuAnchor(null);
   }, [menuOpen]);
 
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
@@ -390,6 +395,29 @@ export function TaskCard({
     onOpenDetails();
   };
 
+  const openCardMenu = (anchor: CardMenuAnchor) => {
+    setMenuAnchor(anchor);
+    setMenuOpen(true);
+  };
+
+  const openCardMenuFromButton = () => {
+    const el = menuRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    openCardMenu({ top: rect.bottom + 4, left: rect.right, fromCursor: false });
+  };
+
+  const handleCardContextMenu = (e: MouseEvent<HTMLElement>) => {
+    if (coarsePointer || isTitleEditing || isDragging) return;
+    if (isInteractiveCardTarget(e.target)) return;
+    e.preventDefault();
+    openCardMenu({ top: e.clientY, left: e.clientX, fromCursor: true });
+  };
+
+  const userCardColorClass = cardColorClass(node.cardColor);
+  const defaultCardSurfaceClass =
+    userCardColorClass ?? "border-slate-200/80 bg-white";
+
   const cardActionMenu =
     menuOpen && menuAnchor ? (
       <div
@@ -397,8 +425,8 @@ export function TaskCard({
         role="menu"
         style={{
           top: menuAnchor.top,
-          left: menuAnchor.right,
-          transform: "translateX(-100%)",
+          left: menuAnchor.left,
+          ...(menuAnchor.fromCursor ? {} : { transform: "translateX(-100%)" }),
         }}
         className={cardMenuPanelClass}
       >
@@ -536,12 +564,17 @@ export function TaskCard({
       onClick={handleCardClick}
       onPointerDown={handleCardPointerDown}
       onDoubleClick={handleCardDoubleClick}
+      onContextMenu={handleCardContextMenu}
       title={
         isTitleEditing
           ? undefined
           : hasChildren
-            ? "Klick: Zweig zu-/aufklappen (nur nächste Ebene) · Doppelklick: Details · Griff (⋮⋮): Verschieben"
-            : "Doppelklick: Details · Griff (⋮⋮): Verschieben"
+            ? coarsePointer
+              ? "Klick: Zweig zu-/aufklappen (nur nächste Ebene) · Doppelklick: Details · Griff (⋮⋮): Verschieben"
+              : "Klick: Zweig zu-/aufklappen · Doppelklick: Details · Rechtsklick: Aktionen · Griff (⋮⋮): Verschieben"
+            : coarsePointer
+              ? "Doppelklick: Details · Griff (⋮⋮): Verschieben"
+              : "Doppelklick: Details · Rechtsklick: Aktionen · Griff (⋮⋮): Verschieben"
       }
       className={[
         "group relative rounded-md border shadow-sm transition px-1.5 py-1",
@@ -555,7 +588,7 @@ export function TaskCard({
               : "border-red-200/80 bg-red-50/40 ring-1 ring-red-100/50"
             : isMilestoneCard
               ? "border-amber-300/80 bg-amber-50/50 ring-1 ring-amber-200/60"
-              : "border-slate-200/80 bg-white",
+              : defaultCardSurfaceClass,
         isDragging ? "border-dashed border-sky-300/90 bg-sky-50/40 opacity-35 shadow-none" : "opacity-100",
         isSearchFocus ? "z-10 border-amber-400 bg-amber-50/90 ring-2 ring-amber-300/90" : "",
         isKeyboardFocus && !isSearchFocus
@@ -730,22 +763,20 @@ export function TaskCard({
             )}
           </div>
 
-          <div
-            ref={menuRef}
-            className={[
-              "relative shrink-0 transition-opacity",
-              menuOpen || coarsePointer
-                ? "opacity-100"
-                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
-            ].join(" ")}
-          >
+          {coarsePointer ? (
+            <div ref={menuRef} className="relative shrink-0 opacity-100 transition-opacity">
               <button
                 type="button"
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  setMenuOpen((o) => !o);
+                  if (menuOpen) {
+                    setMenuOpen(false);
+                    setMenuAnchor(null);
+                  } else {
+                    openCardMenuFromButton();
+                  }
                 }}
                 className={iconBtnClass}
                 title="Weitere Aktionen"
@@ -755,7 +786,8 @@ export function TaskCard({
               >
                 <MoreHorizontal className="h-3.5 w-3.5" />
               </button>
-          </div>
+            </div>
+          ) : null}
           {typeof document !== "undefined" && cardActionMenu
             ? createPortal(cardActionMenu, document.body)
             : null}

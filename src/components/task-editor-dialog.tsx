@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 import { createPortal } from "react-dom";
 
 import { mergeCardFieldVisibility } from "@/lib/card-field-visibility";
+import { CARD_COLOR_OPTIONS, type CardColorId } from "@/lib/card-color";
 import { fromInputDateTimeLocal, toInputDateTimeLocal } from "@/lib/task-datetime";
 import {
   calculateEffortFieldsFromChildren,
@@ -68,6 +69,7 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
   const [effortSource, setEffortSource] = useState<EffortSource>("manual");
   const [dueDate, setDueDate] = useState("");
   const [reminderDate, setReminderDate] = useState("");
+  const [cardColor, setCardColor] = useState<CardColorId | undefined>(undefined);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -82,6 +84,7 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
     setEffortSource(getEffortSource(node));
     setDueDate(toInputDateTimeLocal(node.dueDate));
     setReminderDate(toInputDateTimeLocal(node.reminderDate));
+    setCardColor(node.cardColor);
   }, [open, node]);
 
   useEffect(() => {
@@ -188,6 +191,7 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
         effortSource: nextSource,
         dueDate: fromInputDateTimeLocal(dueDate),
         reminderDate: fromInputDateTimeLocal(reminderDate),
+        cardColor,
       },
       meta,
     );
@@ -346,6 +350,44 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
               ) : null}
             </div>
           ) : null}
+          <div>
+            <span className="block text-xs font-medium text-slate-600">Kartenfarbe</span>
+            <p className="mt-0.5 text-[10px] text-slate-500">
+              Überfällig und Meilenstein behalten ihre Statusfarbe.
+            </p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setCardColor(undefined)}
+                className={[
+                  "flex h-7 w-7 items-center justify-center rounded-full border-2 bg-white text-[9px] font-medium text-slate-400 ring-1 ring-slate-200 transition",
+                  !cardColor ? "border-sky-500 ring-sky-300" : "border-transparent hover:border-slate-300",
+                ].join(" ")}
+                title="Keine Farbe"
+                aria-label="Keine Farbe"
+                aria-pressed={!cardColor}
+              >
+                —
+              </button>
+              {CARD_COLOR_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setCardColor(opt.id)}
+                  className={[
+                    "h-7 w-7 rounded-full ring-1 transition",
+                    opt.swatchClass,
+                    cardColor === opt.id
+                      ? "border-2 border-sky-500 ring-2 ring-sky-300/80"
+                      : "border border-transparent hover:ring-slate-300",
+                  ].join(" ")}
+                  title={opt.label}
+                  aria-label={opt.label}
+                  aria-pressed={cardColor === opt.id}
+                />
+              ))}
+            </div>
+          </div>
           {showEffortField ? (
             <div>
               <div className="flex items-center justify-between gap-2">

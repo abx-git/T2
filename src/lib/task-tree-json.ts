@@ -1,4 +1,5 @@
 import { mergeCardFieldVisibility, parseCardFieldVisibilityFromJson, type CardFieldVisibility } from "@/lib/card-field-visibility";
+import { parseCardColor, type CardColorId } from "@/lib/card-color";
 import {
   DEFAULT_EFFORT_UNIT,
   getEffortSource,
@@ -43,6 +44,8 @@ export interface TaskNodeJson {
   effort: number;
   effortUnit?: "hours" | "minutes" | "workdays";
   effortSource?: "manual" | "calculated";
+  /** Optionale Kartenfarbe (Palette). */
+  cardColor?: CardColorId;
   children: TaskNodeJson[];
 }
 
@@ -97,6 +100,7 @@ export function taskNodeToJson(node: TaskNode): TaskNodeJson {
     effort: node.effort,
     ...(getEffortUnit(node) !== DEFAULT_EFFORT_UNIT ? { effortUnit: getEffortUnit(node) } : {}),
     ...(getEffortSource(node) === "calculated" ? { effortSource: "calculated" } : {}),
+    ...(node.cardColor ? { cardColor: node.cardColor } : {}),
     children: node.children.map(taskNodeToJson),
   };
 }
@@ -117,6 +121,7 @@ export function taskNodeFromJson(j: TaskNodeJson): TaskNode {
     effort: j.effort,
     ...(parseEffortUnit(j.effortUnit) ? { effortUnit: parseEffortUnit(j.effortUnit) } : {}),
     ...(parseEffortSource(j.effortSource) === "calculated" ? { effortSource: "calculated" } : {}),
+    ...(parseCardColor(j.cardColor) ? { cardColor: parseCardColor(j.cardColor) } : {}),
     children: j.children.map(taskNodeFromJson),
   };
 }
@@ -169,6 +174,7 @@ function expectTaskNodeJson(raw: unknown, path: string): TaskNodeJson {
   const effort = o.effort;
   const effortUnitRaw = o.effortUnit;
   const effortSourceRaw = o.effortSource;
+  const cardColorRaw = o.cardColor;
   const dueDate = o.dueDate;
   const reminderDate = o.reminderDate;
   const children = o.children;
@@ -208,6 +214,10 @@ function expectTaskNodeJson(raw: unknown, path: string): TaskNodeJson {
   if (effortSourceRaw !== undefined && effortSource === undefined) {
     throw new Error(`${path}.effortSource: manual oder calculated erwartet`);
   }
+  const cardColor = parseCardColor(cardColorRaw);
+  if (cardColorRaw !== undefined && cardColor === undefined) {
+    throw new Error(`${path}.cardColor: gültige Palettenfarbe erwartet`);
+  }
   if (dueDate != null && typeof dueDate !== "string") throw new Error(`${path}.dueDate: null oder ISO-String`);
   if (reminderDate != null && typeof reminderDate !== "string") {
     throw new Error(`${path}.reminderDate: null oder ISO-String`);
@@ -238,6 +248,7 @@ function expectTaskNodeJson(raw: unknown, path: string): TaskNodeJson {
     effort,
     ...(effortUnit ? { effortUnit } : {}),
     ...(effortSource === "calculated" ? { effortSource } : {}),
+    ...(cardColor ? { cardColor } : {}),
     children: children.map((ch, i) => expectTaskNodeJson(ch, `${path}.children[${i}]`)),
   };
 }

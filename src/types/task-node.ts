@@ -1,3 +1,4 @@
+import type { CardColorId } from "@/lib/card-color";
 import type { EffortSource, EffortUnit } from "@/lib/task-effort";
 
 /**
@@ -20,6 +21,8 @@ export interface TaskNode {
   effort: number;
   effortUnit?: EffortUnit;
   effortSource?: EffortSource;
+  /** Optionale Kartenfarbe (Palette); Statusfarben haben Vorrang. */
+  cardColor?: CardColorId;
   children: TaskNode[];
 }
 
@@ -35,4 +38,5 @@ export type TaskCardEditableFields = Pick<
   | "effort"
   | "effortUnit"
   | "effortSource"
+  | "cardColor"
 >;

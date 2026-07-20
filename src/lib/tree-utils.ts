@@ -40,6 +40,7 @@ export function updateNodeFields(
       | "effort"
       | "effortUnit"
       | "effortSource"
+      | "cardColor"
     >
   >,
 ): TaskNode[] {

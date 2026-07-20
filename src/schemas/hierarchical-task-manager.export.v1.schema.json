@@ -61,6 +61,11 @@
           "enum": ["manual", "calculated"],
           "description": "Optional: manual (Standard) oder calculated (Summe offener direkter Kinder, per Knopf im Editor)."
         },
+        "cardColor": {
+          "type": "string",
+          "enum": ["sky", "emerald", "amber", "rose", "violet", "cyan", "orange", "slate"],
+          "description": "Optional: Kartenfarbe aus der vordefinierten Palette."
+        },
         "children": {
           "type": "array",
           "items": { "$ref": "#/definitions/TaskNodeJson" }

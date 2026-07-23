@@ -12,7 +12,7 @@ import type { EffortSource, EffortUnit } from "@/lib/task-effort";
 export interface TaskNode {
   id: string;
   title: string;
-  /** Externer Link; wenn gesetzt, ist der Titel auf der Karte klickbar. */
+  /** Externer Link; wenn gesetzt, Link-Icon und Menüpunkt „Link öffnen“. */
   link: string;
   description: string;
   tags: string[];
@@ -21,7 +21,7 @@ export interface TaskNode {
   effort: number;
   effortUnit?: EffortUnit;
   effortSource?: EffortSource;
-  /** Optionale Kartenfarbe (Palette); Statusfarben haben Vorrang. */
+  /** Optionale Kartenfarbe (Palette); Akzentleiste bleibt auch bei Statusfarben. */
   cardColor?: CardColorId;
   children: TaskNode[];
 }

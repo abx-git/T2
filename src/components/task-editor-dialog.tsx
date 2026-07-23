@@ -277,8 +277,11 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
               value={link}
               onChange={(e) => setLink(e.target.value)}
               className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none ring-sky-500/30 focus:ring-2"
-              placeholder="https://… (optional, Titel wird klickbar)"
+              placeholder="https://… (optional)"
             />
+            <p className="mt-0.5 text-[10px] text-slate-500">
+              Auf der Karte: Link-Icon und Eintrag im Kontextmenü.
+            </p>
           </div>
           {v.description ? (
             <div>
@@ -353,7 +356,8 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
           <div>
             <span className="block text-xs font-medium text-slate-600">Kartenfarbe</span>
             <p className="mt-0.5 text-[10px] text-slate-500">
-              Überfällig und Meilenstein behalten ihre Statusfarbe.
+              Auch per Rechtsklick / ⋯ auf der Karte. Überfällig und Meilenstein färben den Hintergrund;
+              deine Farbe bleibt als linker Streifen sichtbar.
             </p>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <button

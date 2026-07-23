@@ -8,6 +8,7 @@ import {
   CircleCheck,
   ClipboardPaste,
   Copy,
+  ExternalLink,
   GripVertical,
   List,
   ListPlus,
@@ -35,7 +36,12 @@ import {
   isDueOverdue,
 } from "@/lib/aggregates";
 import type { CardFieldVisibility } from "@/lib/card-field-visibility";
-import { cardColorClass } from "@/lib/card-color";
+import {
+  CARD_COLOR_OPTIONS,
+  cardColorAccentClass,
+  cardColorClass,
+  type CardColorId,
+} from "@/lib/card-color";
 import { taskLinkHref } from "@/lib/task-link";
 import { criticalPathTotals, formatCriticalPathHint } from "@/lib/critical-path";
 import {
@@ -111,7 +117,7 @@ const cardMenuItemDangerClass =
   "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-red-700 hover:bg-red-50";
 
 const cardMenuPanelClass =
-  "fixed z-[80] min-w-[10rem] rounded-md border border-slate-200 bg-white py-0.5 shadow-lg ring-1 ring-slate-900/5";
+  "fixed z-[80] min-w-[12.5rem] rounded-md border border-slate-200 bg-white py-0.5 shadow-lg ring-1 ring-slate-900/5";
 
 export type TaskTitleSaveMeta = { addSiblingAfter?: boolean };
 
@@ -414,7 +420,17 @@ export function TaskCard({
     openCardMenu({ top: e.clientY, left: e.clientX, fromCursor: true });
   };
 
+  const openCardLink = () => {
+    if (!cardLink) return;
+    window.open(cardLink, "_blank", "noopener,noreferrer");
+  };
+
+  const setCardColor = (color: CardColorId | undefined) => {
+    updateCard(node.id, { cardColor: color });
+  };
+
   const userCardColorClass = cardColorClass(node.cardColor);
+  const userAccentBarClass = cardColorAccentClass(node.cardColor);
   const defaultCardSurfaceClass =
     userCardColorClass ?? "border-slate-200/80 bg-white";
 
@@ -430,6 +446,61 @@ export function TaskCard({
         }}
         className={cardMenuPanelClass}
       >
+        <div
+          className="px-2.5 py-1.5"
+          role="group"
+          aria-label="Kartenfarbe"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <p className="mb-1 text-[9px] font-medium uppercase tracking-wide text-slate-400">
+            Farbe
+          </p>
+          <div className="flex flex-wrap items-center gap-1">
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={!node.cardColor}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setCardColor(undefined);
+              }}
+              className={[
+                "flex h-5 w-5 items-center justify-center rounded-full border bg-white text-[8px] font-medium text-slate-400 transition",
+                !node.cardColor
+                  ? "border-sky-500 ring-2 ring-sky-300/80"
+                  : "border-slate-200 hover:border-slate-300",
+              ].join(" ")}
+              title="Keine Farbe"
+              aria-label="Keine Farbe"
+            >
+              —
+            </button>
+            {CARD_COLOR_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={node.cardColor === opt.id}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setCardColor(opt.id);
+                }}
+                className={[
+                  "h-5 w-5 rounded-full transition",
+                  opt.swatchClass,
+                  node.cardColor === opt.id
+                    ? "ring-2 ring-sky-500 ring-offset-1"
+                    : "hover:ring-1 hover:ring-slate-300",
+                ].join(" ")}
+                title={opt.label}
+                aria-label={opt.label}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="my-0.5 border-t border-slate-100" role="separator" />
         <button
           type="button"
           role="menuitem"
@@ -445,6 +516,23 @@ export function TaskCard({
           <Pencil className="h-3.5 w-3.5 shrink-0 text-sky-700" aria-hidden />
           Ändern
         </button>
+        {cardLink ? (
+          <button
+            type="button"
+            role="menuitem"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setMenuOpen(false);
+              openCardLink();
+            }}
+            className={cardMenuItemClass}
+          >
+            <ExternalLink className="h-3.5 w-3.5 shrink-0 text-sky-700" aria-hidden />
+            Link öffnen
+          </button>
+        ) : null}
         <button
           type="button"
           role="menuitem"
@@ -599,6 +687,14 @@ export function TaskCard({
           : "",
       ].join(" ")}
     >
+      {userAccentBarClass && !isNestDropTarget ? (
+        <span
+          className={["pointer-events-none absolute inset-y-0 left-0 w-1 rounded-l-md", userAccentBarClass].join(
+            " ",
+          )}
+          aria-hidden
+        />
+      ) : null}
       {isNestDropTarget ? (
         <span className="pointer-events-none absolute right-1 top-0.5 z-10 rounded bg-violet-600 px-1.5 py-px text-[9px] font-semibold leading-tight text-white shadow-sm">
           Unterkarte
@@ -709,85 +805,96 @@ export function TaskCard({
                     : "w-full min-w-0 touch-manipulation rounded border border-sky-300 bg-white px-1.5 py-1 text-base font-semibold text-slate-900 outline-none ring-2 ring-sky-400/50"
                 }
               />
-            ) : cardLink ? (
-              <a
-                id={cardHeadingId}
-                href={cardLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-                className={[
-                  "min-w-0 break-words px-0.5 text-xs font-semibold leading-tight text-sky-800 underline-offset-2 hover:underline line-clamp-2",
-                  nodeIsDone ? "text-slate-500 line-through decoration-slate-400/80" : "",
-                ].join(" ")}
-                title={cardLink}
-              >
-                {node.title.trim() ? node.title : <span className="font-normal">(Ohne Titel)</span>}
-              </a>
             ) : (
-              <h3
-                id={cardHeadingId}
-                role={coarsePointer ? "button" : undefined}
-                tabIndex={coarsePointer ? 0 : undefined}
-                onClick={
-                  coarsePointer
-                    ? (e) => {
-                        e.stopPropagation();
-                        onOpenDetails();
-                      }
-                    : undefined
-                }
-                onKeyDown={
-                  coarsePointer
-                    ? (e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
+              <div className="flex min-w-0 items-start gap-0.5">
+                <h3
+                  id={cardHeadingId}
+                  role={coarsePointer ? "button" : undefined}
+                  tabIndex={coarsePointer ? 0 : undefined}
+                  onClick={
+                    coarsePointer
+                      ? (e) => {
+                          e.stopPropagation();
                           onOpenDetails();
                         }
-                      }
-                    : undefined
-                }
-                className={[
-                  "min-w-0 break-words px-0.5 text-xs font-semibold leading-tight line-clamp-2",
-                  coarsePointer ? "cursor-pointer touch-manipulation" : "",
-                  nodeIsDone ? "text-slate-500 line-through decoration-slate-400/80" : "text-slate-900",
-                ].join(" ")}
-              >
-                {node.title.trim() ? (
-                  node.title
-                ) : (
-                  <span className="font-normal text-slate-400">(Ohne Titel)</span>
-                )}
-              </h3>
+                      : undefined
+                  }
+                  onKeyDown={
+                    coarsePointer
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            onOpenDetails();
+                          }
+                        }
+                      : undefined
+                  }
+                  className={[
+                    "min-w-0 flex-1 break-words px-0.5 text-xs font-semibold leading-tight line-clamp-2",
+                    coarsePointer ? "cursor-pointer touch-manipulation" : "",
+                    nodeIsDone ? "text-slate-500 line-through decoration-slate-400/80" : "text-slate-900",
+                  ].join(" ")}
+                >
+                  {node.title.trim() ? (
+                    node.title
+                  ) : (
+                    <span className="font-normal text-slate-400">(Ohne Titel)</span>
+                  )}
+                </h3>
+                {cardLink ? (
+                  <button
+                    type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      openCardLink();
+                    }}
+                    className={[
+                      iconBtnClass,
+                      "mt-px shrink-0 text-sky-700 hover:border-sky-200 hover:bg-sky-50",
+                    ].join(" ")}
+                    title={`Link öffnen: ${cardLink}`}
+                    aria-label="Link öffnen"
+                  >
+                    <ExternalLink className="h-3 w-3" strokeWidth={2.25} aria-hidden />
+                  </button>
+                ) : null}
+              </div>
             )}
           </div>
 
-          {coarsePointer ? (
-            <div ref={menuRef} className="relative shrink-0 opacity-100 transition-opacity">
-              <button
-                type="button"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (menuOpen) {
-                    setMenuOpen(false);
-                    setMenuAnchor(null);
-                  } else {
-                    openCardMenuFromButton();
-                  }
-                }}
-                className={iconBtnClass}
-                title="Weitere Aktionen"
-                aria-label="Weitere Aktionen"
-                aria-expanded={menuOpen}
-                aria-haspopup="menu"
-              >
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ) : null}
+          <div
+            ref={menuRef}
+            className={[
+              "relative shrink-0 transition-opacity",
+              coarsePointer || menuOpen
+                ? "opacity-100"
+                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+            ].join(" ")}
+          >
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (menuOpen) {
+                  setMenuOpen(false);
+                  setMenuAnchor(null);
+                } else {
+                  openCardMenuFromButton();
+                }
+              }}
+              className={iconBtnClass}
+              title="Weitere Aktionen"
+              aria-label="Weitere Aktionen"
+              aria-expanded={menuOpen}
+              aria-haspopup="menu"
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+          </div>
           {typeof document !== "undefined" && cardActionMenu
             ? createPortal(cardActionMenu, document.body)
             : null}
@@ -853,9 +960,19 @@ export function TaskCard({
           ) : null}
 
           {showLinkMeta ? (
-            <p className="truncate text-[10px] leading-snug text-sky-700/90" title={cardLink!}>
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openCardLink();
+              }}
+              className="truncate text-left text-[10px] leading-snug text-sky-700/90 underline-offset-2 hover:underline"
+              title={`Link öffnen: ${cardLink!}`}
+            >
               {cardLink}
-            </p>
+            </button>
           ) : null}
 
           {hasDescription ? (

@@ -1,4 +1,5 @@
 /** Vordefinierte Kartenfarben (Tailwind-Klassen). */
+
 export const CARD_COLOR_IDS = [
   "sky",
   "emerald",
@@ -15,60 +16,70 @@ export type CardColorId = (typeof CARD_COLOR_IDS)[number];
 export interface CardColorOption {
   id: CardColorId;
   label: string;
-  /** Vorschau-Swatch im Editor */
+  /** Vorschau-Swatch im Editor / Kontextmenü */
   swatchClass: string;
   /** Karten-Rahmen/Hintergrund wenn keine Statusfarbe aktiv ist */
   cardClass: string;
+  /** Linke Akzentleiste — bleibt auch bei Statusfarben sichtbar */
+  accentBarClass: string;
 }
 
 export const CARD_COLOR_OPTIONS: CardColorOption[] = [
   {
     id: "sky",
     label: "Blau",
-    swatchClass: "bg-sky-200 ring-sky-400/80",
-    cardClass: "border-sky-400/80 bg-sky-100/55 ring-1 ring-sky-300/60",
+    swatchClass: "bg-sky-400",
+    cardClass: "border-sky-300 bg-sky-50",
+    accentBarClass: "bg-sky-500",
   },
   {
     id: "emerald",
     label: "Grün",
-    swatchClass: "bg-emerald-200 ring-emerald-400/80",
-    cardClass: "border-emerald-400/80 bg-emerald-100/55 ring-1 ring-emerald-300/60",
+    swatchClass: "bg-emerald-400",
+    cardClass: "border-emerald-300 bg-emerald-50",
+    accentBarClass: "bg-emerald-500",
   },
   {
     id: "amber",
     label: "Gelb",
-    swatchClass: "bg-amber-200 ring-amber-400/80",
-    cardClass: "border-amber-400/80 bg-amber-100/60 ring-1 ring-amber-300/60",
+    swatchClass: "bg-amber-400",
+    cardClass: "border-amber-300 bg-amber-50",
+    accentBarClass: "bg-amber-500",
   },
   {
     id: "rose",
     label: "Rot",
-    swatchClass: "bg-rose-200 ring-rose-400/80",
-    cardClass: "border-rose-400/80 bg-rose-100/55 ring-1 ring-rose-300/60",
+    swatchClass: "bg-rose-400",
+    cardClass: "border-rose-300 bg-rose-50",
+    accentBarClass: "bg-rose-500",
   },
   {
     id: "violet",
     label: "Violett",
-    swatchClass: "bg-violet-200 ring-violet-400/80",
-    cardClass: "border-violet-400/80 bg-violet-100/55 ring-1 ring-violet-300/60",
+    swatchClass: "bg-violet-400",
+    cardClass: "border-violet-300 bg-violet-50",
+    accentBarClass: "bg-violet-500",
   },
   {
     id: "cyan",
     label: "Türkis",
-    swatchClass: "bg-cyan-200 ring-cyan-400/80",
-    cardClass: "border-cyan-400/80 bg-cyan-100/55 ring-1 ring-cyan-300/60",
+    swatchClass: "bg-cyan-400",
+    cardClass: "border-cyan-300 bg-cyan-50",
+    accentBarClass: "bg-cyan-500",
   },
   {
     id: "orange",
     label: "Orange",
-    swatchClass: "bg-orange-200 ring-orange-400/80",
-    cardClass: "border-orange-400/80 bg-orange-100/55 ring-1 ring-orange-300/60",
+    swatchClass: "bg-orange-400",
+    cardClass: "border-orange-300 bg-orange-50",
+    accentBarClass: "bg-orange-500",
   },
   {
     id: "slate",
     label: "Grau",
-    swatchClass: "bg-slate-300 ring-slate-400/80",
-    cardClass: "border-slate-400/80 bg-slate-100/55 ring-1 ring-slate-300/60",
+    swatchClass: "bg-slate-400",
+    cardClass: "border-slate-300 bg-slate-100",
+    accentBarClass: "bg-slate-500",
   },
 ];
 
@@ -84,4 +95,9 @@ export function parseCardColor(raw: unknown): CardColorId | undefined {
 export function cardColorClass(color: CardColorId | undefined): string | null {
   if (!color) return null;
   return CARD_COLOR_BY_ID[color]?.cardClass ?? null;
+}
+
+export function cardColorAccentClass(color: CardColorId | undefined): string | null {
+  if (!color) return null;
+  return CARD_COLOR_BY_ID[color]?.accentBarClass ?? null;
 }

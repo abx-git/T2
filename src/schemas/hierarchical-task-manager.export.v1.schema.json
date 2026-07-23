@@ -29,7 +29,7 @@
         "title": { "type": "string" },
         "link": {
           "type": "string",
-          "description": "Optional: externer Link (http/https); Titel auf der Karte wird dann klickbar."
+          "description": "Optional: externer Link (http/https); auf der Karte als Icon und Menüpunkt."
         },
         "description": { "type": "string" },
         "tags": {

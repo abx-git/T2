@@ -92,7 +92,7 @@ export function KeyboardShortcutsHelpDialog({ open, onClose }: KeyboardShortcuts
         { keys: "↑ ↓", description: "Zwischen Karten in der aktuellen Ebene wechseln" },
         { keys: "→", description: "In fokussierte Karte hinein (Drill-down)" },
         { keys: "← / Esc", description: "Eine Ebene höher" },
-        { keys: "Leertaste", description: "In der Outline Zweig ein-/ausklappen" },
+        { keys: "Leertaste", description: "In der Struktur Zweig ein-/ausklappen" },
         { keys: "Enter", description: "Geschwisterkarte anlegen und Titel bearbeiten" },
         { keys: "Tab", description: "Unterkarte anlegen und Titel bearbeiten" },
         { keys: "F2", description: "Titel der fokussierten Karte bearbeiten" },
@@ -121,7 +121,7 @@ export function KeyboardShortcutsHelpDialog({ open, onClose }: KeyboardShortcuts
       items: [
         { keys: "Klick", description: "Karte auswählen" },
         { keys: "Doppelklick", description: "Hinein (nur mit Unterkarten)" },
-        { keys: "Ziehen", description: "Umsortieren oder nesten (Karte oder Griff)" },
+        { keys: "Ziehen", description: "Umsortieren oder nesten (Liste oder Struktur links)" },
         { keys: "Rechtsklick", description: "Details öffnen" },
         { keys: "⋯", description: "Aktionen (Farbe, Ändern, …)" },
       ],

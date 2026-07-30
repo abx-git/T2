@@ -30,6 +30,7 @@ import {
   insertNodeIntoContextList,
   type ContextListDrop,
 } from "@/lib/context-list-dnd";
+import { applyOutlineDrop, insertNodeIntoOutline, type OutlineDrop } from "@/lib/outline-dnd";
 import { refreshCalculatedEffortsInTree } from "@/lib/task-effort";
 import { collectAllNodeIds, generateUniqueTaskId, generateUniqueTaskIdFromTaken } from "@/lib/task-id";
 import { remapTaskNodeIds } from "@/lib/task-tree-json";
@@ -107,6 +108,9 @@ export interface TaskTreeState {
 
   /** DnD innerhalb der Kontext-Liste (Reorder / Nest). */
   applyContextListDrag: (activeId: string, drop: ContextListDrop) => void;
+
+  /** DnD in der Struktur-Leiste (gesamter Baum). */
+  applyOutlineDrag: (activeId: string, drop: OutlineDrop) => void;
 
   /** Einheitlicher DnD-Handler für Zwischenablage und Board→Zwischenablage. */
   applyUnifiedDrag: (activeId: string, drop: UnifiedDragDrop) => void;
@@ -380,6 +384,22 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
     });
   },
 
+  applyOutlineDrag: (activeId, drop) => {
+    set((s) => {
+      const nextRoots = refreshCalculatedEffortsInTree(
+        applyOutlineDrop(s.roots, activeId, drop),
+        s.completedTag,
+      );
+      if (nextRoots === s.roots) return {};
+      const nextPath = pathIdsAfterNodeMove(nextRoots, activeId, s.pathIds);
+      return {
+        roots: nextRoots,
+        pathIds: nextPath,
+        contextNodeId: normalizeContextNodeId(nextRoots, s.contextNodeId),
+      };
+    });
+  },
+
   applyUnifiedDrag: (activeId, drop) => {
     set((s) => {
       const location = findNodeForestLocation(s.roots, s.clipboardRoots, activeId);
@@ -408,6 +428,23 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
         if (!detached) return {};
         const boardNext = refreshCalculatedEffortsInTree(
           insertNodeIntoContextList(s.roots, s.contextNodeId, detached, drop.drop),
+          s.completedTag,
+        );
+        if (boardNext === s.roots) return {};
+        const nextPath = pathIdsAfterNodeMove(boardNext, detached.id, s.pathIds);
+        return {
+          roots: boardNext,
+          pathIds: nextPath,
+          clipboardRoots: refreshCalculatedEffortsInTree(clipNext, s.completedTag),
+          contextNodeId: normalizeContextNodeId(boardNext, s.contextNodeId),
+        };
+      }
+
+      if (drop.type === "from-clipboard-to-outline") {
+        const { next: clipNext, detached } = detachNodeById(s.clipboardRoots, activeId);
+        if (!detached) return {};
+        const boardNext = refreshCalculatedEffortsInTree(
+          insertNodeIntoOutline(s.roots, detached, drop.drop),
           s.completedTag,
         );
         if (boardNext === s.roots) return {};

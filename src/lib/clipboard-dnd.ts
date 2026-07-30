@@ -1,6 +1,7 @@
 import type { TaskNode } from "@/types/task-node";
 
 import type { ContextListDrop } from "./context-list-dnd";
+import type { OutlineDrop } from "./outline-dnd";
 import {
   detachNodeById,
   findNodeById,
@@ -140,7 +141,8 @@ export type UnifiedDragDrop =
   | { type: "to-clipboard-end" }
   | { type: "to-clipboard"; target: ForestDropTarget }
   | { type: "within-clipboard"; target: ForestDropTarget }
-  | { type: "from-clipboard-to-context"; drop: ContextListDrop };
+  | { type: "from-clipboard-to-context"; drop: ContextListDrop }
+  | { type: "from-clipboard-to-outline"; drop: OutlineDrop };
 
 export function resolveUnifiedDragDrop(
   activeId: string,

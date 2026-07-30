@@ -99,6 +99,11 @@ import {
   type ContextListDrop,
 } from "@/lib/context-list-dnd";
 import {
+  boardNodeIdFromDragActive,
+  outlineDropFromOverId,
+  parseOutlineNestId,
+} from "@/lib/outline-dnd";
+import {
   CLIPBOARD_DROP_TARGET_ID,
   CLIPBOARD_SIDEBAR_DROP_ID,
   findNodeForestLocation,
@@ -187,6 +192,12 @@ const boardCollisionDetection: CollisionDetection = (args) => {
         String(c.id).startsWith("clipboard-gap:"),
     );
     if (clip && activeSource !== "clipboard") return [clip];
+    const outlineGap = hits.find((c) => String(c.id).startsWith("outline-gap:"));
+    if (outlineGap) return [outlineGap];
+    const outlineNest = hits.find(
+      (c) => c.data?.droppableContainer?.data?.current?.kind === "outlineNest",
+    );
+    if (outlineNest) return [outlineNest];
     const nest = hits.find((c) => c.data?.droppableContainer?.data?.current?.kind === "contextNest");
     if (nest) return [nest];
     const gap = hits.find((c) => String(c.id).startsWith("context-gap:"));
@@ -199,11 +210,18 @@ const boardCollisionDetection: CollisionDetection = (args) => {
 function DragPreviewCard({ id }: { id: string }) {
   const roots = useTaskTreeStore((s) => s.roots);
   const clipboardRoots = useTaskTreeStore((s) => s.clipboardRoots);
-  const node = findNodeById(roots, id) ?? findNodeById(clipboardRoots, id);
+  const nodeId = boardNodeIdFromDragActive(id) ?? id;
+  const node = findNodeById(roots, nodeId) ?? findNodeById(clipboardRoots, nodeId);
   if (!node) return null;
   return (
     <div className="pointer-events-none w-72 max-w-[85vw] rounded-lg border border-slate-200 bg-white p-3 shadow-2xl ring-2 ring-sky-200/90">
       <p className="text-sm font-semibold text-slate-900">{node.title.trim() || "(Ohne Titel)"}</p>
+      {node.children.length > 0 ? (
+        <p className="mt-1 text-[11px] text-slate-500">
+          inkl. {node.children.length} direkte Unterkarte
+          {node.children.length === 1 ? "" : "n"}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -219,6 +237,7 @@ export function TaskBoard() {
   const drillIntoNode = useTaskTreeStore((s) => s.drillIntoNode);
   const drillUp = useTaskTreeStore((s) => s.drillUp);
   const applyContextListDrag = useTaskTreeStore((s) => s.applyContextListDrag);
+  const applyOutlineDrag = useTaskTreeStore((s) => s.applyOutlineDrag);
   const applyUnifiedDrag = useTaskTreeStore((s) => s.applyUnifiedDrag);
   const clearClipboard = useTaskTreeStore((s) => s.clearClipboard);
   const clipboardRoots = useTaskTreeStore((s) => s.clipboardRoots);
@@ -867,6 +886,12 @@ export function TaskBoard() {
       setNestDropTargetId(id === String(event.active.id) ? null : id);
       return;
     }
+    if (kind === "outlineNest") {
+      const nestId = parseOutlineNestId(over.id);
+      const activeNodeId = boardNodeIdFromDragActive(event.active.id);
+      setNestDropTargetId(nestId && nestId !== activeNodeId ? nestId : null);
+      return;
+    }
     setNestDropTargetId(null);
   };
 
@@ -881,7 +906,8 @@ export function TaskBoard() {
 
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    const activeId = String(active.id);
+    const activeRawId = String(active.id);
+    const activeNodeId = boardNodeIdFromDragActive(activeRawId) ?? activeRawId;
     endDragUi();
     if (!over) return;
 
@@ -889,7 +915,7 @@ export function TaskBoard() {
     const location = findNodeForestLocation(
       useTaskTreeStore.getState().roots,
       useTaskTreeStore.getState().clipboardRoots,
-      activeId,
+      activeNodeId,
     );
 
     if (
@@ -902,9 +928,9 @@ export function TaskBoard() {
       const clipRoots = useTaskTreeStore.getState().clipboardRoots;
       const forestTarget = forestDropTargetFromOverId(overId, clipRoots);
       if (forestTarget) {
-        applyUnifiedDrag(activeId, { type: "to-clipboard", target: forestTarget });
+        applyUnifiedDrag(activeNodeId, { type: "to-clipboard", target: forestTarget });
       } else {
-        applyUnifiedDrag(activeId, { type: "to-clipboard-end" });
+        applyUnifiedDrag(activeNodeId, { type: "to-clipboard-end" });
       }
       setClipboardOpen(true);
       return;
@@ -914,21 +940,30 @@ export function TaskBoard() {
       const clipRoots = useTaskTreeStore.getState().clipboardRoots;
       const forestTarget = forestDropTargetFromOverId(overId, clipRoots);
       if (forestTarget) {
-        applyUnifiedDrag(activeId, { type: "within-clipboard", target: forestTarget });
+        applyUnifiedDrag(activeNodeId, { type: "within-clipboard", target: forestTarget });
+        return;
+      }
+
+      const outlineFromClip = outlineDropFromOverId(overId);
+      if (outlineFromClip) {
+        applyUnifiedDrag(activeNodeId, {
+          type: "from-clipboard-to-outline",
+          drop: outlineFromClip,
+        });
         return;
       }
 
       const gapFromClip = parseContextGapId(overId);
       if (gapFromClip !== null) {
-        applyUnifiedDrag(activeId, {
+        applyUnifiedDrag(activeNodeId, {
           type: "from-clipboard-to-context",
           drop: { kind: "gap", insertIndex: gapFromClip },
         });
         return;
       }
       const nestFromClip = over.data.current?.kind as string | undefined;
-      if (nestFromClip === "contextNest" && overId !== activeId) {
-        applyUnifiedDrag(activeId, {
+      if (nestFromClip === "contextNest" && overId !== activeNodeId) {
+        applyUnifiedDrag(activeNodeId, {
           type: "from-clipboard-to-context",
           drop: { kind: "nest", targetId: overId },
         });
@@ -936,14 +971,20 @@ export function TaskBoard() {
       return;
     }
 
+    const outlineDrop = outlineDropFromOverId(overId);
+    if (outlineDrop) {
+      applyOutlineDrag(activeNodeId, outlineDrop);
+      return;
+    }
+
     const gap = parseContextGapId(overId);
     if (gap !== null) {
-      applyContextListDrag(activeId, { kind: "gap", insertIndex: gap });
+      applyContextListDrag(activeNodeId, { kind: "gap", insertIndex: gap });
       return;
     }
     const nestKind = over.data.current?.kind as string | undefined;
-    if (nestKind === "contextNest" && overId !== activeId) {
-      applyContextListDrag(activeId, { kind: "nest", targetId: overId });
+    if (nestKind === "contextNest" && overId !== activeNodeId) {
+      applyContextListDrag(activeNodeId, { kind: "nest", targetId: overId });
     }
   };
 
@@ -1326,6 +1367,7 @@ export function TaskBoard() {
                 contextNodeId={contextNodeId}
                 hideCompletedTasks={hideCompletedTasks}
                 completedTag={completedTag}
+                nestDropTargetId={nestDropTargetId}
                 onSelectNode={handleOutlineSelect}
                 onToggleCollapsed={toggleNodeCollapsed}
               />

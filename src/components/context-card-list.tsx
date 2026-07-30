@@ -65,7 +65,6 @@ export interface ContextCardListProps {
   onAddChild: (parentId: string) => void;
   onAddSibling: () => void;
   onOpenDetails: (nodeId: string) => void;
-  onStartTitleEdit: (nodeId: string) => void;
   onTitleSave: (nodeId: string, title: string, meta?: TaskTitleSaveMeta) => void;
   onTitleEditCancel: (nodeId: string) => void;
   onRequestDelete?: (nodeId: string) => void;
@@ -84,7 +83,6 @@ export function ContextCardList({
   onAddChild,
   onAddSibling,
   onOpenDetails,
-  onStartTitleEdit,
   onTitleSave,
   onTitleEditCancel,
   onRequestDelete,
@@ -126,7 +124,6 @@ export function ContextCardList({
               onDrillIn={() => onDrillIn(node.id)}
               onAddChild={() => onAddChild(node.id)}
               onOpenDetails={() => onOpenDetails(node.id)}
-              onStartTitleEdit={() => onStartTitleEdit(node.id)}
               onTitleSave={(title, meta) => onTitleSave(node.id, title, meta)}
               onTitleEditCancel={() => onTitleEditCancel(node.id)}
               onRequestDelete={onRequestDelete ? () => onRequestDelete(node.id) : undefined}

@@ -95,13 +95,14 @@ export function KeyboardShortcutsHelpDialog({ open, onClose }: KeyboardShortcuts
         { keys: "Leertaste", description: "In der Struktur Zweig ein-/ausklappen" },
         { keys: "Enter", description: "Geschwisterkarte anlegen und Titel bearbeiten" },
         { keys: "Tab", description: "Unterkarte anlegen und Titel bearbeiten" },
-        { keys: "F2", description: "Titel der fokussierten Karte bearbeiten" },
+        { keys: "F2", description: "Detailansicht der fokussierten Karte öffnen" },
         { keys: `${mod} + K`, description: "Link aus Zwischenablage speichern" },
         { keys: "Entf / Rücktaste", description: "Karte löschen (mit Bestätigung)" },
       ],
     },
     {
       title: "Titel bearbeiten",
+      hint: "Nur beim Anlegen einer neuen Karte. Bestehende Titel über die Detailansicht ändern.",
       items: [
         { keys: "Enter", description: "Titel übernehmen" },
         { keys: "Shift + Enter", description: "Titel übernehmen und Geschwisterkarte anlegen" },

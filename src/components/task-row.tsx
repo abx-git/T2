@@ -84,7 +84,6 @@ export interface TaskRowProps {
   onDrillIn: () => void;
   onAddChild: () => void;
   onOpenDetails: () => void;
-  onStartTitleEdit?: () => void;
   onRequestDelete?: () => void;
 }
 
@@ -101,7 +100,6 @@ export function TaskRow({
   onDrillIn,
   onAddChild,
   onOpenDetails,
-  onStartTitleEdit,
   onRequestDelete,
 }: TaskRowProps) {
   const completedTag = useTaskTreeStore((s) => s.completedTag);
@@ -432,7 +430,6 @@ export function TaskRow({
             onClick={(e) => {
               e.stopPropagation();
               onSelect();
-              onStartTitleEdit?.();
             }}
           >
             {node.title.trim() || "(Ohne Titel)"}

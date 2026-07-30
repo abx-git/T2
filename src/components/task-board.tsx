@@ -1127,7 +1127,9 @@ export function TaskBoard() {
 
       if (e.key === "F2") {
         e.preventDefault();
-        setTitleEditNodeId(currentId);
+        setTitleEditNodeId(null);
+        setEditorNodeId(currentId);
+        setEditorOpen(true);
         return;
       }
 
@@ -1436,7 +1438,6 @@ export function TaskBoard() {
                       beginEditingNewCard(id);
                     }}
                     onOpenDetails={handleOpenDetails}
-                    onStartTitleEdit={(id) => setTitleEditNodeId(id)}
                     onTitleSave={handleTitleSave}
                     onTitleEditCancel={handleTitleEditCancel}
                     onRequestDelete={handleRequestDelete}

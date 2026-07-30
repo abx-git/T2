@@ -1432,6 +1432,10 @@ export function TaskBoard() {
                     onOpenDetails={handleOpenDetails}
                     onTitleSave={handleTitleSave}
                     onTitleEditCancel={handleTitleEditCancel}
+                    onRequestExport={(nodeId) => {
+                      const n = findNodeById(roots, nodeId);
+                      if (n) setBranchExportNode(n);
+                    }}
                     onRequestDelete={handleRequestDelete}
                   />
                 </div>

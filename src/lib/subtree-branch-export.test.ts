@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  branchExportFilename,
   DEFAULT_SUBTREE_EXPORT_ATTRIBUTES,
   exportSubtreeBranch,
   taskSubtreeToBranchJson,
@@ -92,5 +93,26 @@ describe("exportSubtreeBranch", () => {
     expect(md.startsWith("<!--")).toBe(true);
     const json = exportSubtreeBranch(root, { ...baseOpts, format: "json" });
     expect(json.trimStart().startsWith("{")).toBe(true);
+  });
+
+  it("scope card omits children", () => {
+    const root = node({ id: "p", title: "Parent" }, [node({ id: "c", title: "Child" })]);
+    const md = exportSubtreeBranch(root, { ...baseOpts, format: "markdown", scope: "card" });
+    expect(md).toContain("# Parent");
+    expect(md).not.toContain("Child");
+  });
+
+  it("scope subtree includes children", () => {
+    const root = node({ id: "p", title: "Parent" }, [node({ id: "c", title: "Child" })]);
+    const md = exportSubtreeBranch(root, { ...baseOpts, format: "markdown", scope: "subtree" });
+    expect(md).toContain("## Child");
+  });
+});
+
+describe("branchExportFilename", () => {
+  it("reflects format and scope", () => {
+    const root = node({ id: "1", title: "Mein Projekt" });
+    expect(branchExportFilename(root, "markdown", "card")).toMatch(/karte\.md$/);
+    expect(branchExportFilename(root, "json", "subtree")).toMatch(/zweig\.json$/);
   });
 });

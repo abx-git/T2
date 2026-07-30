@@ -1,3 +1,4 @@
+import { slugForBackupFilename } from "@/lib/board-backup";
 import { formatObsidianTasksDate, formatObsidianTaskTitle } from "@/lib/obsidian-tasks-export";
 import { formatEffortValue, getEffortUnit } from "@/lib/task-effort";
 import { formatTaskIdForDisplay } from "@/lib/task-id";
@@ -28,6 +29,9 @@ export type SubtreeExportAttributes = Record<SubtreeExportAttributeKey, boolean>
 
 export type BranchExportFormat = "markdown" | "json";
 
+/** Nur die Wurzelkarte, oder die Karte inkl. aller Nachfahren. */
+export type BranchExportScope = "card" | "subtree";
+
 export interface SubtreeBranchExportOptions {
   format: BranchExportFormat;
   attributes: SubtreeExportAttributes;
@@ -35,6 +39,8 @@ export interface SubtreeBranchExportOptions {
   effortOnTasksEnabled?: boolean;
   /** JSON: vollständiger Teilbaum-Import (scope subtree), ignoriert Attributfilter. */
   jsonImportCompatible?: boolean;
+  /** Standard: `subtree`. Bei `card` werden Kinder nicht exportiert. */
+  scope?: BranchExportScope;
 }
 
 export const DEFAULT_SUBTREE_EXPORT_ATTRIBUTES: SubtreeExportAttributes = {
@@ -232,13 +238,38 @@ export function taskSubtreeToBranchJson(
   return `${JSON.stringify(payload, null, 2)}\n`;
 }
 
+/** Liefert die Export-Wurzel; bei Scope `card` ohne Kinder. */
+export function prepareBranchExportRoot(
+  root: TaskNode,
+  scope: BranchExportScope = "subtree",
+): TaskNode {
+  if (scope === "card") {
+    return { ...root, children: [] };
+  }
+  return root;
+}
+
+/** Dateiname für Direkt-Download (Markdown oder JSON). */
+export function branchExportFilename(
+  root: TaskNode,
+  format: BranchExportFormat,
+  scope: BranchExportScope = "subtree",
+): string {
+  const base = slugForBackupFilename(root.title.trim() || "karte").slice(0, 48);
+  const kind = scope === "card" ? "karte" : "zweig";
+  const ext = format === "json" ? "json" : "md";
+  return `${base}-${kind}.${ext}`;
+}
+
 export function exportSubtreeBranch(
   root: TaskNode,
   options: SubtreeBranchExportOptions,
   meta?: { sourceNodeTitle?: string },
 ): string {
+  const exportRoot = prepareBranchExportRoot(root, options.scope ?? "subtree");
+  const resolvedMeta = { sourceNodeTitle: exportRoot.title, ...meta };
   if (options.format === "json") {
-    return taskSubtreeToBranchJson(root, options, meta);
+    return taskSubtreeToBranchJson(exportRoot, options, resolvedMeta);
   }
-  return taskSubtreeToHeadingMarkdown(root, options);
+  return taskSubtreeToHeadingMarkdown(exportRoot, options);
 }

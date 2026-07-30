@@ -3,15 +3,18 @@
 import { useId, useLayoutEffect, useMemo, useState } from "react";
 
 import {
+  branchExportFilename,
   DEFAULT_SUBTREE_EXPORT_ATTRIBUTES,
   exportSubtreeBranch,
   mergeSubtreeExportAttributes,
   SUBTREE_EXPORT_ATTRIBUTE_KEYS,
   SUBTREE_EXPORT_ATTRIBUTE_LABELS,
   type BranchExportFormat,
+  type BranchExportScope,
   type SubtreeExportAttributeKey,
   type SubtreeExportAttributes,
 } from "@/lib/subtree-branch-export";
+import { downloadJsonFile, downloadTextFile } from "@/lib/task-tree-json";
 import type { TaskNode } from "@/types/task-node";
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
@@ -164,6 +167,11 @@ const BRANCH_FORMAT_LABELS: Record<BranchExportFormat, string> = {
   json: "JSON",
 };
 
+const BRANCH_SCOPE_LABELS: Record<BranchExportScope, string> = {
+  card: "Nur diese Karte",
+  subtree: "Zweig inkl. Unterkarten",
+};
+
 export interface BranchExportDialogProps {
   open: boolean;
   root: TaskNode | null;
@@ -182,6 +190,7 @@ export function BranchExportDialog({
   const titleId = useId();
   const areaId = useId();
   const [format, setFormat] = useState<BranchExportFormat>("markdown");
+  const [scope, setScope] = useState<BranchExportScope>("subtree");
   const [attributes, setAttributes] = useState<SubtreeExportAttributes>(() => ({
     ...DEFAULT_SUBTREE_EXPORT_ATTRIBUTES,
   }));
@@ -191,22 +200,28 @@ export function BranchExportDialog({
   useLayoutEffect(() => {
     if (!open) {
       setFormat("markdown");
+      setScope("subtree");
       setAttributes({ ...DEFAULT_SUBTREE_EXPORT_ATTRIBUTES });
       setJsonImportCompatible(false);
       setCopied(false);
+      return;
     }
-  }, [open]);
+    if (root) {
+      setScope(root.children.length > 0 ? "subtree" : "card");
+    }
+  }, [open, root]);
 
   const exportText = useMemo(() => {
     if (!root) return "";
     return exportSubtreeBranch(root, {
       format,
+      scope,
       attributes: mergeSubtreeExportAttributes(attributes),
       completedTag,
       effortOnTasksEnabled,
       jsonImportCompatible: format === "json" && jsonImportCompatible,
     }, { sourceNodeTitle: root.title });
-  }, [root, format, attributes, completedTag, effortOnTasksEnabled, jsonImportCompatible]);
+  }, [root, format, scope, attributes, completedTag, effortOnTasksEnabled, jsonImportCompatible]);
 
   if (!open || !root) return null;
 
@@ -214,6 +229,7 @@ export function BranchExportDialog({
   const contentLabel = format === "json" ? "JSON" : "Markdown";
   const monospace = format === "json";
   const attrPickerDisabled = format === "json" && jsonImportCompatible;
+  const hasChildren = root.children.length > 0;
 
   const toggleAttr = (key: SubtreeExportAttributeKey) => {
     if (key === "title") return;
@@ -227,6 +243,15 @@ export function BranchExportDialog({
       window.setTimeout(() => setCopied(false), 2000);
     } else {
       window.alert("In die Zwischenablage kopieren ist in diesem Kontext nicht möglich.");
+    }
+  };
+
+  const handleDownload = () => {
+    const filename = branchExportFilename(root, format, scope);
+    if (format === "json") {
+      downloadJsonFile(filename, exportText);
+    } else {
+      downloadTextFile(filename, exportText, "text/markdown");
     }
   };
 
@@ -247,12 +272,30 @@ export function BranchExportDialog({
       >
         <div className="shrink-0 border-b border-slate-100 px-4 py-3">
           <h2 id={titleId} className="text-sm font-semibold text-slate-900">
-            Zweig exportieren
+            Exportieren
           </h2>
           <p className="mt-1 text-xs text-slate-500">
-            Wurzel: „{rootTitle}“ — Format und Felder wählen, Vorschau prüfen, dann kopieren.
+            „{rootTitle}“ — Umfang, Format und Felder wählen; kopieren oder als Datei speichern.
           </p>
-          <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Exportformat">
+          <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Exportumfang">
+            {(Object.keys(BRANCH_SCOPE_LABELS) as BranchExportScope[]).map((key) => (
+              <button
+                key={key}
+                type="button"
+                disabled={key === "subtree" && !hasChildren}
+                onClick={() => setScope(key)}
+                className={[
+                  "rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
+                  scope === key
+                    ? "border-sky-300 bg-sky-50 text-sky-900"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                ].join(" ")}
+              >
+                {BRANCH_SCOPE_LABELS[key]}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Exportformat">
             {(Object.keys(BRANCH_FORMAT_LABELS) as BranchExportFormat[]).map((key) => (
               <button
                 key={key}
@@ -264,7 +307,7 @@ export function BranchExportDialog({
                 className={[
                   "rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition",
                   format === key
-                    ? "border-violet-300 bg-violet-50 text-violet-900"
+                    ? "border-sky-300 bg-sky-50 text-sky-900"
                     : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
                 ].join(" ")}
               >
@@ -283,7 +326,7 @@ export function BranchExportDialog({
                 type="checkbox"
                 checked={jsonImportCompatible}
                 onChange={(e) => setJsonImportCompatible(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-slate-300 text-violet-600 focus:ring-violet-500/30"
+                className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500/30"
               />
               Import-kompatibles Teilbaum-JSON (alle Felder, erneuter Import in T2)
             </label>
@@ -306,7 +349,7 @@ export function BranchExportDialog({
                   checked={attributes[key]}
                   disabled={key === "title" || attrPickerDisabled}
                   onChange={() => toggleAttr(key)}
-                  className="h-3.5 w-3.5 rounded border-slate-300 text-violet-600 focus:ring-violet-500/30 disabled:opacity-60"
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500/30 disabled:opacity-60"
                 />
                 {SUBTREE_EXPORT_ATTRIBUTE_LABELS[key]}
               </label>
@@ -328,13 +371,20 @@ export function BranchExportDialog({
             ].join(" ")}
           />
         </div>
-        <div className="flex shrink-0 justify-end gap-2 border-t border-slate-100 px-4 py-3">
+        <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-slate-100 px-4 py-3">
           <button
             type="button"
             onClick={onClose}
             className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
           >
             Schließen
+          </button>
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Als Datei speichern
           </button>
           <button
             type="button"

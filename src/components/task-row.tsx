@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Circle,
   CircleCheck,
+  Download,
   ExternalLink,
   GripVertical,
   ListPlus,
@@ -84,6 +85,7 @@ export interface TaskRowProps {
   onDrillIn: () => void;
   onAddChild: () => void;
   onOpenDetails: () => void;
+  onRequestExport?: () => void;
   onRequestDelete?: () => void;
 }
 
@@ -100,6 +102,7 @@ export function TaskRow({
   onDrillIn,
   onAddChild,
   onOpenDetails,
+  onRequestExport,
   onRequestDelete,
 }: TaskRowProps) {
   const completedTag = useTaskTreeStore((s) => s.completedTag);
@@ -313,6 +316,20 @@ export function TaskRow({
           >
             <ExternalLink className="h-3.5 w-3.5" aria-hidden />
             Link öffnen
+          </button>
+        ) : null}
+        {onRequestExport ? (
+          <button
+            type="button"
+            role="menuitem"
+            className={rowMenuItemClass}
+            onClick={() => {
+              setMenuOpen(false);
+              onRequestExport();
+            }}
+          >
+            <Download className="h-3.5 w-3.5" aria-hidden />
+            Exportieren…
           </button>
         ) : null}
         {onRequestDelete ? (

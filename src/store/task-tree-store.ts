@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { temporal } from "zundo";
 
 import {
   contextIdForRevealingNode,
@@ -47,6 +48,50 @@ import {
   tagKey,
 } from "@/lib/task-tags";
 import type { TaskCardEditableFields, TaskNode } from "@/types/task-node";
+
+/** Felder, die in der Undo-/Redo-Historie liegen (persistierter Board-Stand, ohne Drill-Kontext). */
+export type BoardHistorySlice = {
+  roots: TaskNode[];
+  clipboardRoots: TaskNode[];
+  pathIds: string[];
+  collapsedIds: string[];
+  hideCompletedTasks: boolean;
+  completedTag: string;
+  filterTags: string[];
+  cardFieldVisibility: CardFieldVisibility;
+  effortOnTasksEnabled: boolean;
+  columnTitleOverrides: Record<number, string>;
+};
+
+function partializeBoardHistory(state: TaskTreeState): BoardHistorySlice {
+  return {
+    roots: state.roots,
+    clipboardRoots: state.clipboardRoots,
+    pathIds: state.pathIds,
+    collapsedIds: state.collapsedIds,
+    hideCompletedTasks: state.hideCompletedTasks,
+    completedTag: state.completedTag,
+    filterTags: state.filterTags,
+    cardFieldVisibility: state.cardFieldVisibility,
+    effortOnTasksEnabled: state.effortOnTasksEnabled,
+    columnTitleOverrides: state.columnTitleOverrides,
+  };
+}
+
+function boardHistoryEqual(a: BoardHistorySlice, b: BoardHistorySlice): boolean {
+  return (
+    a.roots === b.roots &&
+    a.clipboardRoots === b.clipboardRoots &&
+    a.pathIds === b.pathIds &&
+    a.collapsedIds === b.collapsedIds &&
+    a.hideCompletedTasks === b.hideCompletedTasks &&
+    a.completedTag === b.completedTag &&
+    a.filterTags === b.filterTags &&
+    a.cardFieldVisibility === b.cardFieldVisibility &&
+    a.effortOnTasksEnabled === b.effortOnTasksEnabled &&
+    a.columnTitleOverrides === b.columnTitleOverrides
+  );
+}
 
 export interface TaskTreeState {
   roots: TaskNode[];
@@ -214,7 +259,9 @@ function moveBoardNodeToClipboard(
   };
 }
 
-export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
+export const useTaskTreeStore = create<TaskTreeState>()(
+  temporal(
+    (set, get) => ({
   roots: [],
   clipboardRoots: [],
   pathIds: [],
@@ -338,9 +385,15 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
       const path = pathFromRootToNode(s.roots, nodeId);
       if (!path) return {};
       const open = new Set(path);
-      const collapsedIds = s.collapsedIds.filter((id) => !open.has(id));
+      const nextCollapsed = s.collapsedIds.filter((id) => !open.has(id));
+      const collapsedUnchanged =
+        nextCollapsed.length === s.collapsedIds.length &&
+        nextCollapsed.every((id, i) => id === s.collapsedIds[i]);
       const contextNodeId = contextIdForRevealingNode(s.roots, nodeId);
-      return { collapsedIds, contextNodeId };
+      return {
+        contextNodeId,
+        ...(collapsedUnchanged ? {} : { collapsedIds: nextCollapsed }),
+      };
     });
   },
 
@@ -351,8 +404,14 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
       const path = pathFromRootToNode(s.roots, nodeId);
       if (!path) return {};
       const open = new Set(path);
-      const collapsedIds = s.collapsedIds.filter((id) => !open.has(id));
-      return { contextNodeId: nodeId, collapsedIds };
+      const nextCollapsed = s.collapsedIds.filter((id) => !open.has(id));
+      const collapsedUnchanged =
+        nextCollapsed.length === s.collapsedIds.length &&
+        nextCollapsed.every((id, i) => id === s.collapsedIds[i]);
+      return {
+        contextNodeId: nodeId,
+        ...(collapsedUnchanged ? {} : { collapsedIds: nextCollapsed }),
+      };
     });
   },
 
@@ -600,7 +659,39 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
     });
     return createdIds;
   },
-}));
+    }),
+    {
+      limit: 80,
+      partialize: partializeBoardHistory,
+      equality: boardHistoryEqual,
+    },
+  ),
+);
+
+/** Historie leeren (nach Datei laden / Board-Import). */
+export function clearBoardHistory(): void {
+  useTaskTreeStore.temporal.getState().clear();
+}
+
+/** Aktion ohne Historie-Eintrag ausführen und Stack danach leeren. */
+export function runWithoutBoardHistory(fn: () => void): void {
+  const temporalStore = useTaskTreeStore.temporal.getState();
+  temporalStore.pause();
+  try {
+    fn();
+  } finally {
+    temporalStore.clear();
+    temporalStore.resume();
+  }
+}
+
+export function undoBoard(): void {
+  useTaskTreeStore.temporal.getState().undo();
+}
+
+export function redoBoard(): void {
+  useTaskTreeStore.temporal.getState().redo();
+}
 
 export function getNodeOrNull(roots: TaskNode[], id: string): TaskNode | null {
   return findNodeById(roots, id);

@@ -16,8 +16,9 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { CircleHelp, HardDrive, Settings2, SlidersHorizontal, Tag } from "lucide-react";
+import { CircleHelp, HardDrive, Redo2, Settings2, SlidersHorizontal, Tag, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useStore } from "zustand";
 
 import {
   BoardBackupSync,
@@ -31,7 +32,7 @@ import {
   type BackupIntervalMinutes,
   getLocalBackup,
 } from "@/lib/board-backup";
-import { applyBoardJsonToStore, boardJsonFromStoreState } from "@/lib/file-board-reconcile";
+import { applyBoardJsonToStore, applyBoardPayloadToStore, boardJsonFromStoreState } from "@/lib/file-board-reconcile";
 import type { BoardSnapshotV1 } from "@/lib/task-tree-json";
 import {
   boardSnapshotToReplacePayload,
@@ -118,7 +119,7 @@ import {
   formatStorageStatusTooltip,
   hasUnsavedWorkingFile,
 } from "@/lib/storage-coordinator";
-import { useTaskTreeStore } from "@/store/task-tree-store";
+import { redoBoard, undoBoard, useTaskTreeStore } from "@/store/task-tree-store";
 import type { TaskNode } from "@/types/task-node";
 
 import { TagFilterBar } from "./tag-filter-bar";
@@ -248,7 +249,6 @@ export function TaskBoard() {
   const removeCard = useTaskTreeStore((s) => s.removeCard);
   const columnTitleOverrides = useTaskTreeStore((s) => s.columnTitleOverrides);
   const applyColumnTitleDraft = useTaskTreeStore((s) => s.applyColumnTitleDraft);
-  const replaceBoardFromImport = useTaskTreeStore((s) => s.replaceBoardFromImport);
   const importSubtreeRoot = useTaskTreeStore((s) => s.importSubtreeRoot);
   const importPastedCards = useTaskTreeStore((s) => s.importPastedCards);
   const cardFieldVisibility = useTaskTreeStore((s) => s.cardFieldVisibility);
@@ -259,6 +259,8 @@ export function TaskBoard() {
   const filterTags = useTaskTreeStore((s) => s.filterTags);
   const completedTag = useTaskTreeStore((s) => s.completedTag);
   const setCompletedTag = useTaskTreeStore((s) => s.setCompletedTag);
+  const canUndo = useStore(useTaskTreeStore.temporal, (s) => s.pastStates.length > 0);
+  const canRedo = useStore(useTaskTreeStore.temporal, (s) => s.futureStates.length > 0);
 
   const [searchFocusNodeId, setSearchFocusNodeId] = useState<string | null>(null);
   const [keyboardFocusNodeId, setKeyboardFocusNodeId] = useState<string | null>(null);
@@ -1173,6 +1175,41 @@ export function TaskBoard() {
     updateCard,
   ]);
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (shouldIgnoreCardKeyboard(e)) return;
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === "z" && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        undoBoard();
+        return;
+      }
+      if ((key === "z" && e.shiftKey) || key === "y") {
+        e.preventDefault();
+        redoBoard();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (keyboardFocusNodeId && !findNodeById(roots, keyboardFocusNodeId)) {
+      setKeyboardFocusNodeId(null);
+    }
+    if (searchFocusNodeId && !findNodeById(roots, searchFocusNodeId)) {
+      setSearchFocusNodeId(null);
+    }
+    if (titleEditNodeId && !findNodeById(roots, titleEditNodeId)) {
+      setTitleEditNodeId(null);
+    }
+    if (editorNodeId && !findNodeById(roots, editorNodeId)) {
+      setEditorOpen(false);
+      setEditorNodeId(null);
+    }
+  }, [roots, keyboardFocusNodeId, searchFocusNodeId, titleEditNodeId, editorNodeId]);
+
   const boardJsonExportText = useMemo(() => {
     const s = useTaskTreeStore.getState();
     return stringifyExportedDocument(
@@ -1286,6 +1323,26 @@ export function TaskBoard() {
           />
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={!canUndo}
+            onClick={() => undoBoard()}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Rückgängig"
+            aria-label="Rückgängig"
+          >
+            <Undo2 className="h-3.5 w-3.5" aria-hidden />
+          </button>
+          <button
+            type="button"
+            disabled={!canRedo}
+            onClick={() => redoBoard()}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Wiederholen"
+            aria-label="Wiederholen"
+          >
+            <Redo2 className="h-3.5 w-3.5" aria-hidden />
+          </button>
           <input
             ref={workingFilePickRef}
             type="file"
@@ -1571,7 +1628,7 @@ export function TaskBoard() {
           setPendingBoardImport(null);
           if (!snap) return;
           backupBeforeSuspiciousSwitch("import");
-          replaceBoardFromImport(boardSnapshotToReplacePayload(snap));
+          applyBoardPayloadToStore(boardSnapshotToReplacePayload(snap));
           closeEditor();
           setPostImportSaveOpen(true);
         }}

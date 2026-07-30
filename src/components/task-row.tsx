@@ -419,21 +419,15 @@ export function TaskRow({
             aria-label="Titel"
           />
         ) : (
-          <button
-            type="button"
+          <h3
             id={headingId}
             className={[
               "w-full truncate text-left text-sm font-medium",
               done ? "text-slate-400 line-through" : "text-slate-900",
             ].join(" ")}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelect();
-            }}
           >
             {node.title.trim() || "(Ohne Titel)"}
-          </button>
+          </h3>
         )}
         {showMeta ? (
           <div className="mt-0.5 space-y-0.5">

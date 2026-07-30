@@ -86,6 +86,13 @@ export function KeyboardShortcutsHelpDialog({ open, onClose }: KeyboardShortcuts
 
   const sections: ShortcutSection[] = [
     {
+      title: "Allgemein",
+      items: [
+        { keys: `${mod} + Z`, description: "Rückgängig" },
+        { keys: `${mod} + Shift + Z`, description: "Wiederholen" },
+      ],
+    },
+    {
       title: "Karten (Drill-down)",
       hint: "Karte zuerst per Klick oder Pfeiltasten fokussieren (blauer Ring).",
       items: [

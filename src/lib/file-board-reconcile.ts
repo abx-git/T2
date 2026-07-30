@@ -13,7 +13,7 @@ import {
   stringifyExportedDocument,
   type BoardSnapshotV1,
 } from "@/lib/task-tree-json";
-import { useTaskTreeStore } from "@/store/task-tree-store";
+import { useTaskTreeStore, runWithoutBoardHistory } from "@/store/task-tree-store";
 
 export type FileConflictChoice = "load_file" | "keep_local";
 
@@ -72,7 +72,9 @@ export function planFileReconcile(localJson: string, fileJson: string): FileReco
 }
 
 export function applyBoardPayloadToStore(payload: BoardImportPayload): void {
-  useTaskTreeStore.getState().replaceBoardFromImport(payload);
+  runWithoutBoardHistory(() => {
+    useTaskTreeStore.getState().replaceBoardFromImport(payload);
+  });
 }
 
 export function applyBoardJsonToStore(json: string): boolean {

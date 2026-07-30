@@ -94,6 +94,8 @@ export function boardJsonFromStoreState(): string {
       s.collapsedIds,
       s.clipboardRoots,
       templates,
+      s.filterColors,
+      s.filterScheduleKinds,
     ),
   );
 }
@@ -135,6 +137,8 @@ export function boardPersistKeyFromStoreState(): string {
     hideCompletedTasks: s.hideCompletedTasks,
     effortOnTasksEnabled: s.effortOnTasksEnabled,
     filterTags: s.filterTags,
+    filterColors: s.filterColors,
+    filterScheduleKinds: s.filterScheduleKinds,
     completedTag: s.completedTag,
     clipboardRoots: s.clipboardRoots,
     templates: getTemplatesSnapshot(),

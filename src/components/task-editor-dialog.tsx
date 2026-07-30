@@ -306,7 +306,10 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
                     key={t}
                     type="button"
                     onClick={() => removeTag(t)}
-                    className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-red-50 hover:text-red-800 hover:ring-red-200"
+                    className={[
+                      tagChipClass(t, completedTag),
+                      "hover:border-red-300 hover:bg-red-50 hover:text-red-800",
+                    ].join(" ")}
                     title="Tag entfernen"
                   >
                     {t} ×
@@ -340,8 +343,8 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
                         type="button"
                         onClick={() => addTag(t)}
                         className={[
-                          "rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 transition hover:ring-sky-300/80",
                           tagChipClass(t, completedTag),
+                          "transition hover:border-sky-400",
                         ].join(" ")}
                         title={`Tag „${t}“ hinzufügen`}
                       >

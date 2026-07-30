@@ -1,4 +1,9 @@
-import { isTaskMarkedDone, nodeHasAnyFilterTag } from "@/lib/task-tags";
+import {
+  nodeMatchesBoardFilters,
+  type ScheduleFilterKind,
+} from "@/lib/board-filters";
+import type { CardColorId } from "@/lib/card-color";
+import { isTaskMarkedDone } from "@/lib/task-tags";
 import type { TaskNode } from "@/types/task-node";
 
 /** Liegt `id` irgendwo im Teilbaum von `node` (inkl. Wurzel)? */
@@ -82,15 +87,10 @@ export function getSiblingsList(roots: TaskNode[], listParentId: string | null):
   return p?.children ?? [];
 }
 
-function nodeOrDescendantMatchesFilterTags(node: TaskNode, filterTags: string[]): boolean {
-  if (!filterTags.length) return true;
-  if (nodeHasAnyFilterTag(node, filterTags)) return true;
-  return node.children.some((c) => nodeOrDescendantMatchesFilterTags(c, filterTags));
-}
-
 /**
  * Sichtwald für die Kontext-Liste: erledigte Knoten werden entfernt
- * (Kinder eine Ebene hochgezogen); Tag-Filter behält passende Äste.
+ * (Kinder eine Ebene hochgezogen); Filter behält passende Äste
+ * (Tags, Farben, Termine — innerhalb OR, zwischen Dimensionen AND).
  */
 export function rootsForMindmapDisplay(
   roots: TaskNode[],
@@ -98,9 +98,16 @@ export function rootsForMindmapDisplay(
     hideCompletedTasks: boolean;
     completedTag: string;
     filterTags: string[];
+    filterColors?: CardColorId[];
+    filterScheduleKinds?: ScheduleFilterKind[];
   },
 ): TaskNode[] {
-  if (!opts.hideCompletedTasks && !opts.filterTags.length) return roots;
+  const filterColors = opts.filterColors ?? [];
+  const filterScheduleKinds = opts.filterScheduleKinds ?? [];
+  const hasFacetFilters =
+    opts.filterTags.length > 0 || filterColors.length > 0 || filterScheduleKinds.length > 0;
+
+  if (!opts.hideCompletedTasks && !hasFacetFilters) return roots;
 
   let next = roots;
 
@@ -123,11 +130,15 @@ export function rootsForMindmapDisplay(
     next = lift(next);
   }
 
-  if (opts.filterTags.length) {
-    const tags = opts.filterTags;
+  if (hasFacetFilters) {
+    const filterOpts = {
+      filterTags: opts.filterTags,
+      filterColors,
+      filterScheduleKinds,
+    };
     const walk = (n: TaskNode): TaskNode | null => {
       const kids = n.children.map(walk).filter((c): c is TaskNode => c !== null);
-      if (nodeHasAnyFilterTag(n, tags) || kids.length > 0) {
+      if (nodeMatchesBoardFilters(n, filterOpts) || kids.length > 0) {
         return { ...n, children: kids };
       }
       return null;

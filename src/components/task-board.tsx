@@ -202,6 +202,8 @@ export function TaskBoard() {
   const setEffortOnTasksEnabled = useTaskTreeStore((s) => s.setEffortOnTasksEnabled);
   const hideCompletedTasks = useTaskTreeStore((s) => s.hideCompletedTasks);
   const filterTags = useTaskTreeStore((s) => s.filterTags);
+  const filterColors = useTaskTreeStore((s) => s.filterColors);
+  const filterScheduleKinds = useTaskTreeStore((s) => s.filterScheduleKinds);
   const completedTag = useTaskTreeStore((s) => s.completedTag);
   const setCompletedTag = useTaskTreeStore((s) => s.setCompletedTag);
   const canUndo = useStore(useTaskTreeStore.temporal, (s) => s.pastStates.length > 0);
@@ -790,6 +792,8 @@ export function TaskBoard() {
             s.collapsedIds,
             s.clipboardRoots,
             getTemplatesSnapshot(),
+            s.filterColors,
+            s.filterScheduleKinds,
           ),
         );
         setPasteImportOpen(false);
@@ -956,9 +960,11 @@ export function TaskBoard() {
       hideCompletedTasks,
       completedTag,
       filterTags,
+      filterColors,
+      filterScheduleKinds,
     });
     return contextChildren(filtered, contextNodeId);
-  }, [roots, contextNodeId, hideCompletedTasks, completedTag, filterTags]);
+  }, [roots, contextNodeId, hideCompletedTasks, completedTag, filterTags, filterColors, filterScheduleKinds]);
 
   const breadcrumbPath = useMemo(
     () => contextPathNodes(roots, contextNodeId),
@@ -1179,6 +1185,8 @@ export function TaskBoard() {
         s.collapsedIds,
         s.clipboardRoots,
         getTemplatesSnapshot(),
+        s.filterColors,
+        s.filterScheduleKinds,
       ),
     );
   }, [
@@ -1189,6 +1197,8 @@ export function TaskBoard() {
     hideCompletedTasks,
     effortOnTasksEnabled,
     filterTags,
+    filterColors,
+    filterScheduleKinds,
     completedTag,
     collapsedIds,
     boardJsonExportOpen,

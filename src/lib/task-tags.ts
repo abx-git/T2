@@ -159,17 +159,19 @@ export function renameTagInForest<T extends { tags: string[]; children: T[] }>(
   return roots.map(mapNode);
 }
 
-/** Tailwind-Klassen für Tag-Chips auf Karten. */
+/** Tailwind-Klassen für Tag-Chips (Karten, Filter, Editor). Kleiner als Kartentitel (`text-sm`). */
 export function tagChipClass(
   tag: string,
   completedTag: string = DEFAULT_COMPLETED_TAG,
 ): string {
+  const base =
+    "inline-flex max-w-full items-center truncate rounded border px-1.5 py-px text-[10px] font-medium leading-tight";
   const k = normalizeTagLabel(tag).toLowerCase();
   if (k === normalizeCompletedTag(completedTag).toLowerCase()) {
-    return "bg-emerald-100 text-emerald-800 ring-emerald-200/80";
+    return `${base} border-emerald-400/90 bg-emerald-50 text-emerald-800`;
   }
   if (k === MILESTONE_TAG_DISPLAY.toLowerCase()) {
-    return "bg-amber-100 text-amber-900 ring-amber-200/80";
+    return `${base} border-amber-400/90 bg-amber-50 text-amber-900`;
   }
-  return "bg-slate-100 text-slate-700 ring-slate-200/80";
+  return `${base} border-slate-300 bg-slate-50 text-slate-700`;
 }

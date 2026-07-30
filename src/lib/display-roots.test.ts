@@ -6,7 +6,13 @@ import type { TaskNode } from "@/types/task-node";
 function node(
   id: string,
   title: string,
-  opts: { tags?: string[]; children?: TaskNode[] } = {},
+  opts: {
+    tags?: string[];
+    dueDate?: Date | null;
+    reminderDate?: Date | null;
+    cardColor?: TaskNode["cardColor"];
+    children?: TaskNode[];
+  } = {},
 ): TaskNode {
   return {
     id,
@@ -14,9 +20,10 @@ function node(
     link: "",
     description: "",
     tags: opts.tags ?? [],
-    dueDate: null,
-    reminderDate: null,
+    dueDate: opts.dueDate ?? null,
+    reminderDate: opts.reminderDate ?? null,
     effort: 0,
+    ...(opts.cardColor ? { cardColor: opts.cardColor } : {}),
     children: opts.children ?? [],
   };
 }
@@ -52,5 +59,38 @@ describe("rootsForMindmapDisplay", () => {
     });
     expect(display.map((n) => n.id)).toEqual(["a"]);
     expect(display[0]?.children.map((n) => n.id)).toEqual(["b"]);
+  });
+
+  it("filtert nach Farbe inkl. Nachfahren", () => {
+    const roots = [
+      node("a", "A", {
+        children: [node("b", "B", { cardColor: "sky" })],
+      }),
+      node("c", "C", { cardColor: "rose" }),
+    ];
+    const display = rootsForMindmapDisplay(roots, {
+      hideCompletedTasks: false,
+      completedTag: "Erledigt",
+      filterTags: [],
+      filterColors: ["sky"],
+    });
+    expect(display.map((n) => n.id)).toEqual(["a"]);
+    expect(display[0]?.children.map((n) => n.id)).toEqual(["b"]);
+  });
+
+  it("filtert nach Fälligkeit und kombiniert mit Tag (AND)", () => {
+    const due = new Date("2026-06-01T00:00:00");
+    const roots = [
+      node("a", "A", { tags: ["x"], dueDate: due }),
+      node("b", "B", { tags: ["x"] }),
+      node("c", "C", { dueDate: due }),
+    ];
+    const display = rootsForMindmapDisplay(roots, {
+      hideCompletedTasks: false,
+      completedTag: "Erledigt",
+      filterTags: ["x"],
+      filterScheduleKinds: ["due"],
+    });
+    expect(display.map((n) => n.id)).toEqual(["a"]);
   });
 });

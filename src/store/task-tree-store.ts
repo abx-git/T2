@@ -40,6 +40,13 @@ import {
   defaultBoardCollapsedIds,
 } from "@/lib/tree-depth-collapse";
 import {
+  defaultColorForNewCard,
+  parseFilterColors,
+  parseScheduleFilterKinds,
+  type ScheduleFilterKind,
+} from "@/lib/board-filters";
+import type { CardColorId } from "@/lib/card-color";
+import {
   DEFAULT_COMPLETED_TAG,
   defaultTagsForNewCard,
   normalizeCompletedTag,
@@ -58,6 +65,8 @@ export type BoardHistorySlice = {
   hideCompletedTasks: boolean;
   completedTag: string;
   filterTags: string[];
+  filterColors: CardColorId[];
+  filterScheduleKinds: ScheduleFilterKind[];
   cardFieldVisibility: CardFieldVisibility;
   effortOnTasksEnabled: boolean;
   columnTitleOverrides: Record<number, string>;
@@ -72,6 +81,8 @@ function partializeBoardHistory(state: TaskTreeState): BoardHistorySlice {
     hideCompletedTasks: state.hideCompletedTasks,
     completedTag: state.completedTag,
     filterTags: state.filterTags,
+    filterColors: state.filterColors,
+    filterScheduleKinds: state.filterScheduleKinds,
     cardFieldVisibility: state.cardFieldVisibility,
     effortOnTasksEnabled: state.effortOnTasksEnabled,
     columnTitleOverrides: state.columnTitleOverrides,
@@ -87,6 +98,8 @@ function boardHistoryEqual(a: BoardHistorySlice, b: BoardHistorySlice): boolean 
     a.hideCompletedTasks === b.hideCompletedTasks &&
     a.completedTag === b.completedTag &&
     a.filterTags === b.filterTags &&
+    a.filterColors === b.filterColors &&
+    a.filterScheduleKinds === b.filterScheduleKinds &&
     a.cardFieldVisibility === b.cardFieldVisibility &&
     a.effortOnTasksEnabled === b.effortOnTasksEnabled &&
     a.columnTitleOverrides === b.columnTitleOverrides
@@ -118,6 +131,18 @@ export interface TaskTreeState {
   setFilterTags: (tags: string[]) => void;
   addFilterTag: (tag: string) => void;
   removeFilterTag: (tag: string) => void;
+  /** Farbfilter (OR); Dimensionen Tags/Farben/Termine sind AND. */
+  filterColors: CardColorId[];
+  setFilterColors: (colors: CardColorId[]) => void;
+  addFilterColor: (color: CardColorId) => void;
+  removeFilterColor: (color: CardColorId) => void;
+  /** Terminfilter (OR): Fälligkeit / Erinnerung. */
+  filterScheduleKinds: ScheduleFilterKind[];
+  setFilterScheduleKinds: (kinds: ScheduleFilterKind[]) => void;
+  addFilterScheduleKind: (kind: ScheduleFilterKind) => void;
+  removeFilterScheduleKind: (kind: ScheduleFilterKind) => void;
+  /** Alle Kartenfilter (Tags, Farben, Termine) zurücksetzen. */
+  clearBoardFilters: () => void;
   /** Tag überall umbenennen (Karten, Filter, Erledigt-Tag). */
   renameTagGlobally: (from: string, to: string) => void;
 
@@ -180,6 +205,8 @@ export interface TaskTreeState {
     hideCompletedTasks?: boolean;
     completedTag?: string;
     filterTags?: string[];
+    filterColors?: CardColorId[];
+    filterScheduleKinds?: ScheduleFilterKind[];
     cardFieldVisibility?: CardFieldVisibility;
     effortOnTasksEnabled?: boolean;
     clipboardRoots?: TaskNode[];
@@ -214,17 +241,20 @@ function insertCardAtIndex(
   index: number,
 ): string {
   const id = generateUniqueTaskId(get().roots);
+  const state = get();
+  const cardColor = defaultColorForNewCard(state.filterColors);
   const newNode: TaskNode = {
     id,
     title: "",
     link: "",
     description: "",
-    tags: defaultTagsForNewCard(get().filterTags),
+    tags: defaultTagsForNewCard(state.filterTags),
     dueDate: null,
     reminderDate: null,
     effort: 0,
     effortUnit: "hours",
     effortSource: "manual",
+    ...(cardColor ? { cardColor } : {}),
     children: [],
   };
   set((s) => {
@@ -319,6 +349,48 @@ export const useTaskTreeStore = create<TaskTreeState>()(
       const filterTags = s.filterTags.filter((t) => tagKey(t) !== k);
       return { filterTags };
     });
+  },
+
+  filterColors: [],
+
+  setFilterColors: (colors) => {
+    set({ filterColors: parseFilterColors(colors) });
+  },
+
+  addFilterColor: (color) => {
+    set((s) => {
+      if (s.filterColors.includes(color)) return {};
+      return { filterColors: [...s.filterColors, color] };
+    });
+  },
+
+  removeFilterColor: (color) => {
+    set((s) => ({
+      filterColors: s.filterColors.filter((c) => c !== color),
+    }));
+  },
+
+  filterScheduleKinds: [],
+
+  setFilterScheduleKinds: (kinds) => {
+    set({ filterScheduleKinds: parseScheduleFilterKinds(kinds) });
+  },
+
+  addFilterScheduleKind: (kind) => {
+    set((s) => {
+      if (s.filterScheduleKinds.includes(kind)) return {};
+      return { filterScheduleKinds: [...s.filterScheduleKinds, kind] };
+    });
+  },
+
+  removeFilterScheduleKind: (kind) => {
+    set((s) => ({
+      filterScheduleKinds: s.filterScheduleKinds.filter((k) => k !== kind),
+    }));
+  },
+
+  clearBoardFilters: () => {
+    set({ filterTags: [], filterColors: [], filterScheduleKinds: [] });
   },
 
   renameTagGlobally: (from, to) => {
@@ -584,6 +656,8 @@ export const useTaskTreeStore = create<TaskTreeState>()(
       hideCompletedTasks: incomingHideDone,
       completedTag: incomingCompletedTag,
       filterTags: incomingFilterTags,
+      filterColors: incomingFilterColors,
+      filterScheduleKinds: incomingFilterSchedule,
       cardFieldVisibility: incomingVisibility,
       effortOnTasksEnabled: incomingEffort,
     } = payload;
@@ -609,6 +683,12 @@ export const useTaskTreeStore = create<TaskTreeState>()(
               .filter(Boolean)
               .filter((t, i, arr) => arr.findIndex((x) => tagKey(x) === tagKey(t)) === i),
           }
+        : {}),
+      ...(incomingFilterColors !== undefined
+        ? { filterColors: parseFilterColors(incomingFilterColors) }
+        : {}),
+      ...(incomingFilterSchedule !== undefined
+        ? { filterScheduleKinds: parseScheduleFilterKinds(incomingFilterSchedule) }
         : {}),
       cardFieldVisibility: mergeCardFieldVisibility(incomingVisibility),
       ...(typeof incomingEffort === "boolean" ? { effortOnTasksEnabled: incomingEffort } : {}),
@@ -672,6 +752,7 @@ export const useTaskTreeStore = create<TaskTreeState>()(
         const id = generateUniqueTaskIdFromTaken(taken);
         taken.add(id);
         createdIds.push(id);
+        const cardColor = defaultColorForNewCard(s.filterColors);
         const newNode: TaskNode = {
           id,
           title: card.title,
@@ -683,6 +764,7 @@ export const useTaskTreeStore = create<TaskTreeState>()(
           effort: 0,
           effortUnit: "hours",
           effortSource: "manual",
+          ...(cardColor ? { cardColor } : {}),
           children: [],
         };
         nextRoots = insertUnderParent(nextRoots, parentId, startIndex + i, newNode);

@@ -1,6 +1,11 @@
 import { mergeCardFieldVisibility, parseCardFieldVisibilityFromJson, type CardFieldVisibility } from "@/lib/card-field-visibility";
 import { parseCardColor, type CardColorId } from "@/lib/card-color";
 import {
+  parseFilterColors,
+  parseScheduleFilterKinds,
+  type ScheduleFilterKind,
+} from "@/lib/board-filters";
+import {
   DEFAULT_EFFORT_UNIT,
   getEffortSource,
   getEffortUnit,
@@ -82,6 +87,10 @@ export interface BoardSnapshotV1 {
   hideCompletedTasks?: boolean;
   /** Aktive Tag-Filter; optional, Standard leer. */
   filterTags?: string[];
+  /** Aktive Farbfilter; optional, Standard leer. */
+  filterColors?: CardColorId[];
+  /** Aktive Terminfilter (Fälligkeit / Erinnerung); optional, Standard leer. */
+  filterScheduleKinds?: ScheduleFilterKind[];
   /** Tag für „erledigt“; optional, Standard „Erledigt“. */
   completedTag?: string;
   /** Aufwand (Stunden) an Karten erlauben; optional, Standard true. */
@@ -372,6 +381,12 @@ export function parseExportedDocument(text: string): ExportedDocumentV1 {
               filterTags: root.filterTags.filter((x): x is string => typeof x === "string"),
             }
           : {}),
+        ...(Array.isArray(root.filterColors)
+          ? { filterColors: parseFilterColors(root.filterColors) }
+          : {}),
+        ...(Array.isArray(root.filterScheduleKinds)
+          ? { filterScheduleKinds: parseScheduleFilterKinds(root.filterScheduleKinds) }
+          : {}),
         ...(typeof root.completedTag === "string" && root.completedTag.trim()
           ? { completedTag: normalizeCompletedTag(root.completedTag) }
           : {}),
@@ -453,11 +468,15 @@ export function buildBoardSnapshot(
   collapsedIds: string[] = [],
   clipboardRoots: TaskNode[] = [],
   templates: TemplateRecordV1[] = [],
+  filterColors: CardColorId[] = [],
+  filterScheduleKinds: ScheduleFilterKind[] = [],
 ): BoardSnapshotV1 {
   const co: Record<string, string> = {};
   for (const [k, v] of Object.entries(columnTitleOverrides)) {
     if (typeof v === "string" && v.trim()) co[String(k)] = v.trim();
   }
+  const colors = parseFilterColors(filterColors);
+  const schedule = parseScheduleFilterKinds(filterScheduleKinds);
   return {
     format: EXPORT_FORMAT,
     version: EXPORT_VERSION,
@@ -471,6 +490,8 @@ export function buildBoardSnapshot(
     cardFieldVisibility: mergeCardFieldVisibility(cardFieldVisibility),
     ...(hideCompletedTasks ? { hideCompletedTasks: true } : {}),
     ...(filterTags.length ? { filterTags: [...filterTags] } : {}),
+    ...(colors.length ? { filterColors: [...colors] } : {}),
+    ...(schedule.length ? { filterScheduleKinds: [...schedule] } : {}),
     ...(normalizeCompletedTag(completedTag) !== DEFAULT_COMPLETED_TAG
       ? { completedTag: normalizeCompletedTag(completedTag) }
       : {}),
@@ -546,6 +567,8 @@ export type BoardImportPayload = {
   cardFieldVisibility?: CardFieldVisibility;
   hideCompletedTasks?: boolean;
   filterTags?: string[];
+  filterColors?: CardColorId[];
+  filterScheduleKinds?: ScheduleFilterKind[];
   completedTag?: string;
   effortOnTasksEnabled?: boolean;
   clipboardRoots?: TaskNode[];
@@ -561,6 +584,10 @@ export function boardSnapshotToReplacePayload(snap: BoardSnapshotV1): BoardImpor
     cardFieldVisibility: snap.cardFieldVisibility,
     ...(snap.hideCompletedTasks === true ? { hideCompletedTasks: true } : {}),
     ...(snap.filterTags?.length ? { filterTags: [...snap.filterTags] } : {}),
+    ...(snap.filterColors?.length ? { filterColors: [...snap.filterColors] } : {}),
+    ...(snap.filterScheduleKinds?.length
+      ? { filterScheduleKinds: [...snap.filterScheduleKinds] }
+      : {}),
     ...(snap.completedTag ? { completedTag: normalizeCompletedTag(snap.completedTag) } : {}),
     ...(snap.effortOnTasksEnabled === false ? { effortOnTasksEnabled: false } : {}),
     ...(snap.clipboardRoots?.length
@@ -578,6 +605,12 @@ export function stableBoardStateKey(payload: BoardImportPayload): string {
   }
   const tags = payload.filterTags?.length
     ? [...payload.filterTags].map((t) => t.trim()).filter(Boolean).sort()
+    : [];
+  const colors = payload.filterColors?.length
+    ? parseFilterColors(payload.filterColors).slice().sort()
+    : [];
+  const schedule = payload.filterScheduleKinds?.length
+    ? parseScheduleFilterKinds(payload.filterScheduleKinds).slice().sort()
     : [];
   const templates = [...(payload.templates ?? [])]
     .map((t) => ({
@@ -597,6 +630,8 @@ export function stableBoardStateKey(payload: BoardImportPayload): string {
     hideCompletedTasks: payload.hideCompletedTasks === true,
     effortOnTasksEnabled: payload.effortOnTasksEnabled !== false,
     filterTags: tags,
+    filterColors: colors,
+    filterScheduleKinds: schedule,
     completedTag: normalizeCompletedTag(payload.completedTag ?? DEFAULT_COMPLETED_TAG),
     clipboardRoots: (payload.clipboardRoots ?? []).map(taskNodeToJson),
     templates,

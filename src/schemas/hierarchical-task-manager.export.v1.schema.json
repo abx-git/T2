@@ -149,6 +149,27 @@
           "type": "boolean",
           "description": "Optional: Karten mit Erledigt-Tag in der Spaltenansicht ausblenden; nur Anzeige."
         },
+        "filterTags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional: aktive Tag-Filter (OR innerhalb; AND mit Farben/Terminen)."
+        },
+        "filterColors": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["sky", "emerald", "amber", "rose", "violet", "cyan", "orange", "slate"]
+          },
+          "description": "Optional: aktive Farbfilter (OR innerhalb; AND mit Tags/Terminen)."
+        },
+        "filterScheduleKinds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["due", "reminder"]
+          },
+          "description": "Optional: aktive Terminfilter — Fälligkeit (`due`) / Erinnerung (`reminder`)."
+        },
         "completedTag": {
           "type": "string",
           "minLength": 1,
@@ -157,6 +178,11 @@
         "effortOnTasksEnabled": {
           "type": "boolean",
           "description": "Optional: Aufwand an Aufgaben erlauben (Standard true). Bei `false` werden keine Aufwände bearbeitet oder angezeigt."
+        },
+        "collapsedIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional: IDs eingeklappter Knoten (Kinder ausgeblendet)."
         }
       },
       "required": ["format", "version", "exportedAt", "scope", "roots", "pathIds", "columnTitleOverrides"],

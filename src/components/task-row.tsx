@@ -6,6 +6,7 @@ import {
   Circle,
   CircleCheck,
   ExternalLink,
+  GripVertical,
   ListPlus,
   MoreHorizontal,
   Pencil,
@@ -36,6 +37,12 @@ import {
   type CardColorId,
 } from "@/lib/card-color";
 import { isCoarsePointerDevice } from "@/lib/coarse-pointer";
+import {
+  effortTotalsIsEmpty,
+  formatEffortTotals,
+  rollupDisplayTotals,
+} from "@/lib/task-effort";
+import { formatTaskIdForDisplay } from "@/lib/task-id";
 import { taskLinkHref } from "@/lib/task-link";
 import {
   isTaskMarkedDone,
@@ -98,6 +105,7 @@ export function TaskRow({
   onRequestDelete,
 }: TaskRowProps) {
   const completedTag = useTaskTreeStore((s) => s.completedTag);
+  const effortOnTasksEnabled = useTaskTreeStore((s) => s.effortOnTasksEnabled);
   const updateCard = useTaskTreeStore((s) => s.updateCard);
   const headingId = useId();
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -161,9 +169,35 @@ export function TaskRow({
   const dueHint = fieldVisibility.dueDate
     ? formatDueHint(rollupOverdue ?? rollupDue)
     : null;
+  const reminderHint = fieldVisibility.reminderDate
+    ? formatDueHint(node.reminderDate)
+    : null;
   const visibleTags = fieldVisibility.tags
     ? tagsWithoutCompletedTag(node.tags, completedTag)
     : [];
+  const descriptionPreview = fieldVisibility.description
+    ? node.description.trim().replace(/\s+/g, " ")
+    : "";
+  const effortTotals =
+    fieldVisibility.effort && effortOnTasksEnabled
+      ? rollupDisplayTotals(node, completedTag)
+      : null;
+  const effortLabel =
+    effortTotals && !effortTotalsIsEmpty(effortTotals)
+      ? formatEffortTotals(effortTotals)
+      : "";
+  const idLabel = fieldVisibility.id ? formatTaskIdForDisplay(node.id) : "";
+  const showMeta =
+    !isTitleEditing &&
+    Boolean(
+      dueHint ||
+        reminderHint ||
+        visibleTags.length > 0 ||
+        descriptionPreview ||
+        effortLabel ||
+        idLabel ||
+        cardLink,
+    );
 
   const style = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
@@ -190,10 +224,16 @@ export function TaskRow({
 
   const handleContextMenu = (e: MouseEvent) => {
     if (coarsePointer || isTitleEditing || isDragging) return;
-    if (isInteractiveTarget(e.target)) return;
+    const el =
+      e.target instanceof Element
+        ? e.target
+        : e.target instanceof Text
+          ? e.target.parentElement
+          : null;
+    if (el?.closest("a, [role='menu'], [role='menuitem']")) return;
     e.preventDefault();
     onSelect();
-    openMenu(e.clientY, e.clientX);
+    onOpenDetails();
   };
 
   const toggleDone = () => {
@@ -290,8 +330,6 @@ export function TaskRow({
       data-task-card-id={node.id}
       aria-labelledby={headingId}
       style={style}
-      {...attributes}
-      {...listeners}
       tabIndex={isKeyboardFocus ? -1 : undefined}
       onClick={(e) => {
         if (isInteractiveTarget(e.target) || isTitleEditing) return;
@@ -301,11 +339,10 @@ export function TaskRow({
         if (isInteractiveTarget(e.target) || isTitleEditing) return;
         e.preventDefault();
         if (hasChildren) onDrillIn();
-        else onOpenDetails();
       }}
       onContextMenu={handleContextMenu}
       className={[
-        "group relative flex cursor-grab touch-none items-stretch gap-1 rounded-lg border px-2 py-2 shadow-sm transition active:cursor-grabbing",
+        "group relative flex cursor-default items-stretch gap-1 rounded-lg border px-2 py-2 shadow-sm transition",
         surface,
         isDragging ? "opacity-40" : "",
         isNestDropTarget || isOver
@@ -320,12 +357,26 @@ export function TaskRow({
         <span className={["absolute inset-y-0 left-0 w-1 rounded-l-lg", accent].join(" ")} aria-hidden />
       ) : null}
 
+      <button
+        type="button"
+        className={[
+          "mt-0.5 flex h-7 w-5 shrink-0 touch-none cursor-grab items-center justify-center rounded text-slate-300",
+          "hover:bg-slate-100 hover:text-slate-500 active:cursor-grabbing",
+          isTitleEditing ? "pointer-events-none opacity-40" : "",
+        ].join(" ")}
+        aria-label="Karte verschieben"
+        title="Ziehen zum Verschieben"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="h-4 w-4" aria-hidden />
+      </button>
+
       {fieldVisibility.completedCheck ? (
         <button
           type="button"
           className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-white hover:text-slate-700"
           aria-label={done ? "Als offen markieren" : "Als erledigt markieren"}
-          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             toggleDone();
@@ -350,7 +401,6 @@ export function TaskRow({
             onBlur={() => {
               if (!coarsePointer) commitTitle();
             }}
-            onPointerDown={(e) => e.stopPropagation()}
             className="w-full rounded border border-sky-300 bg-white px-2 py-1 text-sm text-slate-900 outline-none ring-2 ring-sky-200"
             aria-label="Titel"
           />
@@ -362,7 +412,6 @@ export function TaskRow({
               "w-full truncate text-left text-sm font-medium",
               done ? "text-slate-400 line-through" : "text-slate-900",
             ].join(" ")}
-            onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               onSelect();
@@ -372,21 +421,62 @@ export function TaskRow({
             {node.title.trim() || "(Ohne Titel)"}
           </button>
         )}
-        {(dueHint || visibleTags.length > 0) && !isTitleEditing ? (
-          <div className="mt-0.5 flex flex-wrap items-center gap-1">
-            {dueHint ? (
-              <span className="text-[10px] text-slate-500">{dueHint}</span>
+        {showMeta ? (
+          <div className="mt-0.5 space-y-0.5">
+            {descriptionPreview ? (
+              <p className="truncate text-[11px] leading-snug text-slate-500">{descriptionPreview}</p>
             ) : null}
-            {visibleTags.slice(0, 4).map((t) => (
-              <span key={t} className={tagChipClass(t, completedTag)}>
-                {t}
-              </span>
-            ))}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              {dueHint ? (
+                <span
+                  className={[
+                    "text-[10px]",
+                    isDueOverdue(rollupOverdue ?? null, done) ? "font-medium text-red-600" : "text-slate-500",
+                  ].join(" ")}
+                  title="Fälligkeit"
+                >
+                  {dueHint}
+                </span>
+              ) : null}
+              {reminderHint ? (
+                <span className="text-[10px] text-amber-700/90" title="Erinnerung">
+                  Erin. {reminderHint}
+                </span>
+              ) : null}
+              {effortLabel ? (
+                <span className="text-[10px] tabular-nums text-slate-500" title="Aufwand">
+                  Σ {effortLabel}
+                </span>
+              ) : null}
+              {idLabel ? (
+                <span className="font-mono text-[10px] text-slate-400" title="Karten-ID">
+                  {idLabel}
+                </span>
+              ) : null}
+              {cardLink ? (
+                <a
+                  href={cardLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-0.5 text-[10px] text-sky-600 hover:text-sky-800"
+                  title="Link öffnen"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ExternalLink className="h-3 w-3" aria-hidden />
+                  Link
+                </a>
+              ) : null}
+              {visibleTags.slice(0, 4).map((t) => (
+                <span key={t} className={tagChipClass(t, completedTag)}>
+                  {t}
+                </span>
+              ))}
+            </div>
           </div>
         ) : null}
       </div>
 
-      <div className="flex shrink-0 items-start gap-0.5" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="flex shrink-0 items-start gap-0.5">
         <button
           type="button"
           className="flex h-7 w-7 items-center justify-center rounded-md border border-sky-200/90 bg-sky-50 text-sky-700 hover:bg-sky-100"

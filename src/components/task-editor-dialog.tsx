@@ -356,7 +356,7 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
           <div>
             <span className="block text-xs font-medium text-slate-600">Kartenfarbe</span>
             <p className="mt-0.5 text-[10px] text-slate-500">
-              Auch per Rechtsklick / ⋯ auf der Karte. Überfällig und Meilenstein färben den Hintergrund;
+              Auch per Rechtsklick auf der Karte oder über ⋯ → Ändern. Überfällig und Meilenstein färben den Hintergrund;
               deine Farbe bleibt als linker Streifen sichtbar.
             </p>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">

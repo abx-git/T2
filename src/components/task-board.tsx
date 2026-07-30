@@ -1,7 +1,6 @@
 "use client";
 
 import type {
-  CollisionDetection,
   DragEndEvent,
   DragOverEvent,
   DragStartEvent,
@@ -11,8 +10,6 @@ import {
   DragOverlay,
   PointerSensor,
   TouchSensor,
-  closestCenter,
-  pointerWithin,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
@@ -32,6 +29,7 @@ import {
   type BackupIntervalMinutes,
   getLocalBackup,
 } from "@/lib/board-backup";
+import { boardCollisionDetection } from "@/lib/board-dnd-collision";
 import { applyBoardJsonToStore, applyBoardPayloadToStore, boardJsonFromStoreState } from "@/lib/file-board-reconcile";
 import type { BoardSnapshotV1 } from "@/lib/task-tree-json";
 import {
@@ -145,69 +143,6 @@ import { PostImportSaveDialog } from "./post-import-save-dialog";
 import { TaskEditorDialog } from "./task-editor-dialog";
 import { KeyboardShortcutsHelpDialog } from "./keyboard-shortcuts-help-dialog";
 
-
-function pointInClientRect(
-  point: { x: number; y: number },
-  rect: { left: number; top: number; width: number; height: number },
-): boolean {
-  return (
-    point.x >= rect.left &&
-    point.x <= rect.left + rect.width &&
-    point.y >= rect.top &&
-    point.y <= rect.top + rect.height
-  );
-}
-
-const boardCollisionDetection: CollisionDetection = (args) => {
-  const activeSource = args.active.data.current?.source as string | undefined;
-  const { pointerCoordinates, droppableContainers, droppableRects } = args;
-
-  const collisionFor = (container: (typeof droppableContainers)[number]) => [
-    { id: container.id, data: { droppableContainer: container, value: 0 } },
-  ];
-
-  if (pointerCoordinates) {
-    for (const container of droppableContainers) {
-      const kind = container.data.current?.kind as string | undefined;
-      if (kind !== "clipboardGap" && kind !== "clipboardCard") continue;
-      const rect = droppableRects.get(container.id);
-      if (!rect || !pointInClientRect(pointerCoordinates, rect)) continue;
-      return collisionFor(container);
-    }
-    if (activeSource !== "clipboard") {
-      for (const id of [CLIPBOARD_DROP_TARGET_ID, CLIPBOARD_SIDEBAR_DROP_ID]) {
-        const rect = droppableRects.get(id);
-        const container = droppableContainers.find((c) => String(c.id) === id);
-        if (rect && container && pointInClientRect(pointerCoordinates, rect)) {
-          return collisionFor(container);
-        }
-      }
-    }
-  }
-
-  const hits = pointerWithin(args);
-  if (hits.length > 0) {
-    const clip = hits.find(
-      (c) =>
-        String(c.id) === CLIPBOARD_DROP_TARGET_ID ||
-        String(c.id) === CLIPBOARD_SIDEBAR_DROP_ID ||
-        String(c.id).startsWith("clipboard-gap:"),
-    );
-    if (clip && activeSource !== "clipboard") return [clip];
-    const outlineGap = hits.find((c) => String(c.id).startsWith("outline-gap:"));
-    if (outlineGap) return [outlineGap];
-    const outlineNest = hits.find(
-      (c) => c.data?.droppableContainer?.data?.current?.kind === "outlineNest",
-    );
-    if (outlineNest) return [outlineNest];
-    const nest = hits.find((c) => c.data?.droppableContainer?.data?.current?.kind === "contextNest");
-    if (nest) return [nest];
-    const gap = hits.find((c) => String(c.id).startsWith("context-gap:"));
-    if (gap) return [gap];
-    return [hits[0]];
-  }
-  return closestCenter(args);
-};
 
 function DragPreviewCard({ id }: { id: string }) {
   const roots = useTaskTreeStore((s) => s.roots);

@@ -59,3 +59,34 @@ export function applyContextListDrop(
   const childCount = getSiblingsList(r1, targetId).length;
   return insertUnderParent(r1, targetId, childCount, structuredClone(detached));
 }
+
+/**
+ * Fügt einen externen Knoten (z. B. aus der Zwischenablage) in die aktuelle Kontext-Liste ein.
+ */
+export function insertNodeIntoContextList(
+  roots: TaskNode[],
+  contextNodeId: string | null,
+  insert: TaskNode,
+  drop: ContextListDrop,
+): TaskNode[] {
+  const clone = structuredClone(insert) as TaskNode;
+  if (contextNodeId !== null) {
+    if (!findNodeById(roots, contextNodeId)) return roots;
+    if (subtreeContainsId(clone, contextNodeId)) return roots;
+  }
+
+  if (drop.kind === "gap") {
+    const sibs = getSiblingsList(roots, contextNodeId);
+    if (drop.insertIndex < 0 || drop.insertIndex > sibs.length) return roots;
+    const insertAt = Math.max(0, Math.min(drop.insertIndex, sibs.length));
+    return insertUnderParent(roots, contextNodeId, insertAt, clone);
+  }
+
+  const targetId = drop.targetId;
+  if (targetId === clone.id || subtreeContainsId(clone, targetId)) return roots;
+  if (!findNodeById(roots, targetId)) return roots;
+  const peers = getSiblingsList(roots, contextNodeId);
+  if (!peers.some((p) => p.id === targetId)) return roots;
+  const childCount = getSiblingsList(roots, targetId).length;
+  return insertUnderParent(roots, targetId, childCount, clone);
+}

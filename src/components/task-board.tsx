@@ -915,6 +915,23 @@ export function TaskBoard() {
       const forestTarget = forestDropTargetFromOverId(overId, clipRoots);
       if (forestTarget) {
         applyUnifiedDrag(activeId, { type: "within-clipboard", target: forestTarget });
+        return;
+      }
+
+      const gapFromClip = parseContextGapId(overId);
+      if (gapFromClip !== null) {
+        applyUnifiedDrag(activeId, {
+          type: "from-clipboard-to-context",
+          drop: { kind: "gap", insertIndex: gapFromClip },
+        });
+        return;
+      }
+      const nestFromClip = over.data.current?.kind as string | undefined;
+      if (nestFromClip === "contextNest" && overId !== activeId) {
+        applyUnifiedDrag(activeId, {
+          type: "from-clipboard-to-context",
+          drop: { kind: "nest", targetId: overId },
+        });
       }
       return;
     }

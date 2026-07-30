@@ -27,6 +27,7 @@ import {
 } from "@/lib/clipboard-dnd";
 import {
   applyContextListDrop,
+  insertNodeIntoContextList,
   type ContextListDrop,
 } from "@/lib/context-list-dnd";
 import { refreshCalculatedEffortsInTree } from "@/lib/task-effort";
@@ -400,6 +401,23 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
           s.completedTag,
         );
         return { clipboardRoots: clipNext };
+      }
+
+      if (drop.type === "from-clipboard-to-context") {
+        const { next: clipNext, detached } = detachNodeById(s.clipboardRoots, activeId);
+        if (!detached) return {};
+        const boardNext = refreshCalculatedEffortsInTree(
+          insertNodeIntoContextList(s.roots, s.contextNodeId, detached, drop.drop),
+          s.completedTag,
+        );
+        if (boardNext === s.roots) return {};
+        const nextPath = pathIdsAfterNodeMove(boardNext, detached.id, s.pathIds);
+        return {
+          roots: boardNext,
+          pathIds: nextPath,
+          clipboardRoots: refreshCalculatedEffortsInTree(clipNext, s.completedTag),
+          contextNodeId: normalizeContextNodeId(boardNext, s.contextNodeId),
+        };
       }
 
       return {};

@@ -10,7 +10,15 @@ import type { TaskNode } from "@/types/task-node";
 
 import { TaskRow, type TaskTitleSaveMeta } from "./task-row";
 
-function GapDrop({ insertIndex }: { insertIndex: number }) {
+function GapDrop({
+  insertIndex,
+  large,
+  emptyHint,
+}: {
+  insertIndex: number;
+  large?: boolean;
+  emptyHint?: boolean;
+}) {
   const { setNodeRef, isOver } = useDroppable({
     id: contextGapId(insertIndex),
     data: { kind: "contextGap" as const, insertIndex },
@@ -20,10 +28,27 @@ function GapDrop({ insertIndex }: { insertIndex: number }) {
       ref={setNodeRef}
       className={[
         "mx-1 rounded transition-all",
-        isOver ? "h-3 bg-sky-200/90 ring-1 ring-sky-400" : "h-1.5",
+        large
+          ? isOver
+            ? "min-h-28 border border-dashed border-sky-400 bg-sky-50/90 px-4 py-8"
+            : "min-h-28 border border-dashed border-slate-200 bg-slate-50/80 px-4 py-8"
+          : isOver
+            ? "h-3 bg-sky-200/90 ring-1 ring-sky-400"
+            : "h-1.5",
       ].join(" ")}
-      aria-hidden
-    />
+      aria-hidden={!emptyHint}
+    >
+      {emptyHint ? (
+        <p className="pointer-events-none text-center text-sm text-slate-500">
+          Keine Karten hier.{" "}
+          <kbd className="rounded border px-1 text-[11px]">Enter</kbd> für Geschwister,{" "}
+          <kbd className="rounded border px-1 text-[11px]">Tab</kbd> für Unterkarte.
+          <span className="mt-2 block text-xs text-slate-400">
+            Oder Karte aus der Zwischenablage hierher ziehen.
+          </span>
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -87,14 +112,7 @@ export function ContextCardList({
       </div>
 
       <div className="min-h-0 flex-1 space-y-0 overflow-y-auto pb-8">
-        <GapDrop insertIndex={0} />
-        {nodes.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-4 py-8 text-center text-sm text-slate-500">
-            Keine Karten hier.{" "}
-            <kbd className="rounded border px-1 text-[11px]">Enter</kbd> für Geschwister,{" "}
-            <kbd className="rounded border px-1 text-[11px]">Tab</kbd> für Unterkarte.
-          </p>
-        ) : null}
+        <GapDrop insertIndex={0} large={nodes.length === 0} emptyHint={nodes.length === 0} />
         {nodes.map((node, index) => (
           <div key={node.id}>
             <TaskRow

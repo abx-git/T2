@@ -178,6 +178,8 @@ export interface BranchExportDialogProps {
   completedTag: string;
   effortOnTasksEnabled: boolean;
   onClose: () => void;
+  /** Öffnet Speichern-als-Vorlage (voller Teilbaum, unabhängig vom Attributfilter). */
+  onSaveAsTemplate?: (root: TaskNode) => void;
 }
 
 export function BranchExportDialog({
@@ -186,6 +188,7 @@ export function BranchExportDialog({
   completedTag,
   effortOnTasksEnabled,
   onClose,
+  onSaveAsTemplate,
 }: BranchExportDialogProps) {
   const titleId = useId();
   const areaId = useId();
@@ -379,6 +382,15 @@ export function BranchExportDialog({
           >
             Schließen
           </button>
+          {onSaveAsTemplate ? (
+            <button
+              type="button"
+              onClick={() => onSaveAsTemplate(root)}
+              className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-900 hover:bg-sky-100"
+            >
+              Als Vorlage speichern
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={handleDownload}

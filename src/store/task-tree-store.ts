@@ -34,7 +34,7 @@ import {
 import { applyOutlineDrop, insertNodeIntoOutline, type OutlineDrop } from "@/lib/outline-dnd";
 import { refreshCalculatedEffortsInTree } from "@/lib/task-effort";
 import { collectAllNodeIds, generateUniqueTaskId, generateUniqueTaskIdFromTaken } from "@/lib/task-id";
-import { remapTaskNodeIds } from "@/lib/task-tree-json";
+import { remapTaskNodeForest, remapTaskNodeIds } from "@/lib/task-tree-json";
 import {
   collapsedIdsAfterBoardDepthAction,
   defaultBoardCollapsedIds,
@@ -189,6 +189,17 @@ export interface TaskTreeState {
    * IDs im `root` werden neu vergeben, um Kollisionen zu vermeiden.
    */
   importSubtreeRoot: (parentId: string | null, root: TaskNode) => void;
+  /**
+   * Vorlage unter `parentId` einfügen.
+   * `children`: Kinder der Vorlagen-Wurzel (oder die Wurzel selbst, wenn blatt).
+   * `wrapper`: ganze Vorlagen-Wurzel als eine Unterkarte.
+   * Liefert die Anzahl eingefügter Karten (Knoten gesamt).
+   */
+  applyTemplateUnder: (
+    parentId: string,
+    root: TaskNode,
+    mode: "children" | "wrapper",
+  ) => number;
   /** Mehrere Karten unter `parentId` einfügen (`null` = Wurzel). Liefert die neuen IDs. */
   importPastedCards: (
     parentId: string | null,
@@ -606,11 +617,10 @@ export const useTaskTreeStore = create<TaskTreeState>()(
   },
 
   importSubtreeRoot: (parentId, root) => {
-    const fresh = remapTaskNodeIds(root);
-    let applied = false;
     set((s) => {
+      const takenNow = collectAllNodeIds([...s.roots, ...s.clipboardRoots]);
+      const fresh = remapTaskNodeIds(root, takenNow);
       if (parentId !== null && !findNodeById(s.roots, parentId)) return {};
-      applied = true;
       if (parentId === null) {
         const nextRoots = [...s.roots, fresh];
         return { roots: nextRoots, pathIds: normalizePathIds(nextRoots, s.pathIds) };
@@ -622,8 +632,31 @@ export const useTaskTreeStore = create<TaskTreeState>()(
       );
       return { roots: nextRoots, pathIds: normalizePathIds(nextRoots, s.pathIds) };
     });
-    if (applied) {
-    }
+  },
+
+  applyTemplateUnder: (parentId, root, mode) => {
+    let insertedCount = 0;
+    set((s) => {
+      if (!findNodeById(s.roots, parentId)) return {};
+      const taken = collectAllNodeIds([...s.roots, ...s.clipboardRoots]);
+      const toInsert: TaskNode[] =
+        mode === "wrapper"
+          ? [root]
+          : root.children.length > 0
+            ? [...root.children]
+            : [root];
+      const fresh = remapTaskNodeForest(toInsert, taken);
+      insertedCount = fresh.reduce((n, node) => n + collectSubtreeNodeIds(node).size, 0);
+      let nextRoots = s.roots;
+      let startIndex = getSiblingsList(nextRoots, parentId).length;
+      for (const node of fresh) {
+        nextRoots = insertUnderParent(nextRoots, parentId, startIndex, node);
+        startIndex += 1;
+      }
+      nextRoots = refreshCalculatedEffortsInTree(nextRoots, s.completedTag);
+      return { roots: nextRoots, pathIds: normalizePathIds(nextRoots, s.pathIds) };
+    });
+    return insertedCount;
   },
 
   importPastedCards: (parentId, cards) => {

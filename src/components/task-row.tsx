@@ -7,6 +7,7 @@ import {
   CircleCheck,
   Download,
   ExternalLink,
+  FileStack,
   GripVertical,
   ListPlus,
   MoreHorizontal,
@@ -86,6 +87,7 @@ export interface TaskRowProps {
   onAddChild: () => void;
   onOpenDetails: () => void;
   onRequestExport?: () => void;
+  onRequestInsertTemplate?: () => void;
   onRequestDelete?: () => void;
 }
 
@@ -103,6 +105,7 @@ export function TaskRow({
   onAddChild,
   onOpenDetails,
   onRequestExport,
+  onRequestInsertTemplate,
   onRequestDelete,
 }: TaskRowProps) {
   const completedTag = useTaskTreeStore((s) => s.completedTag);
@@ -330,6 +333,20 @@ export function TaskRow({
           >
             <Download className="h-3.5 w-3.5" aria-hidden />
             Exportieren…
+          </button>
+        ) : null}
+        {onRequestInsertTemplate ? (
+          <button
+            type="button"
+            role="menuitem"
+            className={rowMenuItemClass}
+            onClick={() => {
+              setMenuOpen(false);
+              onRequestInsertTemplate();
+            }}
+          >
+            <FileStack className="h-3.5 w-3.5" aria-hidden />
+            Vorlage einfügen…
           </button>
         ) : null}
         {onRequestDelete ? (

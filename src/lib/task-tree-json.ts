@@ -54,6 +54,15 @@ export interface TaskNodeJson {
   children: TaskNodeJson[];
 }
 
+/** Gespeicherte Teilbaum-Vorlage (Bibliothek / Board-Portabilität). */
+export interface TemplateRecordV1 {
+  id: string;
+  name: string;
+  description?: string;
+  updatedAt: number;
+  root: TaskNodeJson;
+}
+
 export interface BoardSnapshotV1 {
   format: typeof EXPORT_FORMAT;
   version: typeof EXPORT_VERSION;
@@ -79,6 +88,8 @@ export interface BoardSnapshotV1 {
   effortOnTasksEnabled?: boolean;
   /** Zwischenablage: abgelegte Teilbäume (Spezial-Ast). */
   clipboardRoots?: TaskNodeJson[];
+  /** Vorlagen-Bibliothek (Portabilität mit der Arbeitsdatei). */
+  templates?: TemplateRecordV1[];
 }
 
 export interface SubtreeSnapshotV1 {
@@ -131,12 +142,16 @@ export function taskNodeFromJson(j: TaskNodeJson): TaskNode {
   };
 }
 
-/** Alle IDs neu vergeben (z. B. nach JSON-Import eines Teilbaums). */
-export function remapTaskNodeIds(root: TaskNode): TaskNode {
-  const taken = new Set<string>();
+/**
+ * Alle IDs neu vergeben (z. B. nach JSON-Import eines Teilbaums).
+ * Optional `taken` mit bereits belegten IDs (Board + Zwischenablage) vorausfüllen —
+ * das Set wird in-place um die neuen IDs ergänzt.
+ */
+export function remapTaskNodeIds(root: TaskNode, taken?: Set<string>): TaskNode {
+  const used = taken ?? new Set<string>();
   function walk(n: TaskNode): TaskNode {
-    const id = generateUniqueTaskIdFromTaken(taken);
-    taken.add(id);
+    const id = generateUniqueTaskIdFromTaken(used);
+    used.add(id);
     return {
       ...n,
       id,
@@ -146,6 +161,49 @@ export function remapTaskNodeIds(root: TaskNode): TaskNode {
     };
   }
   return walk(root);
+}
+
+/** Mehrere Wurzeln remappen; `taken` wird fortgeschrieben. */
+export function remapTaskNodeForest(roots: TaskNode[], taken?: Set<string>): TaskNode[] {
+  const used = taken ?? new Set<string>();
+  return roots.map((r) => remapTaskNodeIds(r, used));
+}
+
+function parseBoardTemplateRecord(raw: unknown, path: string): TemplateRecordV1 {
+  const o = expectObject(raw, `${path}: Objekt erwartet`);
+  if (typeof o.id !== "string" || !o.id.trim()) {
+    throw new Error(`${path}.id: nicht-leere Zeichenkette erwartet`);
+  }
+  if (typeof o.name !== "string" || !o.name.trim()) {
+    throw new Error(`${path}.name: nicht-leere Zeichenkette erwartet`);
+  }
+  if (typeof o.updatedAt !== "number" || !Number.isFinite(o.updatedAt)) {
+    throw new Error(`${path}.updatedAt: Zahl erwartet`);
+  }
+  if (o.description !== undefined && typeof o.description !== "string") {
+    throw new Error(`${path}.description: Zeichenkette erwartet`);
+  }
+  return {
+    id: o.id.trim(),
+    name: o.name.trim(),
+    ...(typeof o.description === "string" && o.description.trim()
+      ? { description: o.description.trim() }
+      : {}),
+    updatedAt: o.updatedAt,
+    root: expectTaskNodeJson(o.root, `${path}.root`),
+  };
+}
+
+function parseBoardTemplates(raw: unknown[]): TemplateRecordV1[] {
+  const out: TemplateRecordV1[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    try {
+      out.push(parseBoardTemplateRecord(raw[i], `templates[${i}]`));
+    } catch {
+      /* skip invalid */
+    }
+  }
+  return out;
 }
 
 export function parseColumnTitleOverridesFromJson(
@@ -325,6 +383,9 @@ export function parseExportedDocument(text: string): ExportedDocumentV1 {
               ),
             }
           : {}),
+        ...(Array.isArray(root.templates)
+          ? { templates: parseBoardTemplates(root.templates as unknown[]) }
+          : {}),
       };
     }
 
@@ -391,6 +452,7 @@ export function buildBoardSnapshot(
   completedTag: string = DEFAULT_COMPLETED_TAG,
   collapsedIds: string[] = [],
   clipboardRoots: TaskNode[] = [],
+  templates: TemplateRecordV1[] = [],
 ): BoardSnapshotV1 {
   const co: Record<string, string> = {};
   for (const [k, v] of Object.entries(columnTitleOverrides)) {
@@ -414,6 +476,17 @@ export function buildBoardSnapshot(
       : {}),
     ...(effortOnTasksEnabled ? {} : { effortOnTasksEnabled: false }),
     ...(clipboardRoots.length ? { clipboardRoots: clipboardRoots.map(taskNodeToJson) } : {}),
+    ...(templates.length
+      ? {
+          templates: templates.map((t) => ({
+            id: t.id,
+            name: t.name,
+            ...(t.description ? { description: t.description } : {}),
+            updatedAt: t.updatedAt,
+            root: t.root,
+          })),
+        }
+      : {}),
   };
 }
 
@@ -476,6 +549,7 @@ export type BoardImportPayload = {
   completedTag?: string;
   effortOnTasksEnabled?: boolean;
   clipboardRoots?: TaskNode[];
+  templates?: TemplateRecordV1[];
 };
 
 export function boardSnapshotToReplacePayload(snap: BoardSnapshotV1): BoardImportPayload {
@@ -492,6 +566,7 @@ export function boardSnapshotToReplacePayload(snap: BoardSnapshotV1): BoardImpor
     ...(snap.clipboardRoots?.length
       ? { clipboardRoots: snap.clipboardRoots.map(taskNodeFromJson) }
       : {}),
+    ...(snap.templates?.length ? { templates: [...snap.templates] } : {}),
   };
 }
 
@@ -504,6 +579,15 @@ export function stableBoardStateKey(payload: BoardImportPayload): string {
   const tags = payload.filterTags?.length
     ? [...payload.filterTags].map((t) => t.trim()).filter(Boolean).sort()
     : [];
+  const templates = [...(payload.templates ?? [])]
+    .map((t) => ({
+      id: t.id,
+      name: t.name,
+      description: t.description ?? "",
+      updatedAt: t.updatedAt,
+      root: t.root,
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
   return JSON.stringify({
     roots: payload.roots.map(taskNodeToJson),
     pathIds: [...payload.pathIds],
@@ -515,6 +599,7 @@ export function stableBoardStateKey(payload: BoardImportPayload): string {
     filterTags: tags,
     completedTag: normalizeCompletedTag(payload.completedTag ?? DEFAULT_COMPLETED_TAG),
     clipboardRoots: (payload.clipboardRoots ?? []).map(taskNodeToJson),
+    templates,
   });
 }
 

@@ -126,6 +126,11 @@
           "items": { "$ref": "#/definitions/TaskNodeJson" },
           "description": "Optional: Zwischenablage — abgelegte Teilbäume (Spezial-Ast)."
         },
+        "templates": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/TemplateRecordV1" },
+          "description": "Optional: Vorlagen-Bibliothek (Teilbaum-Checklisten) für Portabilität mit der Arbeitsdatei."
+        },
         "pathIds": {
           "type": "array",
           "items": { "type": "string" },
@@ -191,6 +196,36 @@
         }
       },
       "required": ["format", "version", "exportedAt", "scope", "root"],
+      "additionalProperties": false
+    },
+    "TemplateRecordV1": {
+      "type": "object",
+      "description": "Gespeicherte Teilbaum-Vorlage (Checkliste).",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stabile Vorlagen-ID (Gerätebibliothek / Merge)."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Anzeigename der Vorlage."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional: Kurzbeschreibung."
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Unix-Zeitstempel (ms) der letzten Änderung."
+        },
+        "root": {
+          "$ref": "#/definitions/TaskNodeJson",
+          "description": "Wurzel des Vorlagen-Teilbaums (volle Kartenattribute)."
+        }
+      },
+      "required": ["id", "name", "updatedAt", "root"],
       "additionalProperties": false
     }
   }

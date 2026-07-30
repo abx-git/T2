@@ -68,6 +68,38 @@ describe("task-tree-json", () => {
     expect(plain.cardColor).toBeUndefined();
   });
 
+  it("parses and round-trips board templates", () => {
+    const roots: TaskNode[] = [sampleNode("r1")];
+    const templates = [
+      {
+        id: "tpl-1",
+        name: "Aufnahme",
+        updatedAt: 100,
+        root: taskNodeToJson(sampleNode("t-root")),
+      },
+    ];
+    const doc = buildBoardSnapshot(
+      roots,
+      [],
+      {},
+      mergeCardFieldVisibility({}),
+      false,
+      true,
+      [],
+      undefined,
+      [],
+      [],
+      templates,
+    );
+    const parsed = parseExportedDocument(stringifyExportedDocument(doc));
+    expect(isBoardSnapshot(parsed)).toBe(true);
+    if (isBoardSnapshot(parsed)) {
+      expect(parsed.templates).toHaveLength(1);
+      expect(parsed.templates![0]!.name).toBe("Aufnahme");
+      expect(parsed.templates![0]!.root.title).toBeTruthy();
+    }
+  });
+
   it("boardExportTextsEquivalent ignores exportedAt", () => {
     const roots: TaskNode[] = [sampleNode("r1")];
     const snap = buildBoardSnapshot(roots, [], {}, mergeCardFieldVisibility({}), false, true);

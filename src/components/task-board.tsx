@@ -13,8 +13,8 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { CircleHelp, HardDrive, Redo2, Settings2, SlidersHorizontal, Tag, Undo2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { CircleHelp, FileStack, HardDrive, Redo2, Settings2, SlidersHorizontal, Tag, Undo2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent } from "react";
 import { useStore } from "zustand";
 
 import {
@@ -31,6 +31,12 @@ import {
 } from "@/lib/board-backup";
 import { boardCollisionDetection } from "@/lib/board-dnd-collision";
 import { applyBoardJsonToStore, applyBoardPayloadToStore, boardJsonFromStoreState } from "@/lib/file-board-reconcile";
+import {
+  getTemplatesSnapshot,
+  hydrateTemplatesFromIdb,
+  subscribeTemplates,
+  templateRootAsTaskNode,
+} from "@/lib/templates";
 import type { BoardSnapshotV1 } from "@/lib/task-tree-json";
 import {
   boardSnapshotToReplacePayload,
@@ -134,6 +140,9 @@ import { ImportSubtreeDialog } from "./import-subtree-dialog";
 import { AppointmentsListDialog } from "./appointments-list-dialog";
 import { BranchExportDialog, JsonExportPreviewDialog, JsonPasteImportDialog } from "./json-clipboard-dialog";
 import { PasteListDialog } from "./paste-list-dialog";
+import { TemplateInsertDialog } from "./template-insert-dialog";
+import { TemplateSaveDialog } from "./template-save-dialog";
+import { TemplatesSidebar } from "./templates-sidebar";
 import { LevelNamesSetupDialog } from "./level-names-setup-dialog";
 import { TagRenameDialog } from "./tag-rename-dialog";
 import { WorkingFileSync } from "./working-file-sync";
@@ -185,6 +194,7 @@ export function TaskBoard() {
   const columnTitleOverrides = useTaskTreeStore((s) => s.columnTitleOverrides);
   const applyColumnTitleDraft = useTaskTreeStore((s) => s.applyColumnTitleDraft);
   const importSubtreeRoot = useTaskTreeStore((s) => s.importSubtreeRoot);
+  const applyTemplateUnder = useTaskTreeStore((s) => s.applyTemplateUnder);
   const importPastedCards = useTaskTreeStore((s) => s.importPastedCards);
   const cardFieldVisibility = useTaskTreeStore((s) => s.cardFieldVisibility);
   const applyCardFieldVisibility = useTaskTreeStore((s) => s.applyCardFieldVisibility);
@@ -227,6 +237,10 @@ export function TaskBoard() {
   const [pasteSubtreeParentId, setPasteSubtreeParentId] = useState<string | null>(null);
   const [pasteListParentId, setPasteListParentId] = useState<string | null>(null);
   const [branchExportNode, setBranchExportNode] = useState<TaskNode | null>(null);
+  const [templateSaveRoot, setTemplateSaveRoot] = useState<TaskNode | null>(null);
+  const [templateInsertParentId, setTemplateInsertParentId] = useState<string | null>(null);
+  const [templateInsertPrefillId, setTemplateInsertPrefillId] = useState<string | null>(null);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [appointmentsListOpen, setAppointmentsListOpen] = useState(false);
   const [scrollToNodeId, setScrollToNodeId] = useState<string | null>(null);
   const [dataStoragePanelOpen, setDataStoragePanelOpen] = useState(false);
@@ -242,6 +256,7 @@ export function TaskBoard() {
     listParentId: string | null;
     insertIndex: number;
   } | null>(null);
+  const templateCount = useSyncExternalStore(subscribeTemplates, getTemplatesSnapshot, () => []).length;
   const importFileRef = useRef<HTMLInputElement>(null);
   const workingFilePickRef = useRef<HTMLInputElement>(null);
 
@@ -257,6 +272,7 @@ export function TaskBoard() {
     setFsAccessSupportedForUi(isWorkingFileUiAvailable());
     setWorkingFileUiReady(true);
     setBackupIntervalMinutes(readBackupIntervalMinutes());
+    void hydrateTemplatesFromIdb();
   }, []);
 
   useEffect(() => {
@@ -773,6 +789,7 @@ export function TaskBoard() {
             s.completedTag,
             s.collapsedIds,
             s.clipboardRoots,
+            getTemplatesSnapshot(),
           ),
         );
         setPasteImportOpen(false);
@@ -973,6 +990,8 @@ export function TaskBoard() {
     pasteSubtreeParentId !== null ||
     pasteListParentId !== null ||
     branchExportNode !== null ||
+    templateSaveRoot !== null ||
+    templateInsertParentId !== null ||
     appointmentsListOpen ||
     dataStoragePanelOpen ||
     postImportSaveOpen ||
@@ -1159,6 +1178,7 @@ export function TaskBoard() {
         s.completedTag,
         s.collapsedIds,
         s.clipboardRoots,
+        getTemplatesSnapshot(),
       ),
     );
   }, [
@@ -1254,8 +1274,35 @@ export function TaskBoard() {
           <ClipboardDropTarget
             count={clipboardRoots.length}
             open={clipboardOpen}
-            onToggle={() => setClipboardOpen((v) => !v)}
+            onToggle={() => {
+              setClipboardOpen((v) => !v);
+              setTemplatesOpen(false);
+            }}
           />
+          <button
+            type="button"
+            onClick={() => {
+              setTemplatesOpen((v) => !v);
+              setClipboardOpen(false);
+            }}
+            className={[
+              "flex min-h-8 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition",
+              templatesOpen
+                ? "border-sky-300 bg-sky-50 text-sky-900"
+                : "border-slate-200/90 bg-slate-50/80 text-slate-700 hover:bg-white hover:text-slate-900",
+            ].join(" ")}
+            title="Vorlagen-Bibliothek"
+            aria-label={`Vorlagen${templateCount ? `, ${templateCount}` : ""}${templatesOpen ? ", geöffnet" : ""}`}
+            aria-pressed={templatesOpen}
+          >
+            <FileStack className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>Vorlagen</span>
+            {templateCount > 0 ? (
+              <span className="rounded-full bg-sky-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                {templateCount}
+              </span>
+            ) : null}
+          </button>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <button
@@ -1436,6 +1483,7 @@ export function TaskBoard() {
                       const n = findNodeById(roots, nodeId);
                       if (n) setBranchExportNode(n);
                     }}
+                    onRequestInsertTemplate={(nodeId) => setTemplateInsertParentId(nodeId)}
                     onRequestDelete={handleRequestDelete}
                   />
                 </div>
@@ -1447,6 +1495,22 @@ export function TaskBoard() {
                 activeOverGap={clipboardOverGap}
                 onRequestClear={() => setClearClipboardConfirmOpen(true)}
                 onClose={() => setClipboardOpen(false)}
+                onSaveAsTemplate={(node) => setTemplateSaveRoot(node)}
+              />
+              <TemplatesSidebar
+                open={templatesOpen}
+                onClose={() => setTemplatesOpen(false)}
+                onInsertRequest={(tpl) => {
+                  const parentId = keyboardFocusNodeId ?? contextListNodes[0]?.id ?? null;
+                  if (!parentId) {
+                    window.alert(
+                      "Bitte zuerst eine Zielkarte wählen (oder eine Karte anlegen), unter die die Vorlage eingefügt werden soll.",
+                    );
+                    return;
+                  }
+                  setTemplateInsertPrefillId(tpl.id);
+                  setTemplateInsertParentId(parentId);
+                }}
               />
             </div>
             <DragOverlay zIndex={40}>
@@ -1469,6 +1533,43 @@ export function TaskBoard() {
         completedTag={completedTag}
         effortOnTasksEnabled={effortOnTasksEnabled}
         onClose={() => setBranchExportNode(null)}
+        onSaveAsTemplate={(root) => {
+          setTemplateSaveRoot(root);
+        }}
+      />
+      <TemplateSaveDialog
+        open={templateSaveRoot !== null}
+        root={templateSaveRoot}
+        defaultName={templateSaveRoot?.title}
+        onClose={() => setTemplateSaveRoot(null)}
+        onSaved={() => {
+          setTemplatesOpen(true);
+          setClipboardOpen(false);
+        }}
+      />
+      <TemplateInsertDialog
+        open={templateInsertParentId !== null}
+        parentTitle={
+          templateInsertParentId
+            ? findNodeById(roots, templateInsertParentId)?.title
+            : undefined
+        }
+        initialTemplateId={templateInsertPrefillId}
+        onClose={() => {
+          setTemplateInsertParentId(null);
+          setTemplateInsertPrefillId(null);
+        }}
+        onInsert={(template, mode) => {
+          if (!templateInsertParentId) return;
+          const n = applyTemplateUnder(
+            templateInsertParentId,
+            templateRootAsTaskNode(template),
+            mode,
+          );
+          if (n > 0) {
+            /* feedback via title is enough; optional toast skipped */
+          }
+        }}
       />
       <AppointmentsListDialog
         open={appointmentsListOpen}

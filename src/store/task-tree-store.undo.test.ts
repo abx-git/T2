@@ -80,4 +80,83 @@ describe("board undo/redo", () => {
     expect(useTaskTreeStore.temporal.getState().pastStates).toHaveLength(0);
     expect(useTaskTreeStore.temporal.getState().futureStates).toHaveLength(0);
   });
+
+  it("applyTemplateUnder inserts children without wrapper", () => {
+    const parentId = useTaskTreeStore.getState().addCardAfter(null);
+    useTaskTreeStore.getState().updateCard(parentId, { title: "Max" });
+    const templateRoot = {
+      id: "tpl-root",
+      title: "Aufnahme",
+      link: "",
+      description: "",
+      tags: [] as string[],
+      dueDate: null as Date | null,
+      reminderDate: null as Date | null,
+      effort: 0,
+      children: [
+        {
+          id: "s1",
+          title: "Antrag",
+          link: "",
+          description: "Form",
+          tags: ["Check"],
+          dueDate: null,
+          reminderDate: null,
+          effort: 0,
+          children: [],
+        },
+        {
+          id: "s2",
+          title: "Beitrag",
+          link: "",
+          description: "",
+          tags: [],
+          dueDate: null,
+          reminderDate: null,
+          effort: 0,
+          children: [],
+        },
+      ],
+    };
+    const n = useTaskTreeStore.getState().applyTemplateUnder(parentId, templateRoot, "children");
+    expect(n).toBe(2);
+    const parent = useTaskTreeStore.getState().roots[0]!;
+    expect(parent.children).toHaveLength(2);
+    expect(parent.children.map((c) => c.title)).toEqual(["Antrag", "Beitrag"]);
+    expect(parent.children[0]!.description).toBe("Form");
+    expect(parent.children[0]!.id).not.toBe("s1");
+  });
+
+  it("applyTemplateUnder wrapper keeps template root", () => {
+    const parentId = useTaskTreeStore.getState().addCardAfter(null);
+    const templateRoot = {
+      id: "tpl-root",
+      title: "Aufnahme",
+      link: "",
+      description: "",
+      tags: [] as string[],
+      dueDate: null as Date | null,
+      reminderDate: null as Date | null,
+      effort: 0,
+      children: [
+        {
+          id: "s1",
+          title: "Kontakt",
+          link: "",
+          description: "",
+          tags: [],
+          dueDate: null,
+          reminderDate: null,
+          effort: 0,
+          children: [],
+        },
+      ],
+    };
+    const n = useTaskTreeStore.getState().applyTemplateUnder(parentId, templateRoot, "wrapper");
+    expect(n).toBe(2);
+    const parent = useTaskTreeStore.getState().roots[0]!;
+    expect(parent.children).toHaveLength(1);
+    expect(parent.children[0]!.title).toBe("Aufnahme");
+    expect(parent.children[0]!.children[0]!.title).toBe("Kontakt");
+  });
 });

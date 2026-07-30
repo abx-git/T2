@@ -11,8 +11,10 @@ import {
   parseExportedDocument,
   stableBoardStateKey,
   stringifyExportedDocument,
+  type BoardImportPayload,
   type BoardSnapshotV1,
 } from "@/lib/task-tree-json";
+import { getTemplatesSnapshot, mergeIncomingBoardTemplates } from "@/lib/templates";
 import { useTaskTreeStore, runWithoutBoardHistory } from "@/store/task-tree-store";
 
 export type FileConflictChoice = "load_file" | "keep_local";
@@ -23,18 +25,7 @@ export type FileReconcilePlan =
   | { action: "push_local" }
   | { action: "conflict" };
 
-export interface BoardImportPayload {
-  roots: import("@/types/task-node").TaskNode[];
-  pathIds: string[];
-  collapsedIds?: string[];
-  columnTitleOverrides: Record<number, string>;
-  cardFieldVisibility?: import("@/lib/card-field-visibility").CardFieldVisibility;
-  hideCompletedTasks?: boolean;
-  filterTags?: string[];
-  completedTag?: string;
-  effortOnTasksEnabled?: boolean;
-  clipboardRoots?: import("@/types/task-node").TaskNode[];
-}
+export type { BoardImportPayload };
 
 function payloadFromExportText(text: string): BoardImportPayload | null {
   return boardImportPayloadFromExportText(text);
@@ -75,6 +66,9 @@ export function applyBoardPayloadToStore(payload: BoardImportPayload): void {
   runWithoutBoardHistory(() => {
     useTaskTreeStore.getState().replaceBoardFromImport(payload);
   });
+  if (payload.templates?.length) {
+    void mergeIncomingBoardTemplates(payload.templates);
+  }
 }
 
 export function applyBoardJsonToStore(json: string): boolean {
@@ -86,6 +80,7 @@ export function applyBoardJsonToStore(json: string): boolean {
 
 export function boardJsonFromStoreState(): string {
   const s = useTaskTreeStore.getState();
+  const templates = getTemplatesSnapshot();
   return stringifyExportedDocument(
     buildBoardSnapshot(
       s.roots,
@@ -98,6 +93,7 @@ export function boardJsonFromStoreState(): string {
       s.completedTag,
       s.collapsedIds,
       s.clipboardRoots,
+      templates,
     ),
   );
 }
@@ -141,5 +137,6 @@ export function boardPersistKeyFromStoreState(): string {
     filterTags: s.filterTags,
     completedTag: s.completedTag,
     clipboardRoots: s.clipboardRoots,
+    templates: getTemplatesSnapshot(),
   });
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import { ChevronDown, ChevronRight, GripVertical, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, FileStack, GripVertical, Trash2 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { CLIPBOARD_SIDEBAR_DROP_ID, clipboardGapId } from "@/lib/clipboard-dnd";
@@ -47,6 +47,7 @@ function ClipboardCardRow({
   collapsed,
   onToggleCollapsed,
   activeDragId,
+  onSaveAsTemplate,
 }: {
   node: TaskNode;
   listParentId: string | null;
@@ -54,6 +55,7 @@ function ClipboardCardRow({
   collapsed: boolean;
   onToggleCollapsed: () => void;
   activeDragId: string | null;
+  onSaveAsTemplate?: (node: TaskNode) => void;
 }) {
   const hasChildren = node.children.length > 0;
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
@@ -128,6 +130,20 @@ function ClipboardCardRow({
             </p>
           ) : null}
         </div>
+        {listParentId === null && onSaveAsTemplate ? (
+          <button
+            type="button"
+            title="Als Vorlage speichern"
+            aria-label="Als Vorlage speichern"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-sky-50 hover:text-sky-700"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSaveAsTemplate(node);
+            }}
+          >
+            <FileStack className="h-3.5 w-3.5" aria-hidden />
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -141,6 +157,7 @@ function ClipboardTree({
   onToggleCollapsed,
   activeDragId,
   activeOverGap,
+  onSaveAsTemplate,
 }: {
   nodes: TaskNode[];
   listParentId: string | null;
@@ -149,6 +166,7 @@ function ClipboardTree({
   onToggleCollapsed: (nodeId: string) => void;
   activeDragId: string | null;
   activeOverGap: { listParentId: string | null; insertIndex: number } | null;
+  onSaveAsTemplate?: (node: TaskNode) => void;
 }) {
   return (
     <div className="space-y-0.5">
@@ -166,6 +184,7 @@ function ClipboardTree({
               collapsed={collapsed}
               onToggleCollapsed={() => onToggleCollapsed(node.id)}
               activeDragId={activeDragId}
+              onSaveAsTemplate={onSaveAsTemplate}
             />
             {!collapsed && node.children.length > 0 ? (
               <ClipboardTree
@@ -176,6 +195,7 @@ function ClipboardTree({
                 onToggleCollapsed={onToggleCollapsed}
                 activeDragId={activeDragId}
                 activeOverGap={activeOverGap}
+                onSaveAsTemplate={onSaveAsTemplate}
               />
             ) : null}
           </div>
@@ -200,6 +220,7 @@ export interface ClipboardSidebarProps {
   activeOverGap: { listParentId: string | null; insertIndex: number } | null;
   onRequestClear: () => void;
   onClose: () => void;
+  onSaveAsTemplate?: (node: TaskNode) => void;
 }
 
 export function ClipboardSidebar({
@@ -209,6 +230,7 @@ export function ClipboardSidebar({
   activeOverGap,
   onRequestClear,
   onClose,
+  onSaveAsTemplate,
 }: ClipboardSidebarProps) {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
 
@@ -274,6 +296,7 @@ export function ClipboardSidebar({
             onToggleCollapsed={toggleCollapsed}
             activeDragId={activeDragId}
             activeOverGap={activeOverGap}
+            onSaveAsTemplate={onSaveAsTemplate}
           />
         )}
       </ClipboardSidebarDropZone>

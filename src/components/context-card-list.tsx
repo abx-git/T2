@@ -68,6 +68,7 @@ export interface ContextCardListProps {
   onTitleSave: (nodeId: string, title: string, meta?: TaskTitleSaveMeta) => void;
   onTitleEditCancel: (nodeId: string) => void;
   onRequestExport?: (nodeId: string) => void;
+  onRequestInsertTemplate?: (nodeId: string) => void;
   onRequestDelete?: (nodeId: string) => void;
 }
 
@@ -87,6 +88,7 @@ export function ContextCardList({
   onTitleSave,
   onTitleEditCancel,
   onRequestExport,
+  onRequestInsertTemplate,
   onRequestDelete,
 }: ContextCardListProps) {
   useEffect(() => {
@@ -129,6 +131,9 @@ export function ContextCardList({
               onTitleSave={(title, meta) => onTitleSave(node.id, title, meta)}
               onTitleEditCancel={() => onTitleEditCancel(node.id)}
               onRequestExport={onRequestExport ? () => onRequestExport(node.id) : undefined}
+              onRequestInsertTemplate={
+                onRequestInsertTemplate ? () => onRequestInsertTemplate(node.id) : undefined
+              }
               onRequestDelete={onRequestDelete ? () => onRequestDelete(node.id) : undefined}
             />
             <GapDrop insertIndex={index + 1} />

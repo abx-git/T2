@@ -109,6 +109,7 @@ export function TaskRow({
   const updateCard = useTaskTreeStore((s) => s.updateCard);
   const headingId = useId();
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const titleEditStartedAtRef = useRef(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuPanelRef = useRef<HTMLDivElement>(null);
   const [titleDraft, setTitleDraft] = useState(node.title);
@@ -141,14 +142,23 @@ export function TaskRow({
   }, []);
 
   useEffect(() => {
-    if (isTitleEditing) {
-      setTitleDraft(node.title);
-      requestAnimationFrame(() => {
-        titleInputRef.current?.focus({ preventScroll: true });
-        if (node.title.trim()) titleInputRef.current?.select();
-      });
-    }
-  }, [isTitleEditing, node.id, node.title]);
+    if (!isTitleEditing) return;
+    setTitleDraft(node.title);
+    titleEditStartedAtRef.current = Date.now();
+    const focusInput = () => {
+      const el = titleInputRef.current;
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      if (node.title.trim()) el.select();
+    };
+    // Nach Layout (neue Karte ggf. erst gerendert) zuverlässig fokussieren.
+    const t0 = window.setTimeout(focusInput, 0);
+    const t1 = window.setTimeout(focusInput, 50);
+    return () => {
+      window.clearTimeout(t0);
+      window.clearTimeout(t1);
+    };
+  }, [isTitleEditing, node.id]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -395,9 +405,18 @@ export function TaskRow({
             onChange={(e) => setTitleDraft(e.target.value)}
             onKeyDown={onTitleKeyDown}
             onBlur={() => {
-              if (!coarsePointer) commitTitle();
+              if (coarsePointer) return;
+              // Kurz nach dem Öffnen: Fokus-Races (neue Karte) nicht als „fertig“ werten.
+              if (Date.now() - titleEditStartedAtRef.current < 120) {
+                window.setTimeout(() => {
+                  titleInputRef.current?.focus({ preventScroll: true });
+                }, 0);
+                return;
+              }
+              commitTitle();
             }}
             onPointerDown={(e) => e.stopPropagation()}
+            autoFocus
             className="w-full rounded border border-sky-300 bg-white px-2 py-1 text-sm text-slate-900 outline-none ring-2 ring-sky-200"
             aria-label="Titel"
           />

@@ -729,6 +729,14 @@ export function TaskBoard() {
     openEditor(nodeId);
   };
 
+  /** Neue Karte: Fokus + Titel sofort editierbar. */
+  const beginEditingNewCard = useCallback((id: string) => {
+    setSearchFocusNodeId(null);
+    setKeyboardFocusNodeId(id);
+    setTitleEditNodeId(id);
+    setScrollToNodeId(id);
+  }, []);
+
   const handleTitleSave = (
     nodeId: string,
     title: string,
@@ -738,9 +746,7 @@ export function TaskBoard() {
     if (meta?.addSiblingAfter) {
       const newId = addCardAfterSibling(nodeId);
       if (newId) {
-        setKeyboardFocusNodeId(newId);
-        setTitleEditNodeId(newId);
-        setScrollToNodeId(newId);
+        beginEditingNewCard(newId);
         return;
       }
     }
@@ -1106,9 +1112,7 @@ export function TaskBoard() {
         e.preventDefault();
         const id = addCardAfterSibling(currentId);
         if (!id) return;
-        setKeyboardFocusNodeId(id);
-        setTitleEditNodeId(id);
-        setScrollToNodeId(id);
+        beginEditingNewCard(id);
         return;
       }
 
@@ -1116,9 +1120,7 @@ export function TaskBoard() {
         e.preventDefault();
         const id = addCardAfter(currentId);
         expandToNode(id);
-        setKeyboardFocusNodeId(id);
-        setTitleEditNodeId(id);
-        setScrollToNodeId(id);
+        beginEditingNewCard(id);
         return;
       }
 
@@ -1164,6 +1166,7 @@ export function TaskBoard() {
     addCardAfterSibling,
     addCardAfter,
     expandToNode,
+    beginEditingNewCard,
     updateCard,
   ]);
 
@@ -1224,6 +1227,15 @@ export function TaskBoard() {
   const dataStorageTooltip = useMemo(
     () => formatStorageStatusTooltip(storageDisplayStatus),
     [storageDisplayStatus],
+  );
+
+  /** Drill-in ohne Fokus-Override (z. B. wenn danach beginEditingNewCard folgt). */
+  const drillIntoOnly = useCallback(
+    (nodeId: string) => {
+      drillIntoNode(nodeId);
+      setSearchFocusNodeId(null);
+    },
+    [drillIntoNode],
   );
 
   const handleDrillIn = useCallback(
@@ -1415,16 +1427,12 @@ export function TaskBoard() {
                     onDrillIn={handleDrillIn}
                     onAddChild={(parentId) => {
                       const id = addCardAfter(parentId);
-                      handleDrillIn(parentId);
-                      setKeyboardFocusNodeId(id);
-                      setTitleEditNodeId(id);
-                      setScrollToNodeId(id);
+                      drillIntoOnly(parentId);
+                      beginEditingNewCard(id);
                     }}
                     onAddSibling={() => {
                       const id = addCardAfter(contextNodeId);
-                      setKeyboardFocusNodeId(id);
-                      setTitleEditNodeId(id);
-                      setScrollToNodeId(id);
+                      beginEditingNewCard(id);
                     }}
                     onOpenDetails={handleOpenDetails}
                     onStartTitleEdit={(id) => setTitleEditNodeId(id)}

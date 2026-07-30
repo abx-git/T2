@@ -4,14 +4,13 @@ import type { TaskNode } from "@/types/task-node";
 
 import {
   applyForestDrop,
-  applyMindmapInsertDrop,
   clipboardGapId,
   findNodeForestLocation,
   insertIntoForest,
   parseClipboardGapId,
   resolveUnifiedDragDrop,
 } from "./clipboard-dnd";
-import { buildMindmapInsertPreview, detachNodeById, findNodeById } from "./tree-utils";
+import { detachNodeById } from "./tree-utils";
 
 function node(id: string, title: string, children: TaskNode[] = []): TaskNode {
   return {
@@ -64,106 +63,14 @@ describe("clipboard-dnd", () => {
     expect(next.map((n) => n.id)).toEqual(["c", "a", "b"]);
   });
 
-  it("inserts clipboard node into board gap", () => {
-    const board = [node("a", "A"), node("b", "B")];
-    const clipNode = node("x", "X");
-    const next = applyMindmapInsertDrop(board, [], clipNode, {
-      kind: "columnGap",
-      columnIndex: 0,
-      insertIndex: 1,
-      listParentId: null,
-    });
-    expect(next.map((n) => n.id)).toEqual(["a", "x", "b"]);
-  });
-
   it("resolveUnifiedDragDrop routes to clipboard target", () => {
     const board = [node("a", "A")];
     const clip: TaskNode[] = [];
-    expect(
-      resolveUnifiedDragDrop("a", board, clip, "clipboard-drop-target", null)?.type,
-    ).toBe("to-clipboard-end");
-    expect(
-      resolveUnifiedDragDrop("a", board, clip, clipboardGapId(null, 0), null)?.type,
-    ).toBe("to-clipboard");
-  });
-});
-
-describe("buildMindmapInsertPreview", () => {
-  it("shows nest-under when dropping clipboard card onto a board card", () => {
-    const board = [node("a", "A", [node("b", "B")])];
-    const clip = node("x", "X");
-    const preview = buildMindmapInsertPreview(board, "x", clip, {
-      kind: "card",
-      columnIndex: 0,
-      cardId: "a",
-      listParentId: null,
-    });
-    expect(preview).toMatchObject({
-      activeId: "x",
-      intent: "nest-under",
-      targetMode: "card",
-      anchorCardId: "a",
-      toCol: 0,
-    });
-  });
-
-  it("shows nest-under on nested board card", () => {
-    const board = [node("a", "A", [node("b", "B")])];
-    const clip = node("x", "X");
-    const preview = buildMindmapInsertPreview(board, "x", clip, {
-      kind: "card",
-      columnIndex: 1,
-      cardId: "b",
-      listParentId: "a",
-    });
-    expect(preview).toMatchObject({
-      intent: "nest-under",
-      anchorCardId: "b",
-      toCol: 1,
-    });
-  });
-
-  it("shows reorder-gap for column gap", () => {
-    const board = [node("a", "A"), node("b", "B")];
-    const clip = node("x", "X");
-    const preview = buildMindmapInsertPreview(board, "x", clip, {
-      kind: "columnGap",
-      columnIndex: 0,
-      insertIndex: 1,
-      listParentId: null,
-    });
-    expect(preview).toMatchObject({
-      intent: "reorder-gap",
-      targetMode: "column",
-      insertIndex: 1,
-      toCol: 0,
-    });
-  });
-});
-
-describe("applyMindmapInsertDrop nest-under", () => {
-  it("nests under board card", () => {
-    const board = [node("a", "A")];
-    const clipNode = node("x", "X");
-    const next = applyMindmapInsertDrop(board, [], clipNode, {
-      kind: "card",
-      columnIndex: 0,
-      cardId: "a",
-      listParentId: null,
-    });
-    expect(findNodeById(next, "a")?.children.map((n) => n.id)).toEqual(["x"]);
-  });
-
-  it("nests under nested board card", () => {
-    const board = [node("a", "A", [node("b", "B"), node("c", "C")])];
-    const clipNode = node("x", "X");
-    const next = applyMindmapInsertDrop(board, [], clipNode, {
-      kind: "card",
-      columnIndex: 1,
-      cardId: "b",
-      listParentId: "a",
-    });
-    expect(findNodeById(next, "b")?.children.map((n) => n.id)).toEqual(["x"]);
-    expect(findNodeById(next, "a")?.children.map((n) => n.id)).toEqual(["b", "c"]);
+    expect(resolveUnifiedDragDrop("a", board, clip, "clipboard-drop-target")?.type).toBe(
+      "to-clipboard-end",
+    );
+    expect(resolveUnifiedDragDrop("a", board, clip, clipboardGapId(null, 0))?.type).toBe(
+      "to-clipboard",
+    );
   });
 });

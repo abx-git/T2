@@ -5,8 +5,6 @@ import {
   normalizeContextNodeId,
 } from "@/lib/board-context";
 import {
-  applyMindmapDrop,
-  columnIndexOfNode,
   collectSubtreeNodeIds,
   detachNodeById,
   findDirectParentId,
@@ -17,12 +15,10 @@ import {
   pathFromRootToNode,
   pathIdsAfterNodeMove,
   updateNodeFields,
-  type TreeDragOverKind,
 } from "@/lib/tree-utils";
 import { DEFAULT_CARD_FIELD_VISIBILITY, mergeCardFieldVisibility, type CardFieldVisibility } from "@/lib/card-field-visibility";
 import { compactColumnTitleOverrides } from "@/lib/column-titles";
 import {
-  applyMindmapInsertDrop,
   applyForestDrop,
   findNodeForestLocation,
   insertIntoForest,
@@ -38,7 +34,6 @@ import { collectAllNodeIds, generateUniqueTaskId, generateUniqueTaskIdFromTaken 
 import { remapTaskNodeIds } from "@/lib/task-tree-json";
 import {
   collapsedIdsAfterBoardDepthAction,
-  collapsedIdsAfterFocusDepthAction,
   defaultBoardCollapsedIds,
 } from "@/lib/tree-depth-collapse";
 import {
@@ -60,8 +55,6 @@ export interface TaskTreeState {
   /** Eingeklappte Knoten-IDs (Kinder ausgeblendet). */
   collapsedIds: string[];
   toggleNodeCollapsed: (nodeId: string) => void;
-  /** Outline: Teilbaum unter `rootId` auf `maxDepth` Ebenen zu-/aufklappen (`null` = alles öffnen). */
-  applyOutlineDepthInView: (rootId: string | null, maxDepth: number | null) => void;
   /** Outline gesamt: auf `visibleLevels` Ebenen zu-/aufklappen (`null` = alles öffnen). */
   applyBoardDepthInView: (visibleLevels: number | null) => void;
 
@@ -95,10 +88,6 @@ export interface TaskTreeState {
   applyColumnTitleDraft: (draft: string[]) => void;
 
   /**
-   * Outline: Karte mit Kindern zu-/aufklappen (direkte Ebene); tiefere `collapsedIds` bleiben.
-   */
-  activateNode: (nodeId: string) => void;
-  /**
    * Pfad bis `nodeId` in der Outline aufklappen und Kontext auf den Parent setzen
    * (Treffer erscheint in der Kontext-Liste).
    */
@@ -115,15 +104,10 @@ export interface TaskTreeState {
   /** Eine Ebene nach oben. */
   drillUp: () => void;
 
-  /**
-   * Mindmap-DnD (Legacy / Clipboard→Board): siehe `applyMindmapDrop` in tree-utils.
-   */
-  applyTreeDrag: (activeId: string, overKind: TreeDragOverKind) => void;
-
   /** DnD innerhalb der Kontext-Liste (Reorder / Nest). */
   applyContextListDrag: (activeId: string, drop: ContextListDrop) => void;
 
-  /** Einheitlicher DnD-Handler für Board, Zwischenablage und Kreuzverschiebungen. */
+  /** Einheitlicher DnD-Handler für Zwischenablage und Board→Zwischenablage. */
   applyUnifiedDrag: (activeId: string, drop: UnifiedDragDrop) => void;
 
   /** Zwischenablage vollständig leeren. */
@@ -160,15 +144,6 @@ export interface TaskTreeState {
     parentId: string | null,
     cards: { title: string; description: string }[],
   ) => string[];
-}
-
-/** Hilfe für DnD: ermittelt Spaltenindex anhand einer Knoten-ID. */
-export function resolveColumnIndexForDrag(
-  roots: TaskNode[],
-  pathIds: string[],
-  nodeId: string,
-): number | null {
-  return columnIndexOfNode(roots, pathIds, nodeId);
 }
 
 function insertCardAtIndex(
@@ -339,25 +314,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
     });
   },
 
-  applyOutlineDepthInView: (rootId, maxDepth) => {
-    if (rootId === null) {
-      get().applyBoardDepthInView(maxDepth);
-      return;
-    }
-    set((s) => {
-      const focus = findNodeById(s.roots, rootId);
-      if (!focus) return {};
-      const collapsedIds = collapsedIdsAfterFocusDepthAction(s.collapsedIds, focus, maxDepth);
-      if (
-        collapsedIds.length === s.collapsedIds.length &&
-        collapsedIds.every((id, i) => id === s.collapsedIds[i])
-      ) {
-        return {};
-      }
-      return { collapsedIds };
-    });
-  },
-
   applyBoardDepthInView: (visibleLevels) => {
     set((s) => {
       if (s.roots.length === 0) return {};
@@ -368,18 +324,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
       ) {
         return {};
       }
-      return { collapsedIds };
-    });
-  },
-
-  activateNode: (nodeId) => {
-    set((s) => {
-      const node = findNodeById(s.roots, nodeId);
-      if (!node || node.children.length === 0) return {};
-      const isCollapsed = s.collapsedIds.includes(nodeId);
-      const collapsedIds = isCollapsed
-        ? s.collapsedIds.filter((id) => id !== nodeId)
-        : [...s.collapsedIds, nodeId];
       return { collapsedIds };
     });
   },
@@ -420,17 +364,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
     });
   },
 
-  applyTreeDrag: (activeId, overKind) => {
-    const { roots, pathIds } = get();
-    const { completedTag } = get();
-    const nextRoots = refreshCalculatedEffortsInTree(
-      applyMindmapDrop(roots, pathIds, activeId, overKind),
-      completedTag,
-    );
-    const nextPath = pathIdsAfterNodeMove(nextRoots, activeId, pathIds);
-    set({ roots: nextRoots, pathIds: nextPath });
-  },
-
   applyContextListDrag: (activeId, drop) => {
     set((s) => {
       const nextRoots = refreshCalculatedEffortsInTree(
@@ -467,31 +400,6 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
           s.completedTag,
         );
         return { clipboardRoots: clipNext };
-      }
-
-      if (drop.type === "from-clipboard-to-board") {
-        const { next: clipNext, detached } = detachNodeById(s.clipboardRoots, activeId);
-        if (!detached) return {};
-        const boardNext = refreshCalculatedEffortsInTree(
-          applyMindmapInsertDrop(s.roots, s.pathIds, detached, drop.overKind),
-          s.completedTag,
-        );
-        const nextPath = pathIdsAfterNodeMove(boardNext, detached.id, s.pathIds);
-        const clipRefreshed = refreshCalculatedEffortsInTree(clipNext, s.completedTag);
-        return {
-          roots: boardNext,
-          pathIds: nextPath,
-          clipboardRoots: clipRefreshed,
-        };
-      }
-
-      if (drop.type === "board") {
-        const nextRoots = refreshCalculatedEffortsInTree(
-          applyMindmapDrop(s.roots, s.pathIds, activeId, drop.overKind),
-          s.completedTag,
-        );
-        const nextPath = pathIdsAfterNodeMove(nextRoots, activeId, s.pathIds);
-        return { roots: nextRoots, pathIds: nextPath };
       }
 
       return {};

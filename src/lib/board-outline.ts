@@ -2,11 +2,39 @@
  * Full-board outline rows for the navigation rail (all roots, not a focus subtree).
  */
 
-import type { FocusOutlineRow } from "@/lib/focus-mode-outline";
 import { isTaskMarkedDone } from "@/lib/task-tags";
 import type { TaskNode } from "@/types/task-node";
 
-export type BoardOutlineRow = FocusOutlineRow;
+export interface OutlineRow {
+  node: TaskNode;
+  /** Tiefe im Board (0 = Wurzel). */
+  depth: number;
+  listParentId: string;
+  siblingIndex: number;
+  siblingCount: number;
+  isLastSibling: boolean;
+}
+
+export type BoardOutlineRow = OutlineRow;
+
+/** Vertikale Hilfslinien-Spalten für die Baum-Darstellung in der Outline. */
+export function computeOutlineRowTreeGuides(
+  row: OutlineRow,
+  rowsById: ReadonlyMap<string, OutlineRow>,
+): boolean[] {
+  if (row.depth <= 1) return [];
+
+  const ancestors: OutlineRow[] = [];
+  let current: OutlineRow | undefined = row;
+  while (current && current.depth > 1) {
+    const parent = rowsById.get(current.listParentId);
+    if (!parent) break;
+    ancestors.unshift(parent);
+    current = parent;
+  }
+
+  return ancestors.slice(0, -1).map((ancestor) => !ancestor.isLastSibling);
+}
 
 function walkForest(
   nodes: TaskNode[],

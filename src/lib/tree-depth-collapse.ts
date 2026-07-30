@@ -13,19 +13,6 @@ export function collectAllTreeNodeIds(roots: TaskNode[]): string[] {
   return ids;
 }
 
-/** Alle Knoten-IDs im Fokus-Teilbaum (inkl. Fokus-Wurzel). */
-export function collectFocusSubtreeNodeIds(root: TaskNode): string[] {
-  const ids = [root.id];
-  function walk(nodes: TaskNode[]) {
-    for (const n of nodes) {
-      ids.push(n.id);
-      walk(n.children);
-    }
-  }
-  walk(root.children);
-  return ids;
-}
-
 /**
  * Maximale sichtbare Ebenen in der Hauptansicht (1 = nur Spalte 0 / Wurzelebene).
  */
@@ -87,36 +74,6 @@ export function collapsedIdsAfterBoardDepthAction(
   walk(roots, 0);
 
   return mergeCollapsedIds(currentCollapsedIds, treeIds, toCollapse);
-}
-
-/**
- * Fokus-Ansicht: `maxDepth` 1 = direkte Kinder sichtbar; `null` = alles aufklappen.
- */
-export function collapsedIdsAfterFocusDepthAction(
-  currentCollapsedIds: readonly string[],
-  focusRoot: TaskNode,
-  maxDepth: number | null,
-): string[] {
-  const subtreeIds = new Set(collectFocusSubtreeNodeIds(focusRoot));
-  if (maxDepth === null) {
-    return currentCollapsedIds.filter((id) => !subtreeIds.has(id));
-  }
-
-  const depthLimit = maxDepth;
-  const toCollapse: string[] = [];
-  function walk(node: TaskNode, depth: number) {
-    if (node.children.length === 0) return;
-    if (depth >= depthLimit) {
-      toCollapse.push(node.id);
-      return;
-    }
-    for (const child of node.children) {
-      walk(child, depth + 1);
-    }
-  }
-  walk(focusRoot, 0);
-
-  return mergeCollapsedIds(currentCollapsedIds, subtreeIds, toCollapse);
 }
 
 /** Standard beim ersten Laden: nur oberste Ebene (Wurzelkarten). */

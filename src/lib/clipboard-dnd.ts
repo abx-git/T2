@@ -2,13 +2,11 @@ import type { TaskNode } from "@/types/task-node";
 
 import {
   detachNodeById,
-  findDirectParentId,
   findNodeById,
   gapIndexToInsertAfterDetach,
   getSiblingsList,
   insertUnderParent,
   subtreeContainsId,
-  type TreeDragOverKind,
 } from "./tree-utils";
 
 export const CLIPBOARD_DROP_TARGET_ID = "clipboard-drop-target";
@@ -137,61 +135,16 @@ export function forestDropTargetFromOverId(
   return null;
 }
 
-/** Externen Knoten per Mindmap-Drop-Semantik in den Board-Baum einfügen. */
-export function applyMindmapInsertDrop(
-  roots: TaskNode[],
-  pathIds: string[],
-  insert: TaskNode,
-  overKind: TreeDragOverKind,
-): TaskNode[] {
-  const clone = structuredClone(insert) as TaskNode;
-
-  if (overKind.kind === "columnGap") {
-    const { insertIndex: gapIdx, listParentId } = overKind;
-    const sibsBefore = getSiblingsList(roots, listParentId);
-    if (gapIdx < 0 || gapIdx > sibsBefore.length) return roots;
-    if (listParentId !== null && !findNodeById(roots, listParentId)) return roots;
-    if (listParentId !== null && subtreeContainsId(clone, listParentId)) return roots;
-    const insertAt = Math.max(0, Math.min(gapIdx, sibsBefore.length));
-    return insertUnderParent(roots, listParentId, insertAt, clone);
-  }
-
-  const targetId = overKind.cardId;
-  const targetCol = overKind.columnIndex;
-  if (subtreeContainsId(clone, targetId)) return roots;
-
-  const pt = findDirectParentId(roots, targetId);
-  if (pt === undefined) return roots;
-
-  const listParent = overKind.listParentId;
-
-  if (targetCol === 0) {
-    if (pt !== null || listParent !== null) return roots;
-    if (!findNodeById(roots, targetId)) return roots;
-    const childCount = getSiblingsList(roots, targetId).length;
-    return insertUnderParent(roots, targetId, childCount, clone);
-  }
-
-  if (pt !== listParent) return roots;
-  if (!findNodeById(roots, targetId)) return roots;
-
-  const childCount = getSiblingsList(roots, targetId).length;
-  return insertUnderParent(roots, targetId, childCount, clone);
-}
-
 export type UnifiedDragDrop =
   | { type: "to-clipboard-end" }
   | { type: "to-clipboard"; target: ForestDropTarget }
-  | { type: "from-clipboard-to-board"; overKind: TreeDragOverKind }
-  | { type: "within-clipboard"; target: ForestDropTarget }
-  | { type: "board"; overKind: TreeDragOverKind };
+  | { type: "within-clipboard"; target: ForestDropTarget };
 
 export function resolveUnifiedDragDrop(
   activeId: string,
   boardRoots: TaskNode[],
   clipboardRoots: TaskNode[],
   overId: string,
-  boardOverKind: TreeDragOverKind | null,
 ): UnifiedDragDrop | null {
   const location = findNodeForestLocation(boardRoots, clipboardRoots, activeId);
 
@@ -204,14 +157,6 @@ export function resolveUnifiedDragDrop(
   if (clipboardTarget) {
     if (location === "board") return { type: "to-clipboard", target: clipboardTarget };
     if (location === "clipboard") return { type: "within-clipboard", target: clipboardTarget };
-  }
-
-  if (location === "clipboard" && boardOverKind) {
-    return { type: "from-clipboard-to-board", overKind: boardOverKind };
-  }
-
-  if (location === "board" && boardOverKind) {
-    return { type: "board", overKind: boardOverKind };
   }
 
   return null;

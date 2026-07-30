@@ -3,8 +3,7 @@
 import { ChevronDown, ChevronRight, PanelLeftClose, PanelLeft } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { buildBoardOutlineRows } from "@/lib/board-outline";
-import { computeFocusRowTreeGuides } from "@/lib/focus-mode-outline";
+import { buildBoardOutlineRows, computeOutlineRowTreeGuides } from "@/lib/board-outline";
 import { isTaskMarkedDone } from "@/lib/task-tags";
 import type { TaskNode } from "@/types/task-node";
 
@@ -87,7 +86,7 @@ export function OutlineRail({
         ) : (
           <ul className="space-y-px">
             {rows.map((row) => {
-              const guides = computeFocusRowTreeGuides(row, rowsById);
+              const guides = computeOutlineRowTreeGuides(row, rowsById);
               const selected = contextNodeId === row.node.id;
               const done = isTaskMarkedDone(row.node, completedTag);
               const hasChildren = row.node.children.length > 0;

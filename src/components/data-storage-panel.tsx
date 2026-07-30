@@ -6,6 +6,7 @@ import {
   Clock,
   Copy,
   Download,
+  FileCode2,
   FolderOpen,
   Link,
   Loader2,
@@ -51,6 +52,7 @@ export interface DataStoragePanelProps {
   onRestoreBackupPaste: () => void;
   onExportMindmap: () => void;
   onShowJsonCopy: () => void;
+  onExportSchema: () => void;
   busy?: boolean;
 }
 
@@ -118,6 +120,7 @@ export function DataStoragePanel({
   onRestoreBackupPaste,
   onExportMindmap,
   onShowJsonCopy,
+  onExportSchema,
   busy,
 }: DataStoragePanelProps) {
   const [recentFiles, setRecentFiles] = useState<
@@ -420,7 +423,18 @@ export function DataStoragePanel({
                 <Copy className="h-4 w-4 shrink-0" aria-hidden />
                 JSON anzeigen / kopieren
               </button>
+              <button
+                type="button"
+                onClick={onExportSchema}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <FileCode2 className="h-4 w-4 shrink-0" aria-hidden />
+                Schema exportieren (.json)
+              </button>
             </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+              Das Schema beschreibt die Struktur der Arbeitsdatei bzw. von Board-/Teilbaum-Exporten.
+            </p>
           </Section>
 
           <section className="border-t border-slate-100 pt-6">

@@ -36,6 +36,7 @@ import type { BoardSnapshotV1 } from "@/lib/task-tree-json";
 import {
   boardSnapshotToReplacePayload,
   buildBoardSnapshot,
+  downloadExportSchema,
   downloadJsonFile,
   downloadTextFile,
   flattenNodesForParentSelect,
@@ -1644,6 +1645,9 @@ export function TaskBoard() {
         onShowJsonCopy={() => {
           setDataStoragePanelOpen(false);
           setBoardJsonExportOpen(true);
+        }}
+        onExportSchema={() => {
+          downloadExportSchema();
         }}
       />
       <LevelNamesSetupDialog

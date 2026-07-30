@@ -16,11 +16,16 @@ import {
 import { generateUniqueTaskIdFromTaken } from "@/lib/task-id";
 import { normalizeTaskLink } from "@/lib/task-link";
 import type { TaskNode } from "@/types/task-node";
+import hierarchicalTaskManagerExportV1Schema from "@/schemas/hierarchical-task-manager.export.v1.schema.json";
 
 export const EXPORT_FORMAT = "hierarchical-task-manager" as const;
 export const EXPORT_VERSION = 1 as const;
 
-/** JSON-Schema für Exportdokumente: `src/schemas/hierarchical-task-manager.export.v1.schema.json`. */
+/** Dateiname für den Download des JSON-Schemas der Arbeitsdatei. */
+export const EXPORT_SCHEMA_FILENAME = "hierarchical-task-manager.export.v1.schema.json";
+
+/** JSON-Schema für Exportdokumente / interne Speicherung (Arbeitsdatei). */
+export const EXPORT_SCHEMA_DOCUMENT = hierarchicalTaskManagerExportV1Schema;
 
 type LegacyTaskStatus = "todo" | "in-progress" | "done";
 
@@ -435,6 +440,11 @@ export function downloadJsonFile(filename: string, jsonText: string): void {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+/** Lädt das JSON-Schema der internen Speicher-/Exportstruktur als Datei herunter. */
+export function downloadExportSchema(): void {
+  downloadJsonFile(EXPORT_SCHEMA_FILENAME, `${JSON.stringify(EXPORT_SCHEMA_DOCUMENT, null, 2)}\n`);
 }
 
 export function downloadTextFile(filename: string, text: string, mimeType: string): void {

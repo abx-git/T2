@@ -86,13 +86,16 @@ export function KeyboardShortcutsHelpDialog({ open, onClose }: KeyboardShortcuts
 
   const sections: ShortcutSection[] = [
     {
-      title: "Karten (Board & Fokusmodus)",
+      title: "Karten (Drill-down)",
       hint: "Karte zuerst per Klick oder Pfeiltasten fokussieren (blauer Ring).",
       items: [
-        { keys: "↑ ↓ ← →", description: "Zwischen Karten wechseln" },
-        { keys: "Leertaste", description: "Zweig ein- oder ausklappen" },
+        { keys: "↑ ↓", description: "Zwischen Karten in der aktuellen Ebene wechseln" },
+        { keys: "→", description: "In fokussierte Karte hinein (Drill-down)" },
+        { keys: "← / Esc", description: "Eine Ebene höher" },
+        { keys: "Leertaste", description: "In der Outline Zweig ein-/ausklappen" },
         { keys: "Enter", description: "Geschwisterkarte anlegen und Titel bearbeiten" },
         { keys: "Tab", description: "Unterkarte anlegen und Titel bearbeiten" },
+        { keys: "F2", description: "Titel der fokussierten Karte bearbeiten" },
         { keys: `${mod} + K`, description: "Link aus Zwischenablage speichern" },
         { keys: "Entf / Rücktaste", description: "Karte löschen (mit Bestätigung)" },
       ],
@@ -114,8 +117,13 @@ export function KeyboardShortcutsHelpDialog({ open, onClose }: KeyboardShortcuts
       ],
     },
     {
-      title: "Fokusmodus",
-      items: [{ keys: "Esc", description: "Fokusmodus schließen" }],
+      title: "Maus",
+      items: [
+        { keys: "Klick", description: "Karte auswählen" },
+        { keys: "Doppelklick", description: "Hinein (mit Kindern) oder Details" },
+        { keys: "Ziehen", description: "Umsortieren oder auf andere Karte nesten" },
+        { keys: "Rechtsklick", description: "Aktionen" },
+      ],
     },
   ];
 

@@ -6,7 +6,9 @@
 >
 > Nicht `github.com/abx-git/T2` — das ist das Repo mit diesem Text. Die App läuft unter **`github.io`**.
 
-Hierarchische Aufgaben als Board / Mindmap — wie **diagrams.net**: App im Browser, Daten auf Ihrem Rechner.
+Hierarchische Aufgaben mit Drill-down — wie **diagrams.net**: App im Browser, Daten auf Ihrem Rechner.
+
+**Navigation:** Outline links, Breadcrumb oben, in der Mitte die Kinder der aktuellen Ebene. Doppelklick oder `→` = hinein; `←` / Esc = höher. Tastatur: Enter = Geschwister, Tab = Kind.
 
 ## Sofort loslegen
 

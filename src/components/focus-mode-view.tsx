@@ -512,7 +512,7 @@ export function FocusModeView({
   const applyTreeDrag = useTaskTreeStore((s) => s.applyTreeDrag);
   const collapsedIds = useTaskTreeStore((s) => s.collapsedIds);
   const toggleNodeCollapsed = useTaskTreeStore((s) => s.toggleNodeCollapsed);
-  const applyFocusDepthInView = useTaskTreeStore((s) => s.applyFocusDepthInView);
+  const applyOutlineDepthInView = useTaskTreeStore((s) => s.applyOutlineDepthInView);
 
   const [titleEditId, setTitleEditId] = useState<string | null>(null);
   const [focusRootEditing, setFocusRootEditing] = useState(false);
@@ -926,8 +926,8 @@ export function FocusModeView({
           {outlineMaxDepth > 0 ? (
             <DepthLevelsControl
               maxLevel={outlineMaxDepth}
-              onApplyLevel={(depth) => applyFocusDepthInView(focusNodeId, depth)}
-              onExpandAll={() => applyFocusDepthInView(focusNodeId, null)}
+              onApplyLevel={(depth) => applyOutlineDepthInView(focusNodeId, depth)}
+              onExpandAll={() => applyOutlineDepthInView(focusNodeId, null)}
             />
           ) : null}
 

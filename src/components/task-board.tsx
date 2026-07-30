@@ -5,17 +5,14 @@ import type {
   DragEndEvent,
   DragOverEvent,
   DragStartEvent,
-  Over,
 } from "@dnd-kit/core";
 import {
   DndContext,
   DragOverlay,
-  MeasuringStrategy,
   PointerSensor,
   TouchSensor,
-  closestCorners,
+  closestCenter,
   pointerWithin,
-  rectIntersection,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
@@ -82,24 +79,25 @@ import {
   STANDARD_WORKING_FILENAME,
 } from "@/lib/working-file";
 import {
-  buildMindmapDropPreview,
-  buildMindmapInsertPreview,
-  COLUMN_GAP_PREFIX,
-  dragOverKindFromPreview,
   findNodeById,
-  getMindmapBoardLayout,
   pathFromRootToNode,
-  parseColumnGapId,
   rootsForMindmapDisplay,
-  type TreeDragOverKind,
 } from "@/lib/tree-utils";
 import { getBoardMaxVisibleLevels } from "@/lib/tree-depth-collapse";
 import {
-  firstBoardCardId,
+  firstContextCardId,
   focusTargetAfterRemoving,
-  navigateBoardCard,
+  navigateContextCard,
   shouldIgnoreCardKeyboard,
 } from "@/lib/card-keyboard-nav";
+import {
+  contextChildren,
+  contextPathNodes,
+} from "@/lib/board-context";
+import {
+  parseContextGapId,
+  type ContextListDrop,
+} from "@/lib/context-list-dnd";
 import {
   CLIPBOARD_DROP_TARGET_ID,
   CLIPBOARD_SIDEBAR_DROP_ID,
@@ -116,17 +114,17 @@ import {
   hasUnsavedWorkingFile,
 } from "@/lib/storage-coordinator";
 import { useTaskTreeStore } from "@/store/task-tree-store";
-import { dropIntentLabel, type BoardDropPreview } from "@/types/dnd-preview";
 import type { TaskNode } from "@/types/task-node";
 
 import { TagFilterBar } from "./tag-filter-bar";
 import { ClipboardDropTarget } from "./clipboard-drop-target";
 import { ClipboardSidebar } from "./clipboard-sidebar";
 import { TaskSearch } from "./task-search";
-import { MindmapGrid } from "./mindmap-grid";
+import { BreadcrumbTrail } from "./breadcrumb-trail";
+import { OutlineRail } from "./outline-rail";
+import { ContextCardList } from "./context-card-list";
 import { CardFieldVisibilityDialog } from "./card-field-visibility-dialog";
 import { ConfirmDialog } from "./confirm-dialog";
-import { FocusModeView } from "./focus-mode-view";
 import { DepthLevelsControl } from "./depth-levels-control";
 import { ImportSubtreeDialog } from "./import-subtree-dialog";
 import { AppointmentsListDialog } from "./appointments-list-dialog";
@@ -141,6 +139,7 @@ import { PostImportSaveDialog } from "./post-import-save-dialog";
 import { TaskEditorDialog } from "./task-editor-dialog";
 import { KeyboardShortcutsHelpDialog } from "./keyboard-shortcuts-help-dialog";
 
+
 function pointInClientRect(
   point: { x: number; y: number },
   rect: { left: number; top: number; width: number; height: number },
@@ -153,10 +152,7 @@ function pointInClientRect(
   );
 }
 
-/** Einfügelücke vor Karte; schmale Gap-Bänder liegen bewusst zwischen den Karten. */
-const mindmapCollisionDetection: CollisionDetection = (args) => {
-  const activeId = String(args.active.id);
-  const activeCol = args.active.data.current?.columnIndex as number | undefined;
+const boardCollisionDetection: CollisionDetection = (args) => {
   const activeSource = args.active.data.current?.source as string | undefined;
   const { pointerCoordinates, droppableContainers, droppableRects } = args;
 
@@ -164,7 +160,6 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
     { id: container.id, data: { droppableContainer: container, value: 0 } },
   ];
 
-  // Spezifische Zwischenablage-Ziele (Lücken/Karten) vor der großen Sidebar-Fläche.
   if (pointerCoordinates) {
     for (const container of droppableContainers) {
       const kind = container.data.current?.kind as string | undefined;
@@ -173,7 +168,6 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
       if (!rect || !pointInClientRect(pointerCoordinates, rect)) continue;
       return collisionFor(container);
     }
-
     if (activeSource !== "clipboard") {
       for (const id of [CLIPBOARD_DROP_TARGET_ID, CLIPBOARD_SIDEBAR_DROP_ID]) {
         const rect = droppableRects.get(id);
@@ -183,206 +177,49 @@ const mindmapCollisionDetection: CollisionDetection = (args) => {
         }
       }
     }
-
-    // Pointer auf Board-Karte → Nest-Target (auch aus Zwischenablage; Gaps dürfen nicht „gewinnen“).
-    for (const container of droppableContainers) {
-      if (container.data.current?.kind !== "card") continue;
-      if (String(container.id) === activeId) continue;
-      const rect = droppableRects.get(container.id);
-      if (!rect || !pointInClientRect(pointerCoordinates, rect)) continue;
-      return collisionFor(container);
-    }
   }
 
-  const pickTarget = (hits: ReturnType<typeof pointerWithin>) => {
-    if (hits.length === 0) return null;
-
-    const clipboardTargetHit = hits.find(
+  const hits = pointerWithin(args);
+  if (hits.length > 0) {
+    const clip = hits.find(
       (c) =>
-        String(c.id) === CLIPBOARD_DROP_TARGET_ID || String(c.id) === CLIPBOARD_SIDEBAR_DROP_ID,
+        String(c.id) === CLIPBOARD_DROP_TARGET_ID ||
+        String(c.id) === CLIPBOARD_SIDEBAR_DROP_ID ||
+        String(c.id).startsWith("clipboard-gap:"),
     );
-    if (clipboardTargetHit && activeSource !== "clipboard") {
-      return [clipboardTargetHit];
-    }
-
-    const clipboardGapHit = hits.find((c) => String(c.id).startsWith("clipboard-gap:"));
-    if (clipboardGapHit) return [clipboardGapHit];
-
-    const gapHit = hits.find((c) => String(c.id).startsWith(COLUMN_GAP_PREFIX));
-    const cardHit = hits.find((c) => {
-      const id = String(c.id);
-      const kind = c.data?.droppableContainer?.data?.current?.kind as string | undefined;
-      return (
-        id !== activeId &&
-        kind === "card" &&
-        !id.startsWith(COLUMN_GAP_PREFIX) &&
-        !id.startsWith("clipboard-gap:") &&
-        id !== CLIPBOARD_DROP_TARGET_ID &&
-        id !== CLIPBOARD_SIDEBAR_DROP_ID
-      );
-    });
-
-    // Aus der Zwischenablage (kein Spaltenkontext): Karte = nesten hat Vorrang vor Lücke.
-    if (activeSource === "clipboard") {
-      if (cardHit) return [cardHit];
-      if (gapHit) return [gapHit];
-      if (clipboardGapHit) return [clipboardGapHit];
-      return null;
-    }
-
-    if (cardHit && activeCol != null) {
-      const cardCol = cardHit.data?.droppableContainer?.data?.current?.columnIndex as
-        | number
-        | undefined;
-      if (cardCol != null && activeCol !== cardCol) {
-        return [cardHit];
-      }
-    }
-
-    if (gapHit) return [gapHit];
-    return cardHit ? [cardHit] : null;
-  };
-
-  const pointerHits = pointerWithin(args);
-  const fromPointer = pickTarget(pointerHits);
-  if (fromPointer) return fromPointer;
-
-  const rectHits = rectIntersection(args);
-  const fromRect = pickTarget(rectHits);
-  if (fromRect) return fromRect;
-
-  // Kein Blind-closestCorners auf Board, wenn der Pointer über der Zwischenablage liegt.
-  if (pointerCoordinates && activeSource !== "clipboard") {
-    for (const id of [CLIPBOARD_DROP_TARGET_ID, CLIPBOARD_SIDEBAR_DROP_ID]) {
-      const rect = droppableRects.get(id);
-      const container = droppableContainers.find((c) => String(c.id) === id);
-      if (rect && container && pointInClientRect(pointerCoordinates, rect)) {
-        return collisionFor(container);
-      }
-    }
+    if (clip && activeSource !== "clipboard") return [clip];
+    const nest = hits.find((c) => c.data?.droppableContainer?.data?.current?.kind === "contextNest");
+    if (nest) return [nest];
+    const gap = hits.find((c) => String(c.id).startsWith("context-gap:"));
+    if (gap) return [gap];
+    return [hits[0]];
   }
-
-  return closestCorners(args);
+  return closestCenter(args);
 };
 
-function overToDragKind(over: Over, pathIds: string[]): TreeDragOverKind | null {
-  const gap = parseColumnGapId(over.id);
-  if (gap) {
-    const col = over.data.current?.columnIndex as number | undefined;
-    if (col == null || col !== gap.columnIndex) return null;
-    const insertIdx = over.data.current?.insertIndex as number | undefined;
-    if (insertIdx == null || insertIdx !== gap.insertIndex) return null;
-    const rawLp = over.data.current?.listParentId as string | null | undefined;
-    if (rawLp !== undefined && rawLp !== gap.listParentId) return null;
-    return {
-      kind: "columnGap",
-      columnIndex: gap.columnIndex,
-      insertIndex: gap.insertIndex,
-      listParentId: gap.listParentId,
-    };
-  }
-  const col = over.data.current?.columnIndex as number | undefined;
-  if (col == null) return null;
-  const raw = over.data.current?.listParentId;
-  const listParentId =
-    raw !== undefined
-      ? (raw as string | null)
-      : col === 0
-        ? null
-        : (pathIds[col - 1] ?? null);
-  return { kind: "card", columnIndex: col, cardId: String(over.id), listParentId };
-}
-
-function buildPreview(
-  roots: ReturnType<typeof useTaskTreeStore.getState>["roots"],
-  pathIds: ReturnType<typeof useTaskTreeStore.getState>["pathIds"],
-  clipboardRoots: ReturnType<typeof useTaskTreeStore.getState>["clipboardRoots"],
-  activeId: string,
-  over: Over,
-): BoardDropPreview | null {
-  const overId = String(over.id);
-  const location = findNodeForestLocation(roots, clipboardRoots, activeId);
-
-  if (
-    location === "board" &&
-    (overId === CLIPBOARD_DROP_TARGET_ID ||
-      overId === CLIPBOARD_SIDEBAR_DROP_ID ||
-      parseClipboardGapId(overId) ||
-      findNodeById(clipboardRoots, overId))
-  ) {
-    return {
-      activeId,
-      targetMode: "column",
-      intent: "move-to-clipboard",
-      toCol: 0,
-      insertIndex: 0,
-      anchorCardId: null,
-    };
-  }
-
-  if (location === "clipboard") {
-    const overKind = overToDragKind(over, pathIds);
-    if (overKind) {
-      const insertNode = findNodeById(clipboardRoots, activeId);
-      if (insertNode) {
-        return buildMindmapInsertPreview(roots, activeId, insertNode, overKind);
-      }
-    }
-    if (parseClipboardGapId(overId) || findNodeById(clipboardRoots, overId)) {
-      return {
-        activeId,
-        targetMode: "column",
-        intent: "move-to-clipboard",
-        toCol: 0,
-        insertIndex: 0,
-        anchorCardId: null,
-      };
-    }
-    return null;
-  }
-
-  const overKind = overToDragKind(over, pathIds);
-  if (!overKind) return null;
-  return buildMindmapDropPreview(roots, pathIds, activeId, overKind);
-}
-
-function DragPreviewCard({
-  id,
-  dropPreview,
-}: {
-  id: string;
-  dropPreview: BoardDropPreview | null;
-}) {
+function DragPreviewCard({ id }: { id: string }) {
   const roots = useTaskTreeStore((s) => s.roots);
   const clipboardRoots = useTaskTreeStore((s) => s.clipboardRoots);
   const node = findNodeById(roots, id) ?? findNodeById(clipboardRoots, id);
   if (!node) return null;
-  const intent = dropPreview?.activeId === id ? dropPreview.intent : undefined;
   return (
     <div className="pointer-events-none w-72 max-w-[85vw] rounded-lg border border-slate-200 bg-white p-3 shadow-2xl ring-2 ring-sky-200/90">
       <p className="text-sm font-semibold text-slate-900">{node.title.trim() || "(Ohne Titel)"}</p>
-      <p
-        className={[
-          "mt-1 text-[11px] font-medium",
-          intent === "nest-under" || intent === "move-to-clipboard"
-            ? "text-violet-700"
-            : "text-sky-700",
-        ].join(" ")}
-      >
-        {dropIntentLabel(intent)}
-      </p>
     </div>
   );
 }
 
 export function TaskBoard() {
   const roots = useTaskTreeStore((s) => s.roots);
-  const pathIds = useTaskTreeStore((s) => s.pathIds);
   const collapsedIds = useTaskTreeStore((s) => s.collapsedIds);
   const toggleNodeCollapsed = useTaskTreeStore((s) => s.toggleNodeCollapsed);
   const applyBoardDepthInView = useTaskTreeStore((s) => s.applyBoardDepthInView);
-  const activateNode = useTaskTreeStore((s) => s.activateNode);
   const expandToNode = useTaskTreeStore((s) => s.expandToNode);
+  const contextNodeId = useTaskTreeStore((s) => s.contextNodeId);
+  const setContextNodeId = useTaskTreeStore((s) => s.setContextNodeId);
+  const drillIntoNode = useTaskTreeStore((s) => s.drillIntoNode);
+  const drillUp = useTaskTreeStore((s) => s.drillUp);
+  const applyContextListDrag = useTaskTreeStore((s) => s.applyContextListDrag);
   const applyUnifiedDrag = useTaskTreeStore((s) => s.applyUnifiedDrag);
   const clearClipboard = useTaskTreeStore((s) => s.clearClipboard);
   const clipboardRoots = useTaskTreeStore((s) => s.clipboardRoots);
@@ -403,15 +240,12 @@ export function TaskBoard() {
   const filterTags = useTaskTreeStore((s) => s.filterTags);
   const completedTag = useTaskTreeStore((s) => s.completedTag);
   const setCompletedTag = useTaskTreeStore((s) => s.setCompletedTag);
-  const focusNodeId = useTaskTreeStore((s) => s.focusNodeId);
-  const openFocusMode = useTaskTreeStore((s) => s.openFocusMode);
-  const closeFocusMode = useTaskTreeStore((s) => s.closeFocusMode);
 
   const [searchFocusNodeId, setSearchFocusNodeId] = useState<string | null>(null);
   const [keyboardFocusNodeId, setKeyboardFocusNodeId] = useState<string | null>(null);
 
-  const [dropPreview, setDropPreview] = useState<BoardDropPreview | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [nestDropTargetId, setNestDropTargetId] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorNodeId, setEditorNodeId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -452,10 +286,8 @@ export function TaskBoard() {
     listParentId: string | null;
     insertIndex: number;
   } | null>(null);
-  const boardColumnsRef = useRef<HTMLDivElement>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
   const workingFilePickRef = useRef<HTMLInputElement>(null);
-  const dropPreviewRef = useRef<BoardDropPreview | null>(null);
 
   const onWorkingFileDirtyChange = useCallback((dirty: boolean) => {
     setWorkingFileDirty(dirty);
@@ -473,43 +305,16 @@ export function TaskBoard() {
 
   useEffect(() => {
     if (!scrollToNodeId) return;
-
     const reveal = () => {
-      const path = pathFromRootToNode(roots, scrollToNodeId);
-      if (path) {
-        for (const id of path) {
-          const onPath = document.querySelector(`[data-task-card-id="${id}"]`);
-          if (onPath instanceof HTMLElement) {
-            onPath.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
-          }
-        }
-      }
-
-      const target = document.querySelector(`[data-task-card-id="${scrollToNodeId}"]`);
+      const target = document.querySelector(
+        `[data-task-card-id="${CSS.escape(scrollToNodeId)}"]`,
+      );
       if (!(target instanceof HTMLElement)) return false;
-
-      target.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
-      const board = boardColumnsRef.current;
-      if (board) {
-        const boardRect = board.getBoundingClientRect();
-        const targetRect = target.getBoundingClientRect();
-        const targetLeft = targetRect.left - boardRect.left + board.scrollLeft;
-        const targetRight = targetLeft + targetRect.width;
-        const margin = 48;
-        if (targetLeft < board.scrollLeft + margin) {
-          board.scrollTo({ left: Math.max(0, targetLeft - margin), behavior: "smooth" });
-        } else if (targetRight > board.scrollLeft + board.clientWidth - margin) {
-          board.scrollTo({
-            left: targetRight - board.clientWidth + margin,
-            behavior: "smooth",
-          });
-        }
-      }
+      target.scrollIntoView({ block: "nearest", behavior: "smooth" });
       target.focus({ preventScroll: true });
       setScrollToNodeId(null);
       return true;
     };
-
     let frame = 0;
     const tryReveal = () => {
       if (reveal()) return;
@@ -517,39 +322,7 @@ export function TaskBoard() {
       if (frame < 8) requestAnimationFrame(tryReveal);
     };
     requestAnimationFrame(tryReveal);
-  }, [scrollToNodeId, roots]);
-
-  const handleActivateBranch = useCallback(
-    (nodeId: string) => {
-      setSearchFocusNodeId((prev) => (prev !== null && prev !== nodeId ? null : prev));
-      activateNode(nodeId);
-    },
-    [activateNode],
-  );
-
-  useEffect(() => {
-    if (!focusNodeId) return;
-    setSearchFocusNodeId(null);
-    setKeyboardFocusNodeId(null);
-    setTitleEditNodeId(null);
-  }, [focusNodeId]);
-
-  useEffect(() => {
-    if (!focusNodeId) return;
-    if (!findNodeById(roots, focusNodeId)) {
-      closeFocusMode();
-    }
-  }, [focusNodeId, roots, closeFocusMode]);
-
-  const handleCloseFocus = useCallback(() => {
-    const nodeId = useTaskTreeStore.getState().focusNodeId;
-    closeFocusMode();
-    const { roots } = useTaskTreeStore.getState();
-    if (!nodeId || !findNodeById(roots, nodeId)) return;
-    expandToNode(nodeId);
-    setSearchFocusNodeId(nodeId);
-    setScrollToNodeId(nodeId);
-  }, [closeFocusMode, expandToNode]);
+  }, [scrollToNodeId]);
 
   const handleSearchSelect = useCallback(
     (nodeId: string) => {
@@ -564,6 +337,11 @@ export function TaskBoard() {
   const handleKeyboardFocus = useCallback((nodeId: string) => {
     setKeyboardFocusNodeId(nodeId);
   }, []);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
+  );
 
   const boardSnapshotTextFromStore = useCallback(() => boardJsonFromStoreState(), []);
 
@@ -1075,33 +853,27 @@ export function TaskBoard() {
 
   const onDragStart = (e: DragStartEvent) => {
     setActiveDragId(String(e.active.id));
-    dropPreviewRef.current = null;
-    setDropPreview(null);
+    setNestDropTargetId(null);
   };
 
   const onDragOver = (event: DragOverEvent) => {
-    const { active, over } = event;
+    const over = event.over;
     if (!over) {
-      dropPreviewRef.current = null;
-      setDropPreview(null);
-      setClipboardOverGap(null);
+      setNestDropTargetId(null);
       return;
     }
-    const activeId = String(active.id);
-    const { roots: r, pathIds: p, clipboardRoots: cr } = useTaskTreeStore.getState();
-    const preview = buildPreview(r, p, cr, activeId, over);
-    const next = preview && preview.activeId === activeId ? preview : null;
-    dropPreviewRef.current = next;
-    setDropPreview(next);
-    const gap = parseClipboardGapId(String(over.id));
-    setClipboardOverGap(gap);
+    const kind = over.data.current?.kind as string | undefined;
+    if (kind === "contextNest") {
+      const id = String(over.id);
+      setNestDropTargetId(id === String(event.active.id) ? null : id);
+      return;
+    }
+    setNestDropTargetId(null);
   };
 
   const endDragUi = () => {
-    dropPreviewRef.current = null;
-    setDropPreview(null);
     setActiveDragId(null);
-    setClipboardOverGap(null);
+    setNestDropTargetId(null);
   };
 
   const onDragCancel = () => {
@@ -1111,68 +883,79 @@ export function TaskBoard() {
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     const activeId = String(active.id);
-    const { roots: r, pathIds: p, clipboardRoots: cr } = useTaskTreeStore.getState();
-    const preview = dropPreviewRef.current;
+    endDragUi();
+    if (!over) return;
 
-    let boardOverKind: TreeDragOverKind | null = null;
-    if (preview?.activeId === activeId && preview.intent !== "move-to-clipboard") {
-      boardOverKind = dragOverKindFromPreview(r, preview, p);
-    } else if (over) {
-      boardOverKind = overToDragKind(over, p);
-    }
-
-    const overId = over ? String(over.id) : "";
-    let drop = over ? resolveUnifiedDragDrop(activeId, r, cr, overId, boardOverKind) : null;
+    const overId = String(over.id);
+    const location = findNodeForestLocation(
+      useTaskTreeStore.getState().roots,
+      useTaskTreeStore.getState().clipboardRoots,
+      activeId,
+    );
 
     if (
-      !drop &&
-      preview?.activeId === activeId &&
-      preview.intent === "move-to-clipboard" &&
-      findNodeForestLocation(r, cr, activeId) === "board"
+      location === "board" &&
+      (overId === CLIPBOARD_DROP_TARGET_ID ||
+        overId === CLIPBOARD_SIDEBAR_DROP_ID ||
+        parseClipboardGapId(overId) ||
+        findNodeById(useTaskTreeStore.getState().clipboardRoots, overId))
     ) {
-      if (!overId || overId === CLIPBOARD_DROP_TARGET_ID || overId === CLIPBOARD_SIDEBAR_DROP_ID) {
-        drop = { type: "to-clipboard-end" };
+      const clipRoots = useTaskTreeStore.getState().clipboardRoots;
+      const forestTarget = forestDropTargetFromOverId(overId, clipRoots);
+      if (forestTarget) {
+        applyUnifiedDrag(activeId, { type: "to-clipboard", target: forestTarget });
       } else {
-        const clipTarget = forestDropTargetFromOverId(overId, cr);
-        if (clipTarget) drop = { type: "to-clipboard", target: clipTarget };
+        applyUnifiedDrag(activeId, { type: "to-clipboard-end" });
       }
+      setClipboardOpen(true);
+      return;
     }
 
-    endDragUi();
-    if (!drop) return;
+    if (location === "clipboard") {
+      const clipRoots = useTaskTreeStore.getState().clipboardRoots;
+      const forestTarget = forestDropTargetFromOverId(overId, clipRoots);
+      if (forestTarget) {
+        applyUnifiedDrag(activeId, { type: "within-clipboard", target: forestTarget });
+      }
+      return;
+    }
 
-    applyUnifiedDrag(activeId, drop);
-    if (drop.type === "to-clipboard-end" || drop.type === "to-clipboard") {
-      setClipboardOpen(true);
+    const gap = parseContextGapId(overId);
+    if (gap !== null) {
+      applyContextListDrag(activeId, { kind: "gap", insertIndex: gap });
+      return;
+    }
+    const nestKind = over.data.current?.kind as string | undefined;
+    if (nestKind === "contextNest" && overId !== activeId) {
+      applyContextListDrag(activeId, { kind: "nest", targetId: overId });
     }
   };
 
   const collapsedSet = useMemo(() => new Set(collapsedIds), [collapsedIds]);
 
-  const boardMaxVisibleLevels = useMemo(
-    () => getBoardMaxVisibleLevels(roots),
-    [roots],
+  const contextListNodes = useMemo(() => {
+    const filtered = rootsForMindmapDisplay(roots, {
+      hideCompletedTasks,
+      completedTag,
+      filterTags,
+    });
+    return contextChildren(filtered, contextNodeId);
+  }, [roots, contextNodeId, hideCompletedTasks, completedTag, filterTags]);
+
+  const breadcrumbPath = useMemo(
+    () => contextPathNodes(roots, contextNodeId),
+    [roots, contextNodeId],
   );
 
-  const mindmapDisplayRoots = useMemo(
-    () =>
-      rootsForMindmapDisplay(roots, {
-        hideCompletedTasks,
-        completedTag,
-        filterTags,
-      }),
-    [roots, hideCompletedTasks, completedTag, filterTags],
-  );
+  const contextLabel = useMemo(() => {
+    if (!contextNodeId) return "Wurzelkarten";
+    const n = findNodeById(roots, contextNodeId);
+    return n?.title.trim() || "(Ohne Titel)";
+  }, [roots, contextNodeId]);
 
-  const mindmapLayout = useMemo(
-    () => getMindmapBoardLayout(mindmapDisplayRoots, collapsedSet),
-    [mindmapDisplayRoots, collapsedSet],
-  );
-
-  const columnCount = mindmapLayout.columnCount;
+  const boardMaxVisibleLevels = useMemo(() => getBoardMaxVisibleLevels(roots), [roots]);
 
   const cardKeyboardBlocked =
-    focusNodeId !== null ||
     titleEditNodeId !== null ||
     editorOpen ||
     pendingDeleteId !== null ||
@@ -1207,7 +990,7 @@ export function TaskBoard() {
 
       let currentId = keyboardFocusNodeId;
       if (isArrow && !currentId) {
-        currentId = firstBoardCardId(mindmapLayout);
+        currentId = firstContextCardId(contextListNodes);
         if (!currentId) return;
       } else if (!currentId) {
         return;
@@ -1223,14 +1006,33 @@ export function TaskBoard() {
               : e.key === "ArrowLeft"
                 ? "left"
                 : "right";
-        const { nextId, shouldExpand } = navigateBoardCard(
-          mindmapLayout,
-          collapsedSet,
+        const { nextId, shouldDrillIn, shouldDrillUp } = navigateContextCard(
+          contextListNodes,
           currentId,
           direction,
         );
+        if (shouldDrillUp) {
+          const parentId = contextNodeId;
+          drillUp();
+          if (parentId) {
+            setKeyboardFocusNodeId(parentId);
+            setScrollToNodeId(parentId);
+          }
+          return;
+        }
+        if (shouldDrillIn && nextId) {
+          drillIntoNode(nextId);
+          const kids = contextChildren(useTaskTreeStore.getState().roots, nextId, {
+            hideCompleted: hideCompletedTasks,
+            completedTag,
+          });
+          const first = firstContextCardId(kids);
+          setKeyboardFocusNodeId(first);
+          setSearchFocusNodeId(null);
+          if (first) setScrollToNodeId(first);
+          return;
+        }
         if (!nextId) return;
-        if (shouldExpand) toggleNodeCollapsed(currentId);
         setKeyboardFocusNodeId(nextId);
         setSearchFocusNodeId(null);
         setScrollToNodeId(nextId);
@@ -1238,43 +1040,55 @@ export function TaskBoard() {
       }
 
       if (e.key === " " || e.key === "Spacebar") {
-        const node = findNodeById(roots, currentId);
-        if (!node?.children.length) return;
         e.preventDefault();
         toggleNodeCollapsed(currentId);
         return;
       }
 
-      if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
-        const newId = addCardAfterSibling(currentId);
-        if (!newId) return;
-        setKeyboardFocusNodeId(newId);
-        setTitleEditNodeId(newId);
-        setScrollToNodeId(newId);
+        const id = addCardAfterSibling(currentId);
+        if (!id) return;
+        setKeyboardFocusNodeId(id);
+        setTitleEditNodeId(id);
+        setScrollToNodeId(id);
         return;
       }
 
-      if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (e.key === "Tab" && !e.altKey) {
         e.preventDefault();
-        const newId = addCardAfter(currentId);
-        if (!newId) return;
-        expandToNode(newId);
-        setKeyboardFocusNodeId(newId);
-        setTitleEditNodeId(newId);
-        setScrollToNodeId(newId);
+        const id = addCardAfter(currentId);
+        expandToNode(id);
+        setKeyboardFocusNodeId(id);
+        setTitleEditNodeId(id);
+        setScrollToNodeId(id);
+        return;
+      }
+
+      if (e.key === "F2") {
+        e.preventDefault();
+        setTitleEditNodeId(currentId);
+        return;
+      }
+
+      if (e.key === "Escape" && contextNodeId) {
+        e.preventDefault();
+        const leaving = contextNodeId;
+        drillUp();
+        setKeyboardFocusNodeId(leaving);
+        setScrollToNodeId(leaving);
+        return;
+      }
+
+      if ((e.key === "Delete" || e.key === "Backspace") && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setPendingDeleteId(currentId);
         return;
       }
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         void saveClipboardLinkToCard(currentId, updateCard);
-        return;
-      }
-
-      if (e.key === "Delete" || e.key === "Backspace") {
-        e.preventDefault();
-        setPendingDeleteId(currentId);
       }
     };
 
@@ -1283,9 +1097,12 @@ export function TaskBoard() {
   }, [
     cardKeyboardBlocked,
     keyboardFocusNodeId,
-    mindmapLayout,
-    collapsedSet,
-    roots,
+    contextListNodes,
+    contextNodeId,
+    drillUp,
+    drillIntoNode,
+    hideCompletedTasks,
+    completedTag,
     toggleNodeCollapsed,
     addCardAfterSibling,
     addCardAfter,
@@ -1293,36 +1110,37 @@ export function TaskBoard() {
     updateCard,
   ]);
 
-  const boardExportJsonText = boardJsonExportOpen
-    ? stringifyExportedDocument(
-        buildBoardSnapshot(
-          roots,
-          pathIds,
-          columnTitleOverrides,
-          cardFieldVisibility,
-          hideCompletedTasks,
-          effortOnTasksEnabled,
-          filterTags,
-          completedTag,
-          collapsedIds,
-          clipboardRoots,
-        ),
-      )
-    : "";
-
-  /** Griff-Handle: kurze Bewegung reicht (kein Long-Press — der kämpft mit Scroll auf Mobilgeräten). */
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { distance: 10 } }),
-  );
+  const boardJsonExportText = useMemo(() => {
+    const s = useTaskTreeStore.getState();
+    return stringifyExportedDocument(
+      buildBoardSnapshot(
+        s.roots,
+        s.pathIds,
+        s.columnTitleOverrides,
+        s.cardFieldVisibility,
+        s.hideCompletedTasks,
+        s.effortOnTasksEnabled,
+        s.filterTags,
+        s.completedTag,
+        s.collapsedIds,
+        s.clipboardRoots,
+      ),
+    );
+  }, [
+    roots,
+    clipboardRoots,
+    columnTitleOverrides,
+    cardFieldVisibility,
+    hideCompletedTasks,
+    effortOnTasksEnabled,
+    filterTags,
+    completedTag,
+    collapsedIds,
+    boardJsonExportOpen,
+  ]);
 
   const workingFileAttached = isWorkingFileAttached();
-  const workingFileHandle = getWorkingFileHandle();
-  const workingFileLabel =
-    workingFileName?.trim() ||
-    (workingFileHandle?.name != null && workingFileHandle.name.trim() !== ""
-      ? workingFileHandle.name
-      : null);
+  const workingFileLabel = workingFileName;
 
   const storageDisplayStatus = useMemo(
     () =>
@@ -1332,7 +1150,6 @@ export function TaskBoard() {
         workingFileDirty,
         workingFileSaving,
         fsAccessSupported: fsAccessSupportedForUi,
-        mobileWorkingFileMode: isMobileWorkingFileMode(),
       }),
     [workingFileLabel, workingFileAttached, workingFileDirty, workingFileSaving, fsAccessSupportedForUi],
   );
@@ -1352,26 +1169,49 @@ export function TaskBoard() {
     [storageDisplayStatus],
   );
 
+  const handleDrillIn = useCallback(
+    (nodeId: string) => {
+      drillIntoNode(nodeId);
+      const kids = contextChildren(useTaskTreeStore.getState().roots, nodeId, {
+        hideCompleted: hideCompletedTasks,
+        completedTag,
+      });
+      const first = firstContextCardId(kids);
+      setKeyboardFocusNodeId(first);
+      setSearchFocusNodeId(null);
+      if (first) setScrollToNodeId(first);
+    },
+    [drillIntoNode, hideCompletedTasks, completedTag],
+  );
+
+  const handleOutlineSelect = useCallback(
+    (nodeId: string) => {
+      expandToNode(nodeId);
+      setKeyboardFocusNodeId(nodeId);
+      setSearchFocusNodeId(nodeId);
+      setScrollToNodeId(nodeId);
+    },
+    [expandToNode],
+  );
+
   const appHeader = (
     <header className="shrink-0 border-b border-slate-200/80 bg-white px-6 py-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
           <h1 className="shrink-0 text-lg font-semibold text-slate-900">T2</h1>
           <TaskSearch onSelectNode={handleSearchSelect} />
-          {!focusNodeId && boardMaxVisibleLevels > 1 ? (
+          {boardMaxVisibleLevels > 1 ? (
             <DepthLevelsControl
               maxLevel={boardMaxVisibleLevels}
               onApplyLevel={(level) => applyBoardDepthInView(level)}
               onExpandAll={() => applyBoardDepthInView(null)}
             />
           ) : null}
-          {!focusNodeId ? (
-            <ClipboardDropTarget
-              count={clipboardRoots.length}
-              open={clipboardOpen}
-              onToggle={() => setClipboardOpen((v) => !v)}
-            />
-          ) : null}
+          <ClipboardDropTarget
+            count={clipboardRoots.length}
+            open={clipboardOpen}
+            onToggle={() => setClipboardOpen((v) => !v)}
+          />
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <input
@@ -1450,107 +1290,113 @@ export function TaskBoard() {
         onSavingChange={setWorkingFileSaving}
         onNeedsFileSetup={onNeedsWorkingFileSetup}
       />
-      {/* Header + Board in einer Spalte: Board kann den Header nicht überdecken (kein z-Index gegen Toolbar). */}
       <div className="flex min-h-0 flex-1 flex-col">
-        {focusNodeId ? (
-          <>
-            {appHeader}
-            <FocusModeView
-              focusNodeId={focusNodeId}
-              hideCompletedTasks={hideCompletedTasks}
-              fieldVisibility={cardFieldVisibility}
-              onClose={handleCloseFocus}
-              onFocusNodeChange={openFocusMode}
-              onOpenDetails={handleOpenDetails}
-            />
-          </>
-        ) : (
         <DndContext
-        id="task-board-dnd-aria"
-        sensors={sensors}
-        autoScroll
-        measuring={{
-          droppable: {
-            strategy: MeasuringStrategy.Always,
-          },
-        }}
-        collisionDetection={mindmapCollisionDetection}
-        onDragStart={onDragStart}
-        onDragOver={onDragOver}
-        onDragEnd={onDragEnd}
-        onDragCancel={onDragCancel}
-      >
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {appHeader}
-        <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div
-            ref={boardColumnsRef}
-            className={[
-              "relative min-h-0 flex-1 overflow-auto overscroll-contain px-4 py-4",
-              activeDragId ? "touch-none" : "",
-            ].join(" ")}
-          >
-            <MindmapGrid
-              roots={mindmapDisplayRoots}
-              columnCount={columnCount}
-              columnTitleOverrides={columnTitleOverrides}
-              collapsedIds={collapsedSet}
-              searchFocusNodeId={searchFocusNodeId}
-              keyboardFocusNodeId={keyboardFocusNodeId}
-              onKeyboardFocus={handleKeyboardFocus}
-              onPasteSubtreeUnder={setPasteSubtreeParentId}
-              onPasteListUnder={setPasteListParentId}
-              onAddRootCard={() => {
-                const id = addCardAfter(null);
-                setKeyboardFocusNodeId(id);
-                setTitleEditNodeId(id);
-                setScrollToNodeId(id);
-              }}
-              onAddChildCard={(parentId) => {
-                const id = addCardAfter(parentId);
-                expandToNode(id);
-                setKeyboardFocusNodeId(id);
-                setTitleEditNodeId(id);
-                setScrollToNodeId(id);
-              }}
-              onOpenDetails={handleOpenDetails}
-              onToggleCollapsed={toggleNodeCollapsed}
-              titleEditNodeId={titleEditNodeId}
-              onTitleSave={handleTitleSave}
-              onTitleEditCancel={handleTitleEditCancel}
-              onActivateBranch={handleActivateBranch}
-              dropPreview={dropPreview}
-              fieldVisibility={cardFieldVisibility}
-              onCopySubtree={(node) => setBranchExportNode(node)}
-              onRequestDelete={handleRequestDelete}
-            />
+          id="task-board-dnd-aria"
+          sensors={sensors}
+          autoScroll
+          collisionDetection={boardCollisionDetection}
+          onDragStart={onDragStart}
+          onDragOver={onDragOver}
+          onDragEnd={onDragEnd}
+          onDragCancel={onDragCancel}
+        >
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {appHeader}
+            <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
+              <OutlineRail
+                roots={roots}
+                collapsedIds={collapsedSet}
+                contextNodeId={contextNodeId}
+                hideCompletedTasks={hideCompletedTasks}
+                completedTag={completedTag}
+                onSelectNode={handleOutlineSelect}
+                onToggleCollapsed={toggleNodeCollapsed}
+              />
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <div className="shrink-0 border-b border-slate-100 px-4 py-2">
+                  <BreadcrumbTrail
+                    path={breadcrumbPath}
+                    onNavigateRoot={() => {
+                      setContextNodeId(null);
+                      setKeyboardFocusNodeId(firstContextCardId(contextChildren(roots, null)));
+                    }}
+                    onNavigateTo={(id) => {
+                      setContextNodeId(id);
+                      const kids = contextChildren(useTaskTreeStore.getState().roots, id);
+                      setKeyboardFocusNodeId(firstContextCardId(kids));
+                    }}
+                    onDrillUp={() => {
+                      const leaving = contextNodeId;
+                      drillUp();
+                      if (leaving) {
+                        setKeyboardFocusNodeId(leaving);
+                        setScrollToNodeId(leaving);
+                      }
+                    }}
+                  />
+                </div>
+                <div
+                  className={[
+                    "min-h-0 flex-1 overflow-hidden px-4 py-3",
+                    activeDragId ? "touch-none" : "",
+                  ].join(" ")}
+                >
+                  <ContextCardList
+                    nodes={contextListNodes}
+                    contextLabel={contextLabel}
+                    fieldVisibility={cardFieldVisibility}
+                    searchFocusNodeId={searchFocusNodeId}
+                    keyboardFocusNodeId={keyboardFocusNodeId}
+                    titleEditNodeId={titleEditNodeId}
+                    nestDropTargetId={nestDropTargetId}
+                    onSelect={(id) => {
+                      setKeyboardFocusNodeId(id);
+                      setSearchFocusNodeId(null);
+                    }}
+                    onDrillIn={handleDrillIn}
+                    onAddChild={(parentId) => {
+                      const id = addCardAfter(parentId);
+                      handleDrillIn(parentId);
+                      setKeyboardFocusNodeId(id);
+                      setTitleEditNodeId(id);
+                      setScrollToNodeId(id);
+                    }}
+                    onAddSibling={() => {
+                      const id = addCardAfter(contextNodeId);
+                      setKeyboardFocusNodeId(id);
+                      setTitleEditNodeId(id);
+                      setScrollToNodeId(id);
+                    }}
+                    onOpenDetails={handleOpenDetails}
+                    onStartTitleEdit={(id) => setTitleEditNodeId(id)}
+                    onTitleSave={handleTitleSave}
+                    onTitleEditCancel={handleTitleEditCancel}
+                    onRequestDelete={handleRequestDelete}
+                  />
+                </div>
+              </div>
+              <ClipboardSidebar
+                open={clipboardOpen}
+                roots={clipboardRoots}
+                activeDragId={activeDragId}
+                activeOverGap={clipboardOverGap}
+                onRequestClear={() => setClearClipboardConfirmOpen(true)}
+                onClose={() => setClipboardOpen(false)}
+              />
+            </div>
+            <DragOverlay zIndex={40}>
+              {activeDragId ? <DragPreviewCard id={activeDragId} /> : null}
+            </DragOverlay>
           </div>
-        </div>
-
-        <ClipboardSidebar
-          open={clipboardOpen && !focusNodeId}
-          roots={clipboardRoots}
-          activeDragId={activeDragId}
-          activeOverGap={clipboardOverGap}
-          onRequestClear={() => setClearClipboardConfirmOpen(true)}
-          onClose={() => setClipboardOpen(false)}
-        />
-        </div>
-
-        <DragOverlay zIndex={40}>
-          {activeDragId ? <DragPreviewCard id={activeDragId} dropPreview={dropPreview} /> : null}
-        </DragOverlay>
-        </div>
         </DndContext>
-        )}
       </div>
 
       <JsonExportPreviewDialog
         open={boardJsonExportOpen}
         title="Backup als JSON (Kopieren)"
         hint="Identisch mit „Backup erstellen“ — ändert weder Server noch Arbeitsdatei. Text markieren oder kopieren."
-        jsonText={boardExportJsonText}
+        jsonText={boardJsonExportText}
         onClose={() => setBoardJsonExportOpen(false)}
       />
       <BranchExportDialog
@@ -1736,7 +1582,7 @@ export function TaskBoard() {
       />
       <LevelNamesSetupDialog
         open={levelSetupOpen}
-        columnCount={columnCount}
+        columnCount={Math.max(1, boardMaxVisibleLevels)}
         overrides={columnTitleOverrides}
         onClose={() => setLevelSetupOpen(false)}
         onApply={applyColumnTitleDraft}

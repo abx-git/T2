@@ -1,5 +1,4 @@
 import type { FocusOutlineRow } from "@/lib/focus-mode-outline";
-import type { MindmapBoardLayout } from "@/lib/mindmap-layout";
 import { findDirectParentId, findNodeById, getSiblingsList } from "@/lib/tree-utils";
 import type { TaskNode } from "@/types/task-node";
 
@@ -7,7 +6,11 @@ export type CardNavDirection = "up" | "down" | "left" | "right";
 
 export type CardNavResult = {
   nextId: string | null;
-  /** Zweig vor Navigation in die erste Unterkarte aufklappen. */
+  /** Drill into this node (Right on a parent). */
+  shouldDrillIn?: boolean;
+  /** Leave context to parent (Left). */
+  shouldDrillUp?: boolean;
+  /** Outline: expand collapsed parent before entering first child. */
   shouldExpand?: boolean;
 };
 
@@ -20,44 +23,34 @@ export function shouldIgnoreCardKeyboard(e: KeyboardEvent): boolean {
   return false;
 }
 
-export function firstBoardCardId(layout: MindmapBoardLayout): string | null {
-  return layout.entries[0]?.node.id ?? null;
+export function firstContextCardId(nodes: ReadonlyArray<TaskNode>): string | null {
+  return nodes[0]?.id ?? null;
 }
 
-/** Geschwister-Navigation in derselben Mindmap-Spalte. */
-export function navigateBoardCard(
-  layout: MindmapBoardLayout,
-  collapsedIds: ReadonlySet<string>,
+/**
+ * Navigation in the context child list.
+ * Up/Down = siblings; Right = drill into focused card; Left = drill up.
+ */
+export function navigateContextCard(
+  siblings: ReadonlyArray<TaskNode>,
   currentId: string,
   direction: CardNavDirection,
 ): CardNavResult {
-  const entry = layout.byNodeId.get(currentId);
-  if (!entry) return { nextId: null };
-
-  const node = entry.node;
-
-  if (direction === "left") {
-    if (entry.listParentId === null) return { nextId: null };
-    return { nextId: entry.listParentId };
-  }
-
-  if (direction === "right") {
-    if (node.children.length === 0) return { nextId: null };
-    if (collapsedIds.has(currentId)) {
-      return { nextId: node.children[0].id, shouldExpand: true };
-    }
-    return { nextId: node.children[0].id };
-  }
-
-  const column = layout.byColumn.get(entry.column) ?? [];
-  const idx = column.findIndex((e) => e.node.id === currentId);
+  const idx = siblings.findIndex((n) => n.id === currentId);
   if (idx < 0) return { nextId: null };
 
   if (direction === "up") {
-    return { nextId: idx > 0 ? column[idx - 1].node.id : null };
+    return { nextId: idx > 0 ? siblings[idx - 1].id : null };
   }
-
-  return { nextId: idx < column.length - 1 ? column[idx + 1].node.id : null };
+  if (direction === "down") {
+    return { nextId: idx < siblings.length - 1 ? siblings[idx + 1].id : null };
+  }
+  if (direction === "left") {
+    return { nextId: null, shouldDrillUp: true };
+  }
+  const node = siblings[idx];
+  if (node.children.length === 0) return { nextId: null };
+  return { nextId: node.id, shouldDrillIn: true };
 }
 
 function isVisibleOutlineNode(
@@ -71,7 +64,7 @@ function isVisibleOutlineNode(
   return rows.some((row) => row.node.id === nodeId);
 }
 
-/** Baum-Navigation in der Fokus-Outline inkl. Fokus-Wurzel. */
+/** Baum-Navigation in einer Outline. */
 export function navigateOutlineCard(
   roots: TaskNode[],
   collapsedIds: ReadonlySet<string>,
@@ -103,51 +96,41 @@ export function navigateOutlineCard(
   const row = rows.find((r) => r.node.id === currentId);
   if (!row) return { nextId: null };
 
-  if (direction === "left") {
-    const parentId = row.listParentId;
-    return { nextId: parentId };
-  }
-
   if (direction === "right") {
     if (node.children.length === 0) return { nextId: null };
     if (collapsedIds.has(currentId)) {
       return { nextId: node.children[0].id, shouldExpand: true };
     }
-    return { nextId: node.children[0].id };
+    const childRow = rows.find((r) => r.listParentId === currentId);
+    return childRow ? { nextId: childRow.node.id } : { nextId: null };
   }
 
+  if (direction === "left") {
+    return { nextId: row.listParentId || focusRootId };
+  }
+
+  const siblings = getSiblingsList(roots, row.listParentId || null).filter((s) =>
+    isVisibleOutlineNode(s.id, focusRootId, rows, focusRootCollapsed),
+  );
+  const sidx = siblings.findIndex((s) => s.id === currentId);
+  if (sidx < 0) return { nextId: null };
   if (direction === "up") {
-    if (row.depth === 1) return { nextId: focusRootId };
-    const siblings = getSiblingsList(roots, row.listParentId);
-    const idx = siblings.findIndex((s) => s.id === currentId);
-    if (idx > 0) {
-      const candidate = siblings[idx - 1].id;
-      return isVisibleOutlineNode(candidate, focusRootId, rows, focusRootCollapsed)
-        ? { nextId: candidate }
-        : { nextId: null };
-    }
-    return { nextId: null };
+    return { nextId: sidx > 0 ? siblings[sidx - 1].id : focusRootId };
   }
-
-  const siblings = getSiblingsList(roots, row.listParentId);
-  const idx = siblings.findIndex((s) => s.id === currentId);
-  if (idx >= 0 && idx < siblings.length - 1) {
-    const candidate = siblings[idx + 1].id;
-    return isVisibleOutlineNode(candidate, focusRootId, rows, focusRootCollapsed)
-      ? { nextId: candidate }
-      : { nextId: null };
-  }
-  return { nextId: null };
+  return { nextId: sidx < siblings.length - 1 ? siblings[sidx + 1].id : null };
 }
 
-/** Nächster sinnvoller Fokus nach dem Entfernen einer Karte (vor dem Löschen berechnen). */
-export function focusTargetAfterRemoving(roots: TaskNode[], removedId: string): string | null {
+export function focusTargetAfterRemoving(
+  roots: TaskNode[],
+  removedId: string,
+  preferredSiblingId?: string | null,
+): string | null {
+  if (preferredSiblingId && findNodeById(roots, preferredSiblingId)) {
+    return preferredSiblingId;
+  }
   const parentResult = findDirectParentId(roots, removedId);
   if (parentResult === undefined) return null;
-  const siblings = getSiblingsList(roots, parentResult);
-  const idx = siblings.findIndex((s) => s.id === removedId);
-  if (idx < 0) return parentResult;
-  if (idx > 0) return siblings[idx - 1].id;
-  if (idx < siblings.length - 1) return siblings[idx + 1].id;
+  const siblings = getSiblingsList(roots, parentResult).filter((s) => s.id !== removedId);
+  if (siblings.length > 0) return siblings[0].id;
   return parentResult;
 }

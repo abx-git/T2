@@ -14,7 +14,6 @@ import {
   ListPlus,
   MoreHorizontal,
   Pencil,
-  Target,
   Trash2,
 } from "lucide-react";
 import {
@@ -177,8 +176,6 @@ export function TaskCard({
   isBranchCollapsed = false,
   onToggleCollapsed,
 }: TaskCardProps) {
-  const openFocusMode = useTaskTreeStore((s) => s.openFocusMode);
-
   const effortOnTasksEnabled = useTaskTreeStore((s) => s.effortOnTasksEnabled);
   const completedTag = useTaskTreeStore((s) => s.completedTag);
   const updateCard = useTaskTreeStore((s) => s.updateCard);
@@ -533,21 +530,6 @@ export function TaskCard({
             Link öffnen
           </button>
         ) : null}
-        <button
-          type="button"
-          role="menuitem"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setMenuOpen(false);
-            openFocusMode(node.id);
-          }}
-          className={cardMenuItemClass}
-        >
-          <Target className="h-3.5 w-3.5 shrink-0 text-violet-700" aria-hidden />
-          Fokus-Modus
-        </button>
         {onCopySubtree ? (
           <button
             type="button"
@@ -898,24 +880,6 @@ export function TaskCard({
           {typeof document !== "undefined" && cardActionMenu
             ? createPortal(cardActionMenu, document.body)
             : null}
-
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              openFocusMode(node.id);
-            }}
-            className={[
-              iconBtnClass,
-              "hover:border-violet-200 hover:bg-violet-50 hover:text-violet-800",
-            ].join(" ")}
-            title="Fokus-Modus — nur dieser Zweig"
-            aria-label="Fokus-Modus öffnen"
-          >
-            <Target className="h-3.5 w-3.5" strokeWidth={2.1} aria-hidden />
-          </button>
 
           <button
             type="button"

@@ -1,6 +1,10 @@
 import { create } from "zustand";
 
 import {
+  contextIdForRevealingNode,
+  normalizeContextNodeId,
+} from "@/lib/board-context";
+import {
   applyMindmapDrop,
   columnIndexOfNode,
   collectSubtreeNodeIds,
@@ -25,6 +29,10 @@ import {
   type ForestDropTarget,
   type UnifiedDragDrop,
 } from "@/lib/clipboard-dnd";
+import {
+  applyContextListDrop,
+  type ContextListDrop,
+} from "@/lib/context-list-dnd";
 import { refreshCalculatedEffortsInTree } from "@/lib/task-effort";
 import { collectAllNodeIds, generateUniqueTaskId, generateUniqueTaskIdFromTaken } from "@/lib/task-id";
 import { remapTaskNodeIds } from "@/lib/task-tree-json";
@@ -33,7 +41,6 @@ import {
   collapsedIdsAfterFocusDepthAction,
   defaultBoardCollapsedIds,
 } from "@/lib/tree-depth-collapse";
-import { pruneEmptyUxLeavesInFocusSubtree } from "@/lib/focus-mode-outline";
 import {
   DEFAULT_COMPLETED_TAG,
   defaultTagsForNewCard,
@@ -53,9 +60,9 @@ export interface TaskTreeState {
   /** Eingeklappte Knoten-IDs (Kinder ausgeblendet). */
   collapsedIds: string[];
   toggleNodeCollapsed: (nodeId: string) => void;
-  /** Fokus-Ansicht: Teilbaum auf `maxDepth` Ebenen zu-/aufklappen (`null` = alles öffnen). */
-  applyFocusDepthInView: (focusNodeId: string, maxDepth: number | null) => void;
-  /** Hauptansicht: Board auf `visibleLevels` Ebenen zu-/aufklappen (`null` = alles öffnen). */
+  /** Outline: Teilbaum unter `rootId` auf `maxDepth` Ebenen zu-/aufklappen (`null` = alles öffnen). */
+  applyOutlineDepthInView: (rootId: string | null, maxDepth: number | null) => void;
+  /** Outline gesamt: auf `visibleLevels` Ebenen zu-/aufklappen (`null` = alles öffnen). */
   applyBoardDepthInView: (visibleLevels: number | null) => void;
 
   /** Erledigte Karten in Spaltenansicht ausblenden (nur Anzeige). */
@@ -88,22 +95,33 @@ export interface TaskTreeState {
   applyColumnTitleDraft: (draft: string[]) => void;
 
   /**
-   * Karte mit Kindern: nur diesen Ast zu-/aufklappen (direkte Ebene); tiefere `collapsedIds` bleiben.
+   * Outline: Karte mit Kindern zu-/aufklappen (direkte Ebene); tiefere `collapsedIds` bleiben.
    */
   activateNode: (nodeId: string) => void;
-  /** Pfad bis `nodeId` sichtbar machen (alle Vorfahren aufklappen) — z. B. Suche. */
+  /**
+   * Pfad bis `nodeId` in der Outline aufklappen und Kontext auf den Parent setzen
+   * (Treffer erscheint in der Kontext-Liste).
+   */
   expandToNode: (nodeId: string) => void;
 
-  /** Fokus-Modus: welche Karte (Teilbaum) im Vordergrund bearbeitet wird; `null` = Mindmap. */
-  focusNodeId: string | null;
-  /** Öffnet den Fokus-Modus für `nodeId` und klappt den Pfad dorthin auf. */
-  openFocusMode: (nodeId: string) => void;
-  closeFocusMode: () => void;
+  /**
+   * Drill-down-Kontext: `null` = Wurzelkarten in der Liste;
+   * sonst Kinder von `contextNodeId`.
+   */
+  contextNodeId: string | null;
+  setContextNodeId: (nodeId: string | null) => void;
+  /** In diese Karte hinein (Kontext = nodeId). */
+  drillIntoNode: (nodeId: string) => void;
+  /** Eine Ebene nach oben. */
+  drillUp: () => void;
 
   /**
-   * Mindmap-DnD: siehe `applyMindmapDrop` in tree-utils.
+   * Mindmap-DnD (Legacy / Clipboard→Board): siehe `applyMindmapDrop` in tree-utils.
    */
   applyTreeDrag: (activeId: string, overKind: TreeDragOverKind) => void;
+
+  /** DnD innerhalb der Kontext-Liste (Reorder / Nest). */
+  applyContextListDrag: (activeId: string, drop: ContextListDrop) => void;
 
   /** Einheitlicher DnD-Handler für Board, Zwischenablage und Kreuzverschiebungen. */
   applyUnifiedDrag: (activeId: string, drop: UnifiedDragDrop) => void;
@@ -189,13 +207,11 @@ function cleanupAfterSubtreeRemoved(
   nextRoots: TaskNode[],
 ): Partial<TaskTreeState> {
   const collapsedIds = state.collapsedIds.filter((id) => !removedIds.has(id));
-  const nextFocus =
-    state.focusNodeId && findNodeById(nextRoots, state.focusNodeId) ? state.focusNodeId : null;
   return {
     roots: nextRoots,
     pathIds: normalizePathIds(nextRoots, state.pathIds),
     collapsedIds,
-    focusNodeId: nextFocus,
+    contextNodeId: normalizeContextNodeId(nextRoots, state.contextNodeId),
   };
 }
 
@@ -224,7 +240,7 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
   pathIds: [],
   collapsedIds: [],
 
-  focusNodeId: null,
+  contextNodeId: null,
 
   hideCompletedTasks: false,
 
@@ -323,9 +339,13 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
     });
   },
 
-  applyFocusDepthInView: (focusNodeId, maxDepth) => {
+  applyOutlineDepthInView: (rootId, maxDepth) => {
+    if (rootId === null) {
+      get().applyBoardDepthInView(maxDepth);
+      return;
+    }
     set((s) => {
-      const focus = findNodeById(s.roots, focusNodeId);
+      const focus = findNodeById(s.roots, rootId);
       if (!focus) return {};
       const collapsedIds = collapsedIdsAfterFocusDepthAction(s.collapsedIds, focus, maxDepth);
       if (
@@ -370,39 +390,33 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
       if (!path) return {};
       const open = new Set(path);
       const collapsedIds = s.collapsedIds.filter((id) => !open.has(id));
-      if (collapsedIds.length === s.collapsedIds.length) return {};
-      return { collapsedIds };
+      const contextNodeId = contextIdForRevealingNode(s.roots, nodeId);
+      return { collapsedIds, contextNodeId };
     });
   },
 
-  openFocusMode: (nodeId) => {
+  setContextNodeId: (nodeId) => {
     set((s) => {
+      if (nodeId === null) return { contextNodeId: null };
       if (!findNodeById(s.roots, nodeId)) return {};
       const path = pathFromRootToNode(s.roots, nodeId);
       if (!path) return {};
       const open = new Set(path);
       const collapsedIds = s.collapsedIds.filter((id) => !open.has(id));
-      if (collapsedIds.length !== s.collapsedIds.length) {
-      }
-      return { focusNodeId: nodeId, collapsedIds };
+      return { contextNodeId: nodeId, collapsedIds };
     });
   },
 
-  closeFocusMode: () => {
+  drillIntoNode: (nodeId) => {
+    get().setContextNodeId(nodeId);
+  },
+
+  drillUp: () => {
     set((s) => {
-      if (!s.focusNodeId) return { focusNodeId: null };
-      const { roots: prunedRoots, removedIds } = pruneEmptyUxLeavesInFocusSubtree(
-        s.roots,
-        s.focusNodeId,
-      );
-      for (const nodeId of removedIds) {
-      }
-      if (removedIds.length === 0) return { focusNodeId: null };
-      const nextRoots = refreshCalculatedEffortsInTree(prunedRoots, s.completedTag);
-      const removedSet = new Set(removedIds);
-      const collapsedIds = s.collapsedIds.filter((id) => !removedSet.has(id));
-      const pathIds = normalizePathIds(nextRoots, s.pathIds);
-      return { focusNodeId: null, roots: nextRoots, pathIds, collapsedIds };
+      if (!s.contextNodeId) return {};
+      const parent = findDirectParentId(s.roots, s.contextNodeId);
+      if (parent === undefined) return { contextNodeId: null };
+      return { contextNodeId: parent };
     });
   },
 
@@ -415,6 +429,21 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
     );
     const nextPath = pathIdsAfterNodeMove(nextRoots, activeId, pathIds);
     set({ roots: nextRoots, pathIds: nextPath });
+  },
+
+  applyContextListDrag: (activeId, drop) => {
+    set((s) => {
+      const nextRoots = refreshCalculatedEffortsInTree(
+        applyContextListDrop(s.roots, s.contextNodeId, activeId, drop),
+        s.completedTag,
+      );
+      const nextPath = pathIdsAfterNodeMove(nextRoots, activeId, s.pathIds);
+      return {
+        roots: nextRoots,
+        pathIds: nextPath,
+        contextNodeId: normalizeContextNodeId(nextRoots, s.contextNodeId),
+      };
+    });
   },
 
   applyUnifiedDrag: (activeId, drop) => {
@@ -505,13 +534,11 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
       const removedIds = collectSubtreeNodeIds(detached);
       const nextRoots = refreshCalculatedEffortsInTree(next, s.completedTag);
       const collapsedIds = s.collapsedIds.filter((id) => !removedIds.has(id));
-      const nextFocus =
-        s.focusNodeId && findNodeById(nextRoots, s.focusNodeId) ? s.focusNodeId : null;
       return {
         roots: nextRoots,
         pathIds: normalizePathIds(nextRoots, s.pathIds),
         collapsedIds,
-        focusNodeId: nextFocus,
+        contextNodeId: normalizeContextNodeId(nextRoots, s.contextNodeId),
       };
     });
   },
@@ -536,7 +563,7 @@ export const useTaskTreeStore = create<TaskTreeState>((set, get) => ({
       roots,
       pathIds,
       collapsedIds,
-      focusNodeId: null,
+      contextNodeId: null,
       columnTitleOverrides,
       ...(typeof incomingHideDone === "boolean" ? { hideCompletedTasks: incomingHideDone } : {}),
       ...(typeof incomingCompletedTag === "string"

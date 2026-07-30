@@ -125,7 +125,7 @@ export function stableKeyFromJson(text: string): string | null {
   return stableBoardStateKey(payload);
 }
 
-/** Stabiler Schlüssel des persistierten Board-Stands (ohne UI-only State wie focusNodeId). */
+/** Stabiler Schlüssel des persistierten Board-Stands (ohne UI-only State wie contextNodeId). */
 export function boardPersistKeyFromStoreState(): string {
   const s = useTaskTreeStore.getState();
   return stableBoardStateKey({

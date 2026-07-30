@@ -93,7 +93,7 @@ describe("boardPersistKeyFromStoreState", () => {
       columnTitleOverrides: {},
     });
     const before = boardPersistKeyFromStoreState();
-    useTaskTreeStore.getState().openFocusMode("does-not-exist");
+    useTaskTreeStore.getState().setContextNodeId(null);
     expect(boardPersistKeyFromStoreState()).toBe(before);
   });
 });

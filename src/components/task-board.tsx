@@ -1409,7 +1409,7 @@ export function TaskBoard() {
                 </div>
                 <div
                   className={[
-                    "min-h-0 flex-1 overflow-hidden px-4 py-3",
+                    "flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3",
                     activeDragId ? "touch-none" : "",
                   ].join(" ")}
                 >

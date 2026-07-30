@@ -20,7 +20,15 @@ const IDB_VERSION = 1;
 const IDB_STORE = "handles";
 const IDB_KEY = "board-json";
 const IDB_MOBILE_COPY_KEY = "mobile-working-copy";
+const IDB_RECENT_KEY = "recent-working-files";
 const LS_LAST_FILE_NAME = "t2-last-working-file-name";
+const RECENT_WORKING_FILES_LIMIT = 8;
+
+export interface RecentWorkingFileRecord {
+  name: string;
+  openedAt: number;
+  handle: FileSystemFileHandle;
+}
 
 let memoryHandle: FileSystemFileHandle | null = null;
 let mobileWorkingFileName: string | null = null;
@@ -575,6 +583,134 @@ async function attachWorkingFileFromText(
   return result;
 }
 
+async function idbGetRecent(): Promise<RecentWorkingFileRecord[]> {
+  try {
+    const db = await openIdb();
+    try {
+      const raw = await new Promise<unknown>((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE, "readonly");
+        tx.onerror = () => reject(tx.error ?? new Error("tx"));
+        const r = tx.objectStore(IDB_STORE).get(IDB_RECENT_KEY);
+        r.onsuccess = () => resolve(r.result);
+      });
+      if (!Array.isArray(raw)) return [];
+      return raw.filter(
+        (entry): entry is RecentWorkingFileRecord =>
+          Boolean(
+            entry &&
+              typeof entry === "object" &&
+              typeof (entry as RecentWorkingFileRecord).name === "string" &&
+              typeof (entry as RecentWorkingFileRecord).openedAt === "number" &&
+              (entry as RecentWorkingFileRecord).handle,
+          ),
+      );
+    } finally {
+      db.close();
+    }
+  } catch {
+    return [];
+  }
+}
+
+async function idbPutRecent(entries: RecentWorkingFileRecord[]): Promise<void> {
+  const db = await openIdb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("tx"));
+      tx.objectStore(IDB_STORE).put(entries, IDB_RECENT_KEY);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function handlesAreSame(
+  a: FileSystemFileHandle,
+  b: FileSystemFileHandle,
+): Promise<boolean> {
+  try {
+    if (typeof a.isSameEntry === "function") return await a.isSameEntry(b);
+  } catch {
+    /* ignore */
+  }
+  return a.name === b.name;
+}
+
+async function rememberRecentWorkingFile(handle: FileSystemFileHandle): Promise<void> {
+  const name = handle.name?.trim() || STANDARD_WORKING_FILENAME;
+  const openedAt = Date.now();
+  try {
+    const existing = await idbGetRecent();
+    const next: RecentWorkingFileRecord[] = [{ name, openedAt, handle }];
+    for (const entry of existing) {
+      if (await handlesAreSame(entry.handle, handle)) continue;
+      next.push(entry);
+      if (next.length >= RECENT_WORKING_FILES_LIMIT) break;
+    }
+    await idbPutRecent(next);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Recent Arbeitsdateien (File System Access handles), newest first. */
+export async function listRecentWorkingFiles(): Promise<
+  Array<{ name: string; openedAt: number; handle: FileSystemFileHandle }>
+> {
+  if (!isWorkingFileSupported()) return [];
+  return idbGetRecent();
+}
+
+export async function clearRecentWorkingFiles(): Promise<void> {
+  try {
+    await idbPutRecent([]);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Re-open a recent file (must be called from a user gesture for permission).
+ * Promotes it to the current Arbeitsdatei and hydrates the editor.
+ */
+export async function openRecentWorkingFile(
+  handle: FileSystemFileHandle,
+  options?: { skipPermission?: boolean },
+): Promise<{
+  handle: FileSystemFileHandle;
+  hydrate: HydrateWorkingFileResult;
+} | null> {
+  if (!isWorkingFileSupported()) return null;
+  try {
+    if (!options?.skipPermission) {
+      const granted = await ensureReadWritePermission(handle);
+      if (!granted) return null;
+    }
+    await rememberHandle(handle);
+    return { handle, hydrate: await hydrateStoreFromWorkingFile(handle) };
+  } catch (e) {
+    console.error("Recent file open:", e);
+    return null;
+  }
+}
+
+/**
+ * Request readwrite permission for a remembered handle.
+ * Must run from a user gesture *before* any programmatic download (which consumes activation).
+ */
+export async function requestWorkingFilePermission(
+  handle: FileSystemFileHandle,
+): Promise<boolean> {
+  if (!isWorkingFileSupported()) return false;
+  try {
+    return await ensureReadWritePermission(handle);
+  } catch {
+    return false;
+  }
+}
+
 async function rememberHandle(handle: FileSystemFileHandle): Promise<void> {
   memoryHandle = handle;
   const fileName = handle.name?.trim() || STANDARD_WORKING_FILENAME;
@@ -584,6 +720,7 @@ async function rememberHandle(handle: FileSystemFileHandle): Promise<void> {
   } catch {
     /* IndexedDB z. B. privat — nur Sitzung im RAM */
   }
+  void rememberRecentWorkingFile(handle);
   const existing = await idbGetMobileCopy();
   if (existing?.json?.trim()) {
     await rememberMobileCopy(existing.json, fileName, existing.sourceLastModified);
@@ -606,12 +743,31 @@ export async function attachWorkingFileOpen(): Promise<FileSystemFileHandle | nu
   }
 }
 
+/** Ensure a picker-friendly `.json` file name. */
+export function suggestedWorkingFileName(
+  titleOrLabel: string | null | undefined,
+  fallback: string = STANDARD_WORKING_FILENAME,
+): string {
+  const raw = titleOrLabel?.trim();
+  if (!raw) return fallback;
+  if (/\.json$/i.test(raw)) return raw;
+  const slug = raw
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase();
+  return `${slug || "t2-board"}.json`;
+}
+
 /** Neue JSON-Arbeitsdatei anlegen und verknüpfen. */
-export async function attachWorkingFileCreate(): Promise<FileSystemFileHandle | null> {
+export async function attachWorkingFileCreate(
+  suggestedName: string = STANDARD_WORKING_FILENAME,
+): Promise<FileSystemFileHandle | null> {
   if (!isWorkingFileSupported() || !window.showSaveFilePicker) return null;
   try {
     const handle = await window.showSaveFilePicker({
-      suggestedName: STANDARD_WORKING_FILENAME,
+      suggestedName: suggestedWorkingFileName(suggestedName),
       types: JSON_PICKER_TYPES,
     });
     await rememberHandle(handle);
@@ -620,6 +776,18 @@ export async function attachWorkingFileCreate(): Promise<FileSystemFileHandle | 
     if (e instanceof DOMException && e.name === "AbortError") return null;
     throw e;
   }
+}
+
+/**
+ * Apply arbitrary board JSON to the store and mark the working file as needing
+ * a persist (caller should `persistWorkingFileJson` afterwards).
+ */
+export function forceApplyBoardJson(json: string): boolean {
+  if (!json.trim()) return false;
+  if (!applyBoardJsonToStore(json)) return false;
+  lastSyncedBoardJson = null;
+  markWorkingFileSessionHydrated();
+  return true;
 }
 
 /** Nach Handle-Wahl: Inhalt laden und Sync-Zustand setzen. */
@@ -704,8 +872,11 @@ export async function attachWorkingFileFromPicker(): Promise<{
   return { handle, hydrate };
 }
 
-export async function createAndAttachWorkingFile(initialJson: string): Promise<FileSystemFileHandle | null> {
-  const handle = await attachWorkingFileCreate();
+export async function createAndAttachWorkingFile(
+  initialJson: string,
+  suggestedName: string = STANDARD_WORKING_FILENAME,
+): Promise<FileSystemFileHandle | null> {
+  const handle = await attachWorkingFileCreate(suggestedName);
   if (!handle) return null;
   const result = await writeWorkingFileJson(initialJson, handle);
   if (!result.ok) {
@@ -714,6 +885,24 @@ export async function createAndAttachWorkingFile(initialJson: string): Promise<F
   }
   markWorkingFileSessionHydrated();
   return handle;
+}
+
+/**
+ * Speichern unter… — current board JSON to a newly picked path; that file becomes the
+ * Arbeitsdatei (auto-sync target for subsequent Speichern / Hintergrund-Sync).
+ */
+export async function saveWorkingFileAs(
+  json: string,
+  suggestedName?: string | null,
+): Promise<FileSystemFileHandle | null> {
+  if (!isWorkingFileSupported() || typeof window.showSaveFilePicker !== "function") {
+    return null;
+  }
+  const name =
+    suggestedName?.trim() ||
+    getWorkingFileLabel() ||
+    STANDARD_WORKING_FILENAME;
+  return createAndAttachWorkingFile(json, name);
 }
 
 export async function restoreWorkingFileFromDisk(): Promise<FileSystemFileHandle | null> {

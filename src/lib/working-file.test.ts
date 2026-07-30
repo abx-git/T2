@@ -7,6 +7,7 @@ import {
   markWorkingFileSessionHydrated,
   markWorkingFileSynced,
   normalizeImportedFileText,
+  suggestedWorkingFileName,
   userFacingFileReadError,
   wasWorkingFileSessionHydrated,
 } from "./working-file";
@@ -30,6 +31,16 @@ describe("isKnownFileRevision", () => {
 describe("normalizeImportedFileText", () => {
   it("strips UTF-8 BOM", () => {
     expect(normalizeImportedFileText("\uFEFF{\"a\":1}")).toBe("{\"a\":1}");
+  });
+});
+
+describe("suggestedWorkingFileName", () => {
+  it("keeps existing .json names", () => {
+    expect(suggestedWorkingFileName("board.json")).toBe("board.json");
+  });
+
+  it("slugs free-text titles", () => {
+    expect(suggestedWorkingFileName("Mein Board")).toBe("mein-board.json");
   });
 });
 

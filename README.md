@@ -44,8 +44,11 @@ Hierarchische Aufgaben als Board / Mindmap — wie **diagrams.net**: App im Brow
 
 **Sicherung:**
 
-- **Backup erstellen** — JSON herunterladen
-- **Backup einspielen** — gesamtes Board ersetzen (mit Bestätigung)
+- **Jetzt sichern** — zeitgestempelte JSON-Kopie (Download + lokale Historie im Browser)
+- **Gesicherte Backups** — letzte Sicherungen ohne Downloads-Ordner wieder öffnen
+- **Automatisch alle …** — Intervall-Backups nur bei Änderungen (5–30 Min.)
+- **Backup einspielen** — gesamtes Board ersetzen (mit Bestätigung; zuvor Sicherheits-Backup)
+- **Speichern unter…** / zuletzt verwendete Dateien — Arbeitsdatei wählen bzw. wechseln
 
 ## Karten-IDs (Lox)
 

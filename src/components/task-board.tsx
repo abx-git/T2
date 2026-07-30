@@ -22,6 +22,18 @@ import {
 import { CircleHelp, HardDrive, Settings2, SlidersHorizontal, Tag } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 
+import {
+  BoardBackupSync,
+  runManualBoardBackup,
+} from "@/components/board-backup-sync";
+import {
+  backupBeforeSuspiciousSwitch,
+  boardHasBackupContent,
+  readBackupIntervalMinutes,
+  writeBackupIntervalMinutes,
+  type BackupIntervalMinutes,
+  getLocalBackup,
+} from "@/lib/board-backup";
 import { applyBoardJsonToStore, boardJsonFromStoreState } from "@/lib/file-board-reconcile";
 import type { BoardSnapshotV1 } from "@/lib/task-tree-json";
 import {
@@ -40,7 +52,7 @@ import { parseFreemindMmToRoots, taskRootsToFreemindMm } from "@/lib/freemind-mm
 import {
   attachWorkingFileFromBrowserFile,
   attachWorkingFileFromPastedText,
-  attachWorkingFileFromPicker,
+  attachWorkingFileOpen,
   beginUserPickedFileRead,
   bindMobileWorkingFile,
   readUserPickedFileText,
@@ -49,9 +61,11 @@ import {
   detachWorkingFile,
   fileSystemAccessUnavailableMessage,
   fileSystemAccessUnavailableTooltip,
+  forceApplyBoardJson,
   getWorkingFileHandle,
   getRememberedWorkingFileName,
   getWorkingFileLabel,
+  hydrateStoreFromWorkingFile,
   isMobileWorkingFileMode,
   isWorkingFileAttached,
   isWorkingFileDirty,
@@ -59,8 +73,12 @@ import {
   isWorkingFileUiAvailable,
   markWorkingFileSessionHydrated,
   markWorkingFileSynced,
+  openRecentWorkingFile,
   persistWorkingFileJson,
   prefersBrowserFilePicker,
+  requestWorkingFilePermission,
+  saveWorkingFileAs,
+  suggestedWorkingFileName,
   STANDARD_WORKING_FILENAME,
 } from "@/lib/working-file";
 import {
@@ -425,6 +443,8 @@ export function TaskBoard() {
   const [storagePanelBusy, setStoragePanelBusy] = useState(false);
   const [postImportSaveOpen, setPostImportSaveOpen] = useState(false);
   const [openWorkingFileConfirmOpen, setOpenWorkingFileConfirmOpen] = useState(false);
+  const [backupIntervalMinutes, setBackupIntervalMinutes] = useState<BackupIntervalMinutes>(0);
+  const [backupLastLabel, setBackupLastLabel] = useState("Noch kein Backup");
   const [helpOpen, setHelpOpen] = useState(false);
   const [clipboardOpen, setClipboardOpen] = useState(false);
   const [clearClipboardConfirmOpen, setClearClipboardConfirmOpen] = useState(false);
@@ -448,6 +468,7 @@ export function TaskBoard() {
   useEffect(() => {
     setFsAccessSupportedForUi(isWorkingFileUiAvailable());
     setWorkingFileUiReady(true);
+    setBackupIntervalMinutes(readBackupIntervalMinutes());
   }, []);
 
   useEffect(() => {
@@ -572,24 +593,30 @@ export function TaskBoard() {
           }
         }
         if (createNew) {
-          const handle = await createAndAttachWorkingFile(json);
+          const suggested = suggestedWorkingFileName(
+            getWorkingFileLabel() || roots[0]?.title || undefined,
+          );
+          const handle = await createAndAttachWorkingFile(json, suggested);
           if (!handle) return false;
           setWorkingFileName(handle.name?.trim() ? handle.name : "Arbeitsdatei");
           setWorkingFileSetupOpen(false);
           setWorkingFileDirty(false);
           return true;
         }
-        const picked = await attachWorkingFileFromPicker();
-        if (!picked) return false;
-        setWorkingFileName(picked.handle.name?.trim() ? picked.handle.name : "Arbeitsdatei");
+        // Picker needs user activation — run before any safety-download click.
+        const handle = await attachWorkingFileOpen();
+        if (!handle) return false;
+        backupBeforeSuspiciousSwitch("file");
+        const hydrate = await hydrateStoreFromWorkingFile(handle);
+        setWorkingFileName(handle.name?.trim() ? handle.name : "Arbeitsdatei");
         setWorkingFileSetupOpen(false);
-        if (picked.hydrate.status === "conflict") {
+        if (hydrate.status === "conflict") {
           const loadFile = window.confirm(
             "Die gewählte Datei unterscheidet sich von Ihrer aktuellen Ansicht.\n\nOK = Inhalt der Datei laden\nAbbrechen = Verknüpfung aufheben",
           );
           if (loadFile) {
-            applyBoardJsonToStore(picked.hydrate.fileText);
-            markWorkingFileSynced(picked.hydrate.fileText, picked.hydrate.fileLastModified);
+            applyBoardJsonToStore(hydrate.fileText);
+            markWorkingFileSynced(hydrate.fileText, hydrate.fileLastModified);
             markWorkingFileSessionHydrated();
             setWorkingFileDirty(false);
           } else {
@@ -597,7 +624,7 @@ export function TaskBoard() {
             setWorkingFileName(null);
             return false;
           }
-        } else if (picked.hydrate.status === "pushed_local") {
+        } else if (hydrate.status === "pushed_local") {
           const result = await persistWorkingFileJson(boardSnapshotTextFromStore());
           if (!result.ok) window.alert("Speichern in die neue Arbeitsdatei ist fehlgeschlagen.");
           else setWorkingFileDirty(false);
@@ -609,13 +636,14 @@ export function TaskBoard() {
         return false;
       }
     },
-    [boardSnapshotTextFromStore],
+    [boardSnapshotTextFromStore, roots],
   );
 
   const attachWorkingFileFromMobilePicker = useCallback(
     async (file: File, preReadText?: string) => {
       setStoragePanelBusy(true);
       try {
+        backupBeforeSuspiciousSwitch("file");
         const result = await attachWorkingFileFromBrowserFile(file, preReadText);
         if (result.status === "read_error") {
           window.alert(result.message);
@@ -711,6 +739,20 @@ export function TaskBoard() {
     [attachWorkingFileLink],
   );
 
+  const ensureSavedBeforeOpen = useCallback((): boolean => {
+    const attached = isWorkingFileAttached();
+    const dirty = isWorkingFileDirty();
+    const unsavedWithoutFile = !attached && boardHasBackupContent();
+    if (!dirty && !unsavedWithoutFile) return true;
+    window.alert(
+      attached
+        ? "Es gibt ungespeicherte Änderungen. Bitte zuerst speichern, bevor du eine andere Datei oder ein Backup öffnest."
+        : "Das Board ist noch nicht gespeichert. Bitte zuerst „Speichern unter…“ wählen, bevor du eine andere Datei oder ein Backup öffnest.",
+    );
+    setDataStoragePanelOpen(true);
+    return false;
+  }, []);
+
   const beginAttachWorkingFile = useCallback(
     (createNew: boolean, options?: { skipConfirm?: boolean }) => {
       if (createNew) {
@@ -725,6 +767,10 @@ export function TaskBoard() {
         }
         runAttachWorkingFileWithBusy(true);
         return;
+      }
+
+      if (!isWorkingFileAttached() && boardHasBackupContent()) {
+        if (!ensureSavedBeforeOpen()) return;
       }
 
       if (!options?.skipConfirm && isWorkingFileAttached()) {
@@ -742,7 +788,7 @@ export function TaskBoard() {
       }
       window.alert(fileSystemAccessUnavailableMessage());
     },
-    [attachWorkingFileLink, runAttachWorkingFileWithBusy],
+    [attachWorkingFileLink, ensureSavedBeforeOpen, runAttachWorkingFileWithBusy],
   );
 
   const handleConfirmOpenWorkingFile = useCallback(() => {
@@ -754,22 +800,123 @@ export function TaskBoard() {
     beginAttachWorkingFile(false);
   }, [beginAttachWorkingFile]);
 
+  const handleExportWorkingFileForSync = useCallback(() => {
+    const name = getWorkingFileLabel() || STANDARD_WORKING_FILENAME;
+    downloadJsonFile(name, boardSnapshotTextFromStore());
+  }, [boardSnapshotTextFromStore]);
+
+  const handleSaveWorkingFileAs = useCallback(async () => {
+    setStoragePanelBusy(true);
+    try {
+      if (!isWorkingFileSupported()) {
+        window.alert(
+          "Speichern unter… braucht die File-System-API (Chrome, Edge oder Brave). Alternativ „Jetzt sichern“ nutzen.",
+        );
+        return;
+      }
+      const suggested = suggestedWorkingFileName(
+        getWorkingFileLabel() || roots[0]?.title || undefined,
+      );
+      const handle = await saveWorkingFileAs(boardSnapshotTextFromStore(), suggested);
+      if (handle) {
+        setWorkingFileName(getWorkingFileLabel());
+        setWorkingFileDirty(false);
+        setWorkingFileSetupOpen(false);
+        setDataStoragePanelOpen(false);
+      }
+    } finally {
+      setStoragePanelBusy(false);
+    }
+  }, [boardSnapshotTextFromStore, roots]);
+
   const handlePostImportSaveToFile = useCallback(async () => {
     setPostImportSaveOpen(false);
     if (!isWorkingFileAttached()) {
-      beginAttachWorkingFile(false);
+      await handleSaveWorkingFileAs();
       return;
     }
     const json = boardSnapshotTextFromStore();
     const result = await persistWorkingFileJson(json);
     if (!result.ok) window.alert("Speichern in die Arbeitsdatei ist fehlgeschlagen.");
     else setWorkingFileDirty(false);
-  }, [beginAttachWorkingFile, boardSnapshotTextFromStore]);
+  }, [boardSnapshotTextFromStore, handleSaveWorkingFileAs]);
 
-  const handleExportWorkingFileForSync = useCallback(() => {
-    const name = getWorkingFileLabel() || STANDARD_WORKING_FILENAME;
-    downloadJsonFile(name, boardSnapshotTextFromStore());
-  }, [boardSnapshotTextFromStore]);
+  const handleOpenRecentWorkingFile = useCallback(
+    async (handle: FileSystemFileHandle) => {
+      if (!ensureSavedBeforeOpen()) return;
+      setStoragePanelBusy(true);
+      try {
+        const permitted = await requestWorkingFilePermission(handle);
+        if (!permitted) {
+          window.alert(
+            "Datei konnte nicht geöffnet werden. Bitte Berechtigung erteilen oder die Datei erneut über „Datei öffnen“ wählen.",
+          );
+          return;
+        }
+        backupBeforeSuspiciousSwitch("file");
+        const result = await openRecentWorkingFile(handle, { skipPermission: true });
+        if (!result) {
+          window.alert(
+            "Datei konnte nicht geöffnet werden. Bitte die Datei erneut über „Datei öffnen“ wählen.",
+          );
+          return;
+        }
+        if (result.hydrate.status === "conflict") {
+          const loadFile = window.confirm(
+            "Die gewählte Datei unterscheidet sich von Ihrer aktuellen Ansicht.\n\nOK = Inhalt der Datei laden\nAbbrechen = Abbrechen",
+          );
+          if (loadFile) {
+            applyBoardJsonToStore(result.hydrate.fileText);
+            markWorkingFileSynced(result.hydrate.fileText, result.hydrate.fileLastModified);
+            markWorkingFileSessionHydrated();
+            setWorkingFileDirty(false);
+          } else {
+            return;
+          }
+        } else if (result.hydrate.status === "pushed_local") {
+          const saved = await persistWorkingFileJson(boardSnapshotTextFromStore());
+          if (!saved.ok) window.alert("Speichern in die Arbeitsdatei ist fehlgeschlagen.");
+          else setWorkingFileDirty(false);
+        }
+        setWorkingFileName(getWorkingFileLabel());
+        setWorkingFileSetupOpen(false);
+        setDataStoragePanelOpen(false);
+      } finally {
+        setStoragePanelBusy(false);
+      }
+    },
+    [boardSnapshotTextFromStore, ensureSavedBeforeOpen],
+  );
+
+  const handleOpenLocalBackup = useCallback(
+    async (backupId: string) => {
+      if (!ensureSavedBeforeOpen()) return;
+      setStoragePanelBusy(true);
+      try {
+        const record = await getLocalBackup(backupId);
+        if (!record?.json?.trim()) {
+          window.alert("Backup wurde nicht gefunden oder ist leer.");
+          return;
+        }
+        backupBeforeSuspiciousSwitch("import");
+        if (!forceApplyBoardJson(record.json)) {
+          window.alert("Backup konnte nicht geladen werden.");
+          return;
+        }
+        setWorkingFileDirty(isWorkingFileAttached());
+        setDataStoragePanelOpen(false);
+        setPostImportSaveOpen(true);
+      } finally {
+        setStoragePanelBusy(false);
+      }
+    },
+    [ensureSavedBeforeOpen],
+  );
+
+  const handleBackupIntervalChange = useCallback((minutes: BackupIntervalMinutes) => {
+    setBackupIntervalMinutes(minutes);
+    writeBackupIntervalMinutes(minutes);
+  }, []);
 
   const openEditor = (id: string) => {
     setEditorNodeId(id);
@@ -815,22 +962,6 @@ export function TaskBoard() {
 
   const handleRequestDelete = (nodeId: string) => {
     setPendingDeleteId(nodeId);
-  };
-
-  const handleExportFullBoard = () => {
-    const doc = buildBoardSnapshot(
-      roots,
-      pathIds,
-      columnTitleOverrides,
-      cardFieldVisibility,
-      hideCompletedTasks,
-      effortOnTasksEnabled,
-      filterTags,
-      completedTag,
-      collapsedIds,
-      clipboardRoots,
-    );
-    downloadJsonFile(STANDARD_WORKING_FILENAME, stringifyExportedDocument(doc));
   };
 
   const handleExportMindmapMm = () => {
@@ -1525,6 +1656,7 @@ export function TaskBoard() {
           const snap = pendingBoardImport;
           setPendingBoardImport(null);
           if (!snap) return;
+          backupBeforeSuspiciousSwitch("import");
           replaceBoardFromImport(boardSnapshotToReplacePayload(snap));
           closeEditor();
           setPostImportSaveOpen(true);
@@ -1554,6 +1686,10 @@ export function TaskBoard() {
         onOpenExistingDesktop={() => beginAttachWorkingFile(false, { skipConfirm: true })}
         onCreateNew={() => beginAttachWorkingFile(true)}
       />
+      <BoardBackupSync
+        intervalMinutes={backupIntervalMinutes}
+        onLastBackupChange={setBackupLastLabel}
+      />
       <DataStoragePanel
         open={dataStoragePanelOpen}
         onClose={() => setDataStoragePanelOpen(false)}
@@ -1564,20 +1700,29 @@ export function TaskBoard() {
         workingFileAttached={workingFileAttached}
         workingFileDirty={workingFileDirty}
         workingFileSaving={workingFileSaving}
+        mustSaveBeforeOpen={
+          workingFileDirty || (!workingFileAttached && boardHasBackupContent())
+        }
+        backupIntervalMinutes={backupIntervalMinutes}
+        backupLastLabel={backupLastLabel}
+        onBackupIntervalChange={handleBackupIntervalChange}
+        onBackupNow={() => runManualBoardBackup(setBackupLastLabel)}
         busy={storagePanelBusy}
         onOpenWorkingFile={() => beginAttachWorkingFile(false)}
         onCreateWorkingFile={() => beginAttachWorkingFile(true)}
         onChangeWorkingFile={handleChangeWorkingFile}
+        onSaveWorkingFileAs={() => void handleSaveWorkingFileAs()}
+        onOpenRecentWorkingFile={(handle) => void handleOpenRecentWorkingFile(handle)}
+        onOpenLocalBackup={(id) => void handleOpenLocalBackup(id)}
         mobileWorkingFileMode={isMobileWorkingFileMode()}
         onExportWorkingFileForSync={handleExportWorkingFileForSync}
-        onCreateBackup={() => {
-          handleExportFullBoard();
-        }}
         onRestoreBackupFile={() => {
+          if (!ensureSavedBeforeOpen()) return;
           setDataStoragePanelOpen(false);
           importFileRef.current?.click();
         }}
         onRestoreBackupPaste={() => {
+          if (!ensureSavedBeforeOpen()) return;
           setDataStoragePanelOpen(false);
           setPasteImportOpen(true);
         }}

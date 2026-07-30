@@ -121,7 +121,7 @@ export function KeyboardShortcutsHelpDialog({ open, onClose }: KeyboardShortcuts
       items: [
         { keys: "Klick", description: "Karte auswählen" },
         { keys: "Doppelklick", description: "Hinein (nur mit Unterkarten)" },
-        { keys: "Griff ziehen", description: "Umsortieren oder auf andere Karte nesten" },
+        { keys: "Ziehen", description: "Umsortieren oder nesten (Karte oder Griff)" },
         { keys: "Rechtsklick", description: "Details öffnen" },
         { keys: "⋯", description: "Aktionen (Farbe, Ändern, …)" },
       ],

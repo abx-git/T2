@@ -330,6 +330,8 @@ export function TaskRow({
       data-task-card-id={node.id}
       aria-labelledby={headingId}
       style={style}
+      {...attributes}
+      {...listeners}
       tabIndex={isKeyboardFocus ? -1 : undefined}
       onClick={(e) => {
         if (isInteractiveTarget(e.target) || isTitleEditing) return;
@@ -342,7 +344,7 @@ export function TaskRow({
       }}
       onContextMenu={handleContextMenu}
       className={[
-        "group relative flex cursor-default items-stretch gap-1 rounded-lg border px-2 py-2 shadow-sm transition",
+        "group relative flex touch-none cursor-grab items-stretch gap-1 rounded-lg border px-2 py-2 shadow-sm transition active:cursor-grabbing",
         surface,
         isDragging ? "opacity-40" : "",
         isNestDropTarget || isOver
@@ -357,26 +359,20 @@ export function TaskRow({
         <span className={["absolute inset-y-0 left-0 w-1 rounded-l-lg", accent].join(" ")} aria-hidden />
       ) : null}
 
-      <button
-        type="button"
-        className={[
-          "mt-0.5 flex h-7 w-5 shrink-0 touch-none cursor-grab items-center justify-center rounded text-slate-300",
-          "hover:bg-slate-100 hover:text-slate-500 active:cursor-grabbing",
-          isTitleEditing ? "pointer-events-none opacity-40" : "",
-        ].join(" ")}
-        aria-label="Karte verschieben"
+      <span
+        className="mt-0.5 flex h-7 w-5 shrink-0 items-center justify-center text-slate-300 group-hover:text-slate-400"
+        aria-hidden
         title="Ziehen zum Verschieben"
-        {...attributes}
-        {...listeners}
       >
-        <GripVertical className="h-4 w-4" aria-hidden />
-      </button>
+        <GripVertical className="h-4 w-4" />
+      </span>
 
       {fieldVisibility.completedCheck ? (
         <button
           type="button"
           className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-white hover:text-slate-700"
           aria-label={done ? "Als offen markieren" : "Als erledigt markieren"}
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             toggleDone();
@@ -401,6 +397,7 @@ export function TaskRow({
             onBlur={() => {
               if (!coarsePointer) commitTitle();
             }}
+            onPointerDown={(e) => e.stopPropagation()}
             className="w-full rounded border border-sky-300 bg-white px-2 py-1 text-sm text-slate-900 outline-none ring-2 ring-sky-200"
             aria-label="Titel"
           />
@@ -412,6 +409,7 @@ export function TaskRow({
               "w-full truncate text-left text-sm font-medium",
               done ? "text-slate-400 line-through" : "text-slate-900",
             ].join(" ")}
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               onSelect();
@@ -460,6 +458,7 @@ export function TaskRow({
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-0.5 text-[10px] text-sky-600 hover:text-sky-800"
                   title="Link öffnen"
+                  onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <ExternalLink className="h-3 w-3" aria-hidden />
@@ -476,7 +475,10 @@ export function TaskRow({
         ) : null}
       </div>
 
-      <div className="flex shrink-0 items-start gap-0.5">
+      <div
+        className="flex shrink-0 items-start gap-0.5"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         <button
           type="button"
           className="flex h-7 w-7 items-center justify-center rounded-md border border-sky-200/90 bg-sky-50 text-sky-700 hover:bg-sky-100"

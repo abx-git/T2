@@ -33,8 +33,8 @@ function GapDrop({
             ? "min-h-28 border border-dashed border-sky-400 bg-sky-50/90 px-4 py-8"
             : "min-h-28 border border-dashed border-slate-200 bg-slate-50/80 px-4 py-8"
           : isOver
-            ? "h-3 bg-sky-200/90 ring-1 ring-sky-400"
-            : "h-1.5",
+            ? "h-4 bg-sky-200/90 ring-1 ring-sky-400"
+            : "h-2.5",
       ].join(" ")}
       aria-hidden={!emptyHint}
     >

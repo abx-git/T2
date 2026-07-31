@@ -137,7 +137,7 @@ import { CardFieldVisibilityDialog } from "./card-field-visibility-dialog";
 import { ConfirmDialog } from "./confirm-dialog";
 import { DepthLevelsControl } from "./depth-levels-control";
 import { ImportSubtreeDialog } from "./import-subtree-dialog";
-import { AppointmentsListDialog } from "./appointments-list-dialog";
+import { FilterResultsDialog } from "./filter-results-dialog";
 import { BranchExportDialog, JsonExportPreviewDialog, JsonPasteImportDialog } from "./json-clipboard-dialog";
 import { PasteListDialog } from "./paste-list-dialog";
 import { TemplateInsertDialog } from "./template-insert-dialog";
@@ -243,7 +243,7 @@ export function TaskBoard() {
   const [templateInsertParentId, setTemplateInsertParentId] = useState<string | null>(null);
   const [templateInsertPrefillId, setTemplateInsertPrefillId] = useState<string | null>(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
-  const [appointmentsListOpen, setAppointmentsListOpen] = useState(false);
+  const [filterResultsOpen, setFilterResultsOpen] = useState(false);
   const [scrollToNodeId, setScrollToNodeId] = useState<string | null>(null);
   const [dataStoragePanelOpen, setDataStoragePanelOpen] = useState(false);
   const [storagePanelBusy, setStoragePanelBusy] = useState(false);
@@ -998,7 +998,7 @@ export function TaskBoard() {
     branchExportNode !== null ||
     templateSaveRoot !== null ||
     templateInsertParentId !== null ||
-    appointmentsListOpen ||
+    filterResultsOpen ||
     dataStoragePanelOpen ||
     postImportSaveOpen ||
     openWorkingFileConfirmOpen ||
@@ -1399,7 +1399,7 @@ export function TaskBoard() {
           </button>
         </div>
       </div>
-      <TagFilterBar onOpenAppointments={() => setAppointmentsListOpen(true)} />
+      <TagFilterBar onOpenResults={() => setFilterResultsOpen(true)} />
     </header>
   );
 
@@ -1581,10 +1581,10 @@ export function TaskBoard() {
           }
         }}
       />
-      <AppointmentsListDialog
-        open={appointmentsListOpen}
-        onClose={() => setAppointmentsListOpen(false)}
-        onSelectAppointment={(nodeId) => {
+      <FilterResultsDialog
+        open={filterResultsOpen}
+        onClose={() => setFilterResultsOpen(false)}
+        onSelectNode={(nodeId) => {
           expandToNode(nodeId);
           setSearchFocusNodeId(nodeId);
           setKeyboardFocusNodeId(nodeId);

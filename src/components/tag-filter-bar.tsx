@@ -1,6 +1,6 @@
 "use client";
 
-import { AlarmClock, CalendarDays, Palette, Tag, X } from "lucide-react";
+import { AlarmClock, CalendarDays, ListFilter, Palette, Tag, X } from "lucide-react";
 import { useMemo } from "react";
 
 import {
@@ -14,18 +14,23 @@ import {
   type ScheduleFilterKind,
 } from "@/lib/board-filters";
 import type { CardColorId } from "@/lib/card-color";
+import {
+  collectFilterMatchingCards,
+  hasActiveFacetFilters,
+} from "@/lib/filter-results";
 import { collectAllTagsFromForest, tagChipClass, tagsAvailableForFilter } from "@/lib/task-tags";
 import { useTaskTreeStore } from "@/store/task-tree-store";
 
 type TagFilterBarProps = {
-  onOpenAppointments: () => void;
+  onOpenResults: () => void;
 };
 
 const chipBase =
   "inline-flex max-w-full items-center truncate rounded border px-1.5 py-px text-[10px] font-medium leading-tight";
 
-export function TagFilterBar({ onOpenAppointments }: TagFilterBarProps) {
+export function TagFilterBar({ onOpenResults }: TagFilterBarProps) {
   const roots = useTaskTreeStore((s) => s.roots);
+  const completedTag = useTaskTreeStore((s) => s.completedTag);
   const filterTags = useTaskTreeStore((s) => s.filterTags);
   const addFilterTag = useTaskTreeStore((s) => s.addFilterTag);
   const removeFilterTag = useTaskTreeStore((s) => s.removeFilterTag);
@@ -58,8 +63,29 @@ export function TagFilterBar({ onOpenAppointments }: TagFilterBarProps) {
   const hasTagFilters = allTags.length > 0 || filterTags.length > 0;
   const hasColorFilters = allColors.length > 0 || filterColors.length > 0;
   const hasScheduleFilters = allScheduleKinds.length > 0 || filterScheduleKinds.length > 0;
-  const hasAnyActiveFilter =
-    filterTags.length > 0 || filterColors.length > 0 || filterScheduleKinds.length > 0;
+  const hasAnyActiveFilter = hasActiveFacetFilters({
+    filterTags,
+    filterColors,
+    filterScheduleKinds,
+  });
+
+  const filterHitCount = useMemo(() => {
+    if (!hasAnyActiveFilter) return 0;
+    return collectFilterMatchingCards(roots, {
+      filterTags,
+      filterColors,
+      filterScheduleKinds,
+      completedTag,
+      includeDone: true,
+    }).length;
+  }, [
+    hasAnyActiveFilter,
+    roots,
+    filterTags,
+    filterColors,
+    filterScheduleKinds,
+    completedTag,
+  ]);
 
   return (
     <div
@@ -69,12 +95,20 @@ export function TagFilterBar({ onOpenAppointments }: TagFilterBarProps) {
     >
       <button
         type="button"
-        onClick={onOpenAppointments}
+        onClick={onOpenResults}
         className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-violet-300/90 bg-violet-50 px-2.5 text-[11px] font-medium text-violet-900 shadow-sm hover:bg-violet-100"
-        title="Alle Fälligkeiten und Erinnerungen anzeigen"
+        title={
+          hasAnyActiveFilter
+            ? "Trefferliste zum aktuellen Filter öffnen"
+            : "Alle Fälligkeiten und Erinnerungen anzeigen"
+        }
       >
-        <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden />
-        Termine
+        {hasAnyActiveFilter ? (
+          <ListFilter className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        ) : (
+          <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        )}
+        {hasAnyActiveFilter ? `Treffer (${filterHitCount})` : "Termine"}
       </button>
 
       {hasScheduleFilters ? (

@@ -8,7 +8,6 @@ import {
   Download,
   ExternalLink,
   FileStack,
-  GripVertical,
   ListPlus,
   MoreHorizontal,
   Pencil,
@@ -400,14 +399,6 @@ export function TaskRow({
       {accent ? (
         <span className={["absolute inset-y-0 left-0 w-1 rounded-l-lg", accent].join(" ")} aria-hidden />
       ) : null}
-
-      <span
-        className="mt-0.5 flex h-7 w-5 shrink-0 items-center justify-center text-slate-300 group-hover:text-slate-400"
-        aria-hidden
-        title="Ziehen zum Verschieben"
-      >
-        <GripVertical className="h-4 w-4" />
-      </span>
 
       {fieldVisibility.completedCheck ? (
         <button

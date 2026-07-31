@@ -71,7 +71,7 @@ export function TagFilterBar({ onOpenAppointments }: TagFilterBarProps) {
         type="button"
         onClick={onOpenAppointments}
         className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-violet-300/90 bg-violet-50 px-2.5 text-[11px] font-medium text-violet-900 shadow-sm hover:bg-violet-100"
-        title="Alle Fälligkeiten und Erinnerungen als Markdown kopieren"
+        title="Alle Fälligkeiten und Erinnerungen anzeigen"
       >
         <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden />
         Termine

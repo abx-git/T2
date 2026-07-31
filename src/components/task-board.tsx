@@ -1584,6 +1584,13 @@ export function TaskBoard() {
       <AppointmentsListDialog
         open={appointmentsListOpen}
         onClose={() => setAppointmentsListOpen(false)}
+        onSelectAppointment={(nodeId) => {
+          expandToNode(nodeId);
+          setSearchFocusNodeId(nodeId);
+          setKeyboardFocusNodeId(nodeId);
+          setScrollToNodeId(nodeId);
+          handleOpenDetails(nodeId);
+        }}
       />
       <JsonPasteImportDialog
         open={workingFilePasteOpen}

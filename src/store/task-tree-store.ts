@@ -43,7 +43,9 @@ import type { CardInteractionMode } from "@/lib/card-expand";
 import {
   defaultColorForNewCard,
   parseFilterColors,
+  parseFilterCombineMode,
   parseScheduleFilterKinds,
+  type FilterCombineMode,
   type ScheduleFilterKind,
 } from "@/lib/board-filters";
 import type { CardColorId } from "@/lib/card-color";
@@ -70,6 +72,7 @@ export type BoardHistorySlice = {
   filterTags: string[];
   filterColors: CardColorId[];
   filterScheduleKinds: ScheduleFilterKind[];
+  filterCombineMode: FilterCombineMode;
   cardFieldVisibility: CardFieldVisibility;
   effortOnTasksEnabled: boolean;
   columnTitleOverrides: Record<number, string>;
@@ -88,6 +91,7 @@ function partializeBoardHistory(state: TaskTreeState): BoardHistorySlice {
     filterTags: state.filterTags,
     filterColors: state.filterColors,
     filterScheduleKinds: state.filterScheduleKinds,
+    filterCombineMode: state.filterCombineMode,
     cardFieldVisibility: state.cardFieldVisibility,
     effortOnTasksEnabled: state.effortOnTasksEnabled,
     columnTitleOverrides: state.columnTitleOverrides,
@@ -107,6 +111,7 @@ function boardHistoryEqual(a: BoardHistorySlice, b: BoardHistorySlice): boolean 
     a.filterTags === b.filterTags &&
     a.filterColors === b.filterColors &&
     a.filterScheduleKinds === b.filterScheduleKinds &&
+    a.filterCombineMode === b.filterCombineMode &&
     a.cardFieldVisibility === b.cardFieldVisibility &&
     a.effortOnTasksEnabled === b.effortOnTasksEnabled &&
     a.columnTitleOverrides === b.columnTitleOverrides
@@ -148,21 +153,27 @@ export interface TaskTreeState {
   completedTag: string;
   setCompletedTag: (tag: string) => void;
 
-  /** Tag-Filter (OR): Karte sichtbar, wenn Tag gesetzt oder Nachfahre passt. */
+  /** Tag-Filter (OR innerhalb): Karte sichtbar, wenn Tag gesetzt oder Nachfahre passt. */
   filterTags: string[];
   setFilterTags: (tags: string[]) => void;
   addFilterTag: (tag: string) => void;
   removeFilterTag: (tag: string) => void;
-  /** Farbfilter (OR); Dimensionen Tags/Farben/Termine sind AND. */
+  /** Farbfilter (OR innerhalb). */
   filterColors: CardColorId[];
   setFilterColors: (colors: CardColorId[]) => void;
   addFilterColor: (color: CardColorId) => void;
   removeFilterColor: (color: CardColorId) => void;
-  /** Terminfilter (OR): Fälligkeit / Erinnerung. */
+  /** Terminfilter (OR innerhalb): Fälligkeit / Erinnerung. */
   filterScheduleKinds: ScheduleFilterKind[];
   setFilterScheduleKinds: (kinds: ScheduleFilterKind[]) => void;
   addFilterScheduleKind: (kind: ScheduleFilterKind) => void;
   removeFilterScheduleKind: (kind: ScheduleFilterKind) => void;
+  /**
+   * Verknüpfung der Filter-Dimensionen Tags / Farben / Termine.
+   * `and` = alle aktiven Dimensionen müssen passen; `or` = eine reicht.
+   */
+  filterCombineMode: FilterCombineMode;
+  setFilterCombineMode: (mode: FilterCombineMode) => void;
   /** Alle Kartenfilter (Tags, Farben, Termine) zurücksetzen. */
   clearBoardFilters: () => void;
   /** Tag überall umbenennen (Karten, Filter, Erledigt-Tag). */
@@ -231,6 +242,7 @@ export interface TaskTreeState {
     filterTags?: string[];
     filterColors?: CardColorId[];
     filterScheduleKinds?: ScheduleFilterKind[];
+    filterCombineMode?: FilterCombineMode;
     cardFieldVisibility?: CardFieldVisibility;
     effortOnTasksEnabled?: boolean;
     clipboardRoots?: TaskNode[];
@@ -415,6 +427,12 @@ export const useTaskTreeStore = create<TaskTreeState>()(
     set((s) => ({
       filterScheduleKinds: s.filterScheduleKinds.filter((k) => k !== kind),
     }));
+  },
+
+  filterCombineMode: "and",
+
+  setFilterCombineMode: (mode) => {
+    set({ filterCombineMode: parseFilterCombineMode(mode) });
   },
 
   clearBoardFilters: () => {
@@ -725,6 +743,7 @@ export const useTaskTreeStore = create<TaskTreeState>()(
       filterTags: incomingFilterTags,
       filterColors: incomingFilterColors,
       filterScheduleKinds: incomingFilterSchedule,
+      filterCombineMode: incomingFilterCombine,
       cardFieldVisibility: incomingVisibility,
       effortOnTasksEnabled: incomingEffort,
     } = payload;
@@ -766,6 +785,9 @@ export const useTaskTreeStore = create<TaskTreeState>()(
         : {}),
       ...(incomingFilterSchedule !== undefined
         ? { filterScheduleKinds: parseScheduleFilterKinds(incomingFilterSchedule) }
+        : {}),
+      ...(incomingFilterCombine !== undefined
+        ? { filterCombineMode: parseFilterCombineMode(incomingFilterCombine) }
         : {}),
       cardFieldVisibility: mergeCardFieldVisibility(incomingVisibility),
       ...(typeof incomingEffort === "boolean" ? { effortOnTasksEnabled: incomingEffort } : {}),

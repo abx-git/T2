@@ -6,6 +6,18 @@ import {
 import { nodeHasAnyFilterTag } from "@/lib/task-tags";
 import type { TaskNode } from "@/types/task-node";
 
+/** Wie aktive Filter-Dimensionen (Tags / Farben / Termine) verknüpft werden. */
+export const FILTER_COMBINE_MODES = ["and", "or"] as const;
+export type FilterCombineMode = (typeof FILTER_COMBINE_MODES)[number];
+
+export function isFilterCombineMode(raw: unknown): raw is FilterCombineMode {
+  return raw === "and" || raw === "or";
+}
+
+export function parseFilterCombineMode(raw: unknown): FilterCombineMode {
+  return isFilterCombineMode(raw) ? raw : "and";
+}
+
 /** Filter nach Terminart (OR innerhalb der Auswahl). */
 export const SCHEDULE_FILTER_KINDS = ["due", "reminder"] as const;
 export type ScheduleFilterKind = (typeof SCHEDULE_FILTER_KINDS)[number];
@@ -135,17 +147,35 @@ export function defaultColorForNewCard(
   return filterColors.length === 1 ? filterColors[0] : undefined;
 }
 
-/** Karte passt zu allen aktiven Filter-Dimensionen (leer = keine Einschränkung). */
+/** Karte passt zu den aktiven Filter-Dimensionen (leer = keine Einschränkung). */
 export function nodeMatchesBoardFilters(
   node: Pick<TaskNode, "tags" | "dueDate" | "reminderDate" | "cardColor">,
   opts: {
     filterTags: string[];
     filterColors: CardColorId[];
     filterScheduleKinds: ScheduleFilterKind[];
+    /** Standard `and`: Dimensionen müssen alle passen. `or`: eine Dimension reicht. */
+    filterCombineMode?: FilterCombineMode;
   },
 ): boolean {
-  if (!nodeHasAnyFilterTag(node, opts.filterTags)) return false;
-  if (!nodeHasAnyFilterColor(node, opts.filterColors)) return false;
-  if (!nodeMatchesAnyScheduleFilter(node, opts.filterScheduleKinds)) return false;
-  return true;
+  const mode = opts.filterCombineMode ?? "and";
+  const tagActive = opts.filterTags.length > 0;
+  const colorActive = opts.filterColors.length > 0;
+  const scheduleActive = opts.filterScheduleKinds.length > 0;
+  if (!tagActive && !colorActive && !scheduleActive) return true;
+
+  const tagOk = !tagActive || nodeHasAnyFilterTag(node, opts.filterTags);
+  const colorOk = !colorActive || nodeHasAnyFilterColor(node, opts.filterColors);
+  const scheduleOk =
+    !scheduleActive || nodeMatchesAnyScheduleFilter(node, opts.filterScheduleKinds);
+
+  if (mode === "or") {
+    const checks: boolean[] = [];
+    if (tagActive) checks.push(tagOk);
+    if (colorActive) checks.push(colorOk);
+    if (scheduleActive) checks.push(scheduleOk);
+    return checks.some(Boolean);
+  }
+
+  return tagOk && colorOk && scheduleOk;
 }

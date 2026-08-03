@@ -81,6 +81,17 @@ describe("collectFilterMatchingCards", () => {
     expect(cards.map((c) => c.nodeId)).toEqual(["a"]);
   });
 
+  it("matches dimensions with OR combine mode", () => {
+    const cards = collectFilterMatchingCards(roots, {
+      filterTags: ["work"],
+      filterColors: ["emerald"],
+      filterScheduleKinds: [],
+      filterCombineMode: "or",
+      completedTag: DEFAULT_COMPLETED_TAG,
+    });
+    expect(cards.map((c) => c.nodeId).sort()).toEqual(["a", "a1", "c"]);
+  });
+
   it("matches schedule kind", () => {
     const cards = collectFilterMatchingCards(roots, {
       filterTags: [],

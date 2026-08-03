@@ -137,13 +137,13 @@ export function TaskRow({
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: node.id,
     data: { kind: "contextCard" as const, nodeId: node.id },
-    disabled: isTitleEditing || nestDepth > 0,
+    disabled: isTitleEditing,
   });
 
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: node.id,
     data: { kind: "contextNest" as const, nodeId: node.id },
-    disabled: isDragging || nestDepth > 0,
+    disabled: isDragging,
   });
 
   const setRefs = useCallback(
@@ -407,8 +407,7 @@ export function TaskRow({
       }}
       onContextMenu={handleContextMenu}
       className={[
-        "group relative flex touch-none items-stretch gap-1 rounded-lg border px-2 py-2 shadow-sm transition",
-        nestDepth > 0 ? "cursor-default" : "cursor-grab active:cursor-grabbing",
+        "group relative flex touch-none cursor-grab items-stretch gap-1 rounded-lg border px-2 py-2 shadow-sm transition active:cursor-grabbing",
         nestDepth > 0 ? "border-slate-200/70 bg-white/90" : "",
         surface,
         isDragging ? "opacity-40" : "",

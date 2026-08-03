@@ -73,6 +73,26 @@ describe("board-filters", () => {
     ).toBe(false);
   });
 
+  it("kombiniert Dimensionen mit OR", () => {
+    const n = node("a", { tags: ["x"], cardColor: "sky" });
+    expect(
+      nodeMatchesBoardFilters(n, {
+        filterTags: ["x"],
+        filterColors: ["rose"],
+        filterScheduleKinds: [],
+        filterCombineMode: "or",
+      }),
+    ).toBe(true);
+    expect(
+      nodeMatchesBoardFilters(n, {
+        filterTags: ["y"],
+        filterColors: ["rose"],
+        filterScheduleKinds: [],
+        filterCombineMode: "or",
+      }),
+    ).toBe(false);
+  });
+
   it("übernimmt Farbe nur bei genau einem Farbfilter", () => {
     expect(defaultColorForNewCard(["sky"])).toBe("sky");
     expect(defaultColorForNewCard(["sky", "rose"])).toBeUndefined();

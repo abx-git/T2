@@ -127,6 +127,7 @@ function filterSummaryText(opts: {
   filterTags: string[];
   filterColors: CardColorId[];
   filterScheduleKinds: ScheduleFilterKind[];
+  filterCombineMode?: "and" | "or";
 }): string {
   const bits: string[] = [];
   if (opts.filterTags.length) bits.push(opts.filterTags.join(", "));
@@ -136,7 +137,9 @@ function filterSummaryText(opts: {
   if (opts.filterScheduleKinds.length) {
     bits.push(opts.filterScheduleKinds.map((k) => SCHEDULE_FILTER_LABELS[k]).join(", "));
   }
-  return bits.join(" · ");
+  if (bits.length <= 1) return bits.join("") || "";
+  const join = (opts.filterCombineMode ?? "and") === "or" ? " ODER " : " UND ";
+  return bits.join(join);
 }
 
 export interface FilterResultsDialogProps {
@@ -155,6 +158,7 @@ export function FilterResultsDialog({ open, onClose, onSelectNode }: FilterResul
   const filterTags = useTaskTreeStore((s) => s.filterTags);
   const filterColors = useTaskTreeStore((s) => s.filterColors);
   const filterScheduleKinds = useTaskTreeStore((s) => s.filterScheduleKinds);
+  const filterCombineMode = useTaskTreeStore((s) => s.filterCombineMode);
 
   const titleId = useId();
   const areaId = useId();
@@ -174,10 +178,11 @@ export function FilterResultsDialog({ open, onClose, onSelectNode }: FilterResul
       filterTags,
       filterColors,
       filterScheduleKinds,
+      filterCombineMode,
       completedTag,
       includeDone,
     }),
-    [filterTags, filterColors, filterScheduleKinds, completedTag, includeDone],
+    [filterTags, filterColors, filterScheduleKinds, filterCombineMode, completedTag, includeDone],
   );
 
   const appointments = useMemo(
@@ -250,7 +255,7 @@ export function FilterResultsDialog({ open, onClose, onSelectNode }: FilterResul
   };
 
   const summary = filterMode
-    ? filterSummaryText({ filterTags, filterColors, filterScheduleKinds })
+    ? filterSummaryText({ filterTags, filterColors, filterScheduleKinds, filterCombineMode })
     : null;
 
   return (

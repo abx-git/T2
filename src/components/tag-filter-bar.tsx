@@ -40,6 +40,8 @@ export function TagFilterBar({ onOpenResults }: TagFilterBarProps) {
   const filterScheduleKinds = useTaskTreeStore((s) => s.filterScheduleKinds);
   const addFilterScheduleKind = useTaskTreeStore((s) => s.addFilterScheduleKind);
   const removeFilterScheduleKind = useTaskTreeStore((s) => s.removeFilterScheduleKind);
+  const filterCombineMode = useTaskTreeStore((s) => s.filterCombineMode);
+  const setFilterCombineMode = useTaskTreeStore((s) => s.setFilterCombineMode);
   const clearBoardFilters = useTaskTreeStore((s) => s.clearBoardFilters);
 
   const allTags = useMemo(() => collectAllTagsFromForest(roots), [roots]);
@@ -75,6 +77,7 @@ export function TagFilterBar({ onOpenResults }: TagFilterBarProps) {
       filterTags,
       filterColors,
       filterScheduleKinds,
+      filterCombineMode,
       completedTag,
       includeDone: true,
     }).length;
@@ -84,6 +87,7 @@ export function TagFilterBar({ onOpenResults }: TagFilterBarProps) {
     filterTags,
     filterColors,
     filterScheduleKinds,
+    filterCombineMode,
     completedTag,
   ]);
 
@@ -110,6 +114,41 @@ export function TagFilterBar({ onOpenResults }: TagFilterBarProps) {
         )}
         {hasAnyActiveFilter ? `Treffer (${filterHitCount})` : "Termine"}
       </button>
+
+      <div
+        className="flex items-center gap-0.5 rounded-lg border border-slate-200/90 bg-slate-50/80 p-0.5"
+        role="group"
+        aria-label="Filter-Verknüpfung"
+      >
+        <button
+          type="button"
+          onClick={() => setFilterCombineMode("and")}
+          className={[
+            "rounded-md px-2 py-1 text-[11px] font-medium transition",
+            filterCombineMode === "and"
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-600 hover:text-slate-900",
+          ].join(" ")}
+          aria-pressed={filterCombineMode === "and"}
+          title="Alle aktiven Dimensionen (Tags, Farben, Termine) müssen passen"
+        >
+          UND
+        </button>
+        <button
+          type="button"
+          onClick={() => setFilterCombineMode("or")}
+          className={[
+            "rounded-md px-2 py-1 text-[11px] font-medium transition",
+            filterCombineMode === "or"
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-600 hover:text-slate-900",
+          ].join(" ")}
+          aria-pressed={filterCombineMode === "or"}
+          title="Eine passende Dimension (Tag, Farbe oder Termin) reicht"
+        >
+          ODER
+        </button>
+      </div>
 
       {hasScheduleFilters ? (
         <>

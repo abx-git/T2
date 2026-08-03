@@ -7,6 +7,7 @@ import {
   cardColorLabel,
   nodeMatchesBoardFilters,
   SCHEDULE_FILTER_LABELS,
+  type FilterCombineMode,
   type ScheduleFilterKind,
 } from "@/lib/board-filters";
 import type { CardColorId } from "@/lib/card-color";
@@ -31,6 +32,7 @@ export interface CollectFilterResultsOptions {
   filterTags: string[];
   filterColors: CardColorId[];
   filterScheduleKinds: ScheduleFilterKind[];
+  filterCombineMode?: FilterCombineMode;
   completedTag: string;
   /** Erledigte Treffer einbeziehen (Standard: ja). */
   includeDone?: boolean;
@@ -84,6 +86,7 @@ export function collectFilterMatchingCards(
     filterTags: options.filterTags,
     filterColors: options.filterColors,
     filterScheduleKinds: options.filterScheduleKinds,
+    filterCombineMode: options.filterCombineMode,
   };
   const cards: FilterResultCard[] = [];
 
@@ -174,7 +177,8 @@ function filterSummaryLine(options: CollectFilterResultsOptions): string {
       `Termine: ${options.filterScheduleKinds.map((k) => SCHEDULE_FILTER_LABELS[k]).join(", ")}`,
     );
   }
-  return bits.join(" · ") || "Filter";
+  const join = (options.filterCombineMode ?? "and") === "or" ? "ODER" : "UND";
+  return bits.length ? `${bits.join(` ${join} `)}` : "Filter";
 }
 
 /** Markdown-Liste der Filter-Treffer. */

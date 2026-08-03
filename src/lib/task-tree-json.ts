@@ -2,7 +2,9 @@ import { mergeCardFieldVisibility, parseCardFieldVisibilityFromJson, type CardFi
 import { parseCardColor, type CardColorId } from "@/lib/card-color";
 import {
   parseFilterColors,
+  parseFilterCombineMode,
   parseScheduleFilterKinds,
+  type FilterCombineMode,
   type ScheduleFilterKind,
 } from "@/lib/board-filters";
 import {
@@ -95,6 +97,8 @@ export interface BoardSnapshotV1 {
   filterColors?: CardColorId[];
   /** Aktive Terminfilter (Fälligkeit / Erinnerung); optional, Standard leer. */
   filterScheduleKinds?: ScheduleFilterKind[];
+  /** Verknüpfung der Filter-Dimensionen; optional, Standard `and`. */
+  filterCombineMode?: FilterCombineMode;
   /** Tag für „erledigt“; optional, Standard „Erledigt“. */
   completedTag?: string;
   /** Aufwand (Stunden) an Karten erlauben; optional, Standard true. */
@@ -400,6 +404,9 @@ export function parseExportedDocument(text: string): ExportedDocumentV1 {
         ...(Array.isArray(root.filterScheduleKinds)
           ? { filterScheduleKinds: parseScheduleFilterKinds(root.filterScheduleKinds) }
           : {}),
+        ...(root.filterCombineMode === "and" || root.filterCombineMode === "or"
+          ? { filterCombineMode: root.filterCombineMode }
+          : {}),
         ...(typeof root.completedTag === "string" && root.completedTag.trim()
           ? { completedTag: normalizeCompletedTag(root.completedTag) }
           : {}),
@@ -485,6 +492,7 @@ export function buildBoardSnapshot(
   filterScheduleKinds: ScheduleFilterKind[] = [],
   cardCollapsedIds: string[] = [],
   cardInteractionMode: "navigate" | "expand" = "expand",
+  filterCombineMode: FilterCombineMode = "and",
 ): BoardSnapshotV1 {
   const co: Record<string, string> = {};
   for (const [k, v] of Object.entries(columnTitleOverrides)) {
@@ -492,6 +500,7 @@ export function buildBoardSnapshot(
   }
   const colors = parseFilterColors(filterColors);
   const schedule = parseScheduleFilterKinds(filterScheduleKinds);
+  const combine = parseFilterCombineMode(filterCombineMode);
   return {
     format: EXPORT_FORMAT,
     version: EXPORT_VERSION,
@@ -509,6 +518,7 @@ export function buildBoardSnapshot(
     ...(filterTags.length ? { filterTags: [...filterTags] } : {}),
     ...(colors.length ? { filterColors: [...colors] } : {}),
     ...(schedule.length ? { filterScheduleKinds: [...schedule] } : {}),
+    ...(combine !== "and" ? { filterCombineMode: combine } : {}),
     ...(normalizeCompletedTag(completedTag) !== DEFAULT_COMPLETED_TAG
       ? { completedTag: normalizeCompletedTag(completedTag) }
       : {}),
@@ -588,6 +598,7 @@ export type BoardImportPayload = {
   filterTags?: string[];
   filterColors?: CardColorId[];
   filterScheduleKinds?: ScheduleFilterKind[];
+  filterCombineMode?: FilterCombineMode;
   completedTag?: string;
   effortOnTasksEnabled?: boolean;
   clipboardRoots?: TaskNode[];
@@ -612,6 +623,9 @@ export function boardSnapshotToReplacePayload(snap: BoardSnapshotV1): BoardImpor
     ...(snap.filterColors?.length ? { filterColors: [...snap.filterColors] } : {}),
     ...(snap.filterScheduleKinds?.length
       ? { filterScheduleKinds: [...snap.filterScheduleKinds] }
+      : {}),
+    ...(snap.filterCombineMode === "and" || snap.filterCombineMode === "or"
+      ? { filterCombineMode: snap.filterCombineMode }
       : {}),
     ...(snap.completedTag ? { completedTag: normalizeCompletedTag(snap.completedTag) } : {}),
     ...(snap.effortOnTasksEnabled === false ? { effortOnTasksEnabled: false } : {}),
@@ -659,6 +673,7 @@ export function stableBoardStateKey(payload: BoardImportPayload): string {
     filterTags: tags,
     filterColors: colors,
     filterScheduleKinds: schedule,
+    filterCombineMode: parseFilterCombineMode(payload.filterCombineMode),
     completedTag: normalizeCompletedTag(payload.completedTag ?? DEFAULT_COMPLETED_TAG),
     clipboardRoots: (payload.clipboardRoots ?? []).map(taskNodeToJson),
     templates,

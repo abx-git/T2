@@ -1,5 +1,6 @@
 import {
   nodeMatchesBoardFilters,
+  type FilterCombineMode,
   type ScheduleFilterKind,
 } from "@/lib/board-filters";
 import type { CardColorId } from "@/lib/card-color";
@@ -90,7 +91,7 @@ export function getSiblingsList(roots: TaskNode[], listParentId: string | null):
 /**
  * Sichtwald für die Kontext-Liste: erledigte Knoten werden entfernt
  * (Kinder eine Ebene hochgezogen); Filter behält passende Äste
- * (Tags, Farben, Termine — innerhalb OR, zwischen Dimensionen AND).
+ * (Tags, Farben, Termine — innerhalb OR; Dimensionen je nach filterCombineMode).
  */
 export function rootsForMindmapDisplay(
   roots: TaskNode[],
@@ -100,10 +101,12 @@ export function rootsForMindmapDisplay(
     filterTags: string[];
     filterColors?: CardColorId[];
     filterScheduleKinds?: ScheduleFilterKind[];
+    filterCombineMode?: FilterCombineMode;
   },
 ): TaskNode[] {
   const filterColors = opts.filterColors ?? [];
   const filterScheduleKinds = opts.filterScheduleKinds ?? [];
+  const filterCombineMode = opts.filterCombineMode ?? "and";
   const hasFacetFilters =
     opts.filterTags.length > 0 || filterColors.length > 0 || filterScheduleKinds.length > 0;
 
@@ -135,6 +138,7 @@ export function rootsForMindmapDisplay(
       filterTags: opts.filterTags,
       filterColors,
       filterScheduleKinds,
+      filterCombineMode,
     };
     const walk = (n: TaskNode): TaskNode | null => {
       const kids = n.children.map(walk).filter((c): c is TaskNode => c !== null);

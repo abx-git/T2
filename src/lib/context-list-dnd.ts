@@ -1,5 +1,5 @@
 /**
- * DnD within the context child list (reorder siblings or nest under a peer).
+ * DnD within the context card list (reorder siblings at any depth or nest under a card).
  */
 
 import {
@@ -13,25 +13,54 @@ import {
 import type { TaskNode } from "@/types/task-node";
 
 export type ContextListDrop =
-  | { kind: "gap"; insertIndex: number }
+  | { kind: "gap"; listParentId: string | null; insertIndex: number }
   | { kind: "nest"; targetId: string };
 
 export const CONTEXT_GAP_PREFIX = "context-gap:";
+const CONTEXT_GAP_ROOT = "__root__";
 
-export function contextGapId(insertIndex: number): string {
-  return `${CONTEXT_GAP_PREFIX}${insertIndex}`;
+export function contextGapId(listParentId: string | null, insertIndex: number): string {
+  const key = listParentId === null ? CONTEXT_GAP_ROOT : encodeURIComponent(listParentId);
+  return `${CONTEXT_GAP_PREFIX}${key}|${insertIndex}`;
 }
 
-export function parseContextGapId(overId: string | number): number | null {
+export function parseContextGapId(overId: string | number): {
+  listParentId: string | null;
+  insertIndex: number;
+} | null {
   const s = String(overId);
   if (!s.startsWith(CONTEXT_GAP_PREFIX)) return null;
-  const n = Number(s.slice(CONTEXT_GAP_PREFIX.length));
-  return Number.isFinite(n) ? n : null;
+  const rest = s.slice(CONTEXT_GAP_PREFIX.length);
+  const sep = rest.indexOf("|");
+  if (sep === -1) return null;
+  const keyStr = rest.slice(0, sep);
+  const insertIndex = Number(rest.slice(sep + 1));
+  if (!Number.isFinite(insertIndex)) return null;
+  let listParentId: string | null;
+  if (keyStr === CONTEXT_GAP_ROOT) listParentId = null;
+  else {
+    try {
+      listParentId = decodeURIComponent(keyStr);
+    } catch {
+      listParentId = keyStr;
+    }
+  }
+  return { listParentId, insertIndex };
+}
+
+function gapParentValid(
+  roots: TaskNode[],
+  listParentId: string | null,
+  activeNode: TaskNode,
+): boolean {
+  if (listParentId === null) return true;
+  if (listParentId === activeNode.id || subtreeContainsId(activeNode, listParentId)) return false;
+  return findNodeById(roots, listParentId) !== null;
 }
 
 export function applyContextListDrop(
   roots: TaskNode[],
-  contextNodeId: string | null,
+  _contextNodeId: string | null,
   activeId: string,
   drop: ContextListDrop,
 ): TaskNode[] {
@@ -39,20 +68,19 @@ export function applyContextListDrop(
   if (!activeNode) return roots;
 
   if (drop.kind === "gap") {
-    const sibsBefore = getSiblingsList(roots, contextNodeId);
-    if (drop.insertIndex < 0 || drop.insertIndex > sibsBefore.length) return roots;
-    const insertAt = gapIndexToInsertAfterDetach(sibsBefore, activeId, drop.insertIndex);
+    const { listParentId, insertIndex } = drop;
+    if (!gapParentValid(roots, listParentId, activeNode)) return roots;
+    const sibsBefore = getSiblingsList(roots, listParentId);
+    if (insertIndex < 0 || insertIndex > sibsBefore.length) return roots;
+    const insertAt = gapIndexToInsertAfterDetach(sibsBefore, activeId, insertIndex);
     const { next: r1, detached } = detachNodeById(roots, activeId);
     if (!detached) return roots;
-    return insertUnderParent(r1, contextNodeId, insertAt, structuredClone(detached));
+    return insertUnderParent(r1, listParentId, insertAt, structuredClone(detached));
   }
 
   const targetId = drop.targetId;
   if (targetId === activeId || subtreeContainsId(activeNode, targetId)) return roots;
   if (!findNodeById(roots, targetId)) return roots;
-  // Nest only onto a sibling currently shown in this context.
-  const peers = getSiblingsList(roots, contextNodeId);
-  if (!peers.some((p) => p.id === targetId)) return roots;
 
   const { next: r1, detached } = detachNodeById(roots, activeId);
   if (!detached) return roots;
@@ -61,7 +89,7 @@ export function applyContextListDrop(
 }
 
 /**
- * Fügt einen externen Knoten (z. B. aus der Zwischenablage) in die aktuelle Kontext-Liste ein.
+ * Fügt einen externen Knoten (z. B. aus der Zwischenablage) in die Kartenliste ein.
  */
 export function insertNodeIntoContextList(
   roots: TaskNode[],
@@ -76,17 +104,18 @@ export function insertNodeIntoContextList(
   }
 
   if (drop.kind === "gap") {
-    const sibs = getSiblingsList(roots, contextNodeId);
-    if (drop.insertIndex < 0 || drop.insertIndex > sibs.length) return roots;
-    const insertAt = Math.max(0, Math.min(drop.insertIndex, sibs.length));
-    return insertUnderParent(roots, contextNodeId, insertAt, clone);
+    const { listParentId, insertIndex } = drop;
+    if (listParentId !== null && !findNodeById(roots, listParentId)) return roots;
+    if (listParentId !== null && subtreeContainsId(clone, listParentId)) return roots;
+    const sibs = getSiblingsList(roots, listParentId);
+    if (insertIndex < 0 || insertIndex > sibs.length) return roots;
+    const insertAt = Math.max(0, Math.min(insertIndex, sibs.length));
+    return insertUnderParent(roots, listParentId, insertAt, clone);
   }
 
   const targetId = drop.targetId;
   if (targetId === clone.id || subtreeContainsId(clone, targetId)) return roots;
   if (!findNodeById(roots, targetId)) return roots;
-  const peers = getSiblingsList(roots, contextNodeId);
-  if (!peers.some((p) => p.id === targetId)) return roots;
   const childCount = getSiblingsList(roots, targetId).length;
   return insertUnderParent(roots, targetId, childCount, clone);
 }

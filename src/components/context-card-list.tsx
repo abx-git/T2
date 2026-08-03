@@ -13,17 +13,19 @@ import type { TaskNode } from "@/types/task-node";
 import { TaskRow, type TaskTitleSaveMeta } from "./task-row";
 
 function GapDrop({
+  listParentId,
   insertIndex,
   large,
   emptyHint,
 }: {
+  listParentId: string | null;
   insertIndex: number;
   large?: boolean;
   emptyHint?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({
-    id: contextGapId(insertIndex),
-    data: { kind: "contextGap" as const, insertIndex },
+    id: contextGapId(listParentId, insertIndex),
+    data: { kind: "contextGap" as const, listParentId, insertIndex },
   });
   return (
     <div
@@ -54,31 +56,7 @@ function GapDrop({
   );
 }
 
-function NestedCardBranch({
-  nodes,
-  depth,
-  fieldVisibility,
-  searchFocusNodeId,
-  keyboardFocusNodeId,
-  titleEditNodeId,
-  nestDropTargetId,
-  cardCollapsedIds,
-  hideCompleted,
-  completedTag,
-  interactionMode,
-  onSelect,
-  onDrillIn,
-  onToggleExpand,
-  onAddChild,
-  onOpenDetails,
-  onTitleSave,
-  onTitleEditCancel,
-  onRequestExport,
-  onRequestInsertTemplate,
-  onRequestDelete,
-}: {
-  nodes: TaskNode[];
-  depth: number;
+type CardBranchSharedProps = {
   fieldVisibility: CardFieldVisibility;
   searchFocusNodeId?: string | null;
   keyboardFocusNodeId?: string | null;
@@ -98,10 +76,44 @@ function NestedCardBranch({
   onRequestExport?: (nodeId: string) => void;
   onRequestInsertTemplate?: (nodeId: string) => void;
   onRequestDelete?: (nodeId: string) => void;
+};
+
+function NestedCardBranch({
+  nodes,
+  listParentId,
+  depth,
+  ...shared
+}: CardBranchSharedProps & {
+  nodes: TaskNode[];
+  listParentId: string;
+  depth: number;
 }) {
+  const {
+    fieldVisibility,
+    searchFocusNodeId,
+    keyboardFocusNodeId,
+    titleEditNodeId,
+    nestDropTargetId,
+    cardCollapsedIds,
+    hideCompleted,
+    completedTag,
+    interactionMode,
+    onSelect,
+    onDrillIn,
+    onToggleExpand,
+    onAddChild,
+    onOpenDetails,
+    onTitleSave,
+    onTitleEditCancel,
+    onRequestExport,
+    onRequestInsertTemplate,
+    onRequestDelete,
+  } = shared;
+
   return (
-    <>
-      {nodes.map((node) => {
+    <div className="space-y-0">
+      <GapDrop listParentId={listParentId} insertIndex={0} />
+      {nodes.map((node, index) => {
         const collapsed = cardCollapsedIds.has(node.id);
         const kids =
           interactionMode === "expand" && !collapsed
@@ -117,7 +129,7 @@ function NestedCardBranch({
               fieldVisibility={fieldVisibility}
               isSearchFocus={searchFocusNodeId === node.id}
               isKeyboardFocus={keyboardFocusNodeId === node.id}
-              isNestDropTarget={depth === 0 && nestDropTargetId === node.id}
+              isNestDropTarget={nestDropTargetId === node.id}
               isTitleEditing={titleEditNodeId === node.id}
               onSelect={() => onSelect(node.id)}
               onDrillIn={() => onDrillIn(node.id)}
@@ -133,41 +145,27 @@ function NestedCardBranch({
               onRequestDelete={onRequestDelete ? () => onRequestDelete(node.id) : undefined}
             />
             {kids.length > 0 ? (
-              <div className="mt-0.5 space-y-0.5 border-l border-slate-200/80 ml-3 pl-1">
+              <div className="mt-0.5 border-l border-slate-200/80 ml-3 pl-1">
                 <NestedCardBranch
                   nodes={kids}
+                  listParentId={node.id}
                   depth={depth + 1}
-                  fieldVisibility={fieldVisibility}
-                  searchFocusNodeId={searchFocusNodeId}
-                  keyboardFocusNodeId={keyboardFocusNodeId}
-                  titleEditNodeId={titleEditNodeId}
-                  nestDropTargetId={nestDropTargetId}
-                  cardCollapsedIds={cardCollapsedIds}
-                  hideCompleted={hideCompleted}
-                  completedTag={completedTag}
-                  interactionMode={interactionMode}
-                  onSelect={onSelect}
-                  onDrillIn={onDrillIn}
-                  onToggleExpand={onToggleExpand}
-                  onAddChild={onAddChild}
-                  onOpenDetails={onOpenDetails}
-                  onTitleSave={onTitleSave}
-                  onTitleEditCancel={onTitleEditCancel}
-                  onRequestExport={onRequestExport}
-                  onRequestInsertTemplate={onRequestInsertTemplate}
-                  onRequestDelete={onRequestDelete}
+                  {...shared}
                 />
               </div>
             ) : null}
+            <GapDrop listParentId={listParentId} insertIndex={index + 1} />
           </div>
         );
       })}
-    </>
+    </div>
   );
 }
 
 export interface ContextCardListProps {
   nodes: TaskNode[];
+  /** Parent der angezeigten Liste (`null` = Board-Wurzeln). */
+  contextNodeId: string | null;
   contextLabel: string;
   fieldVisibility: CardFieldVisibility;
   searchFocusNodeId?: string | null;
@@ -194,6 +192,7 @@ export interface ContextCardListProps {
 
 export function ContextCardList({
   nodes,
+  contextNodeId,
   contextLabel,
   fieldVisibility,
   searchFocusNodeId,
@@ -224,6 +223,28 @@ export function ContextCardList({
       el.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
   }, [keyboardFocusNodeId]);
+
+  const shared: CardBranchSharedProps = {
+    fieldVisibility,
+    searchFocusNodeId,
+    keyboardFocusNodeId,
+    titleEditNodeId,
+    nestDropTargetId,
+    cardCollapsedIds,
+    hideCompleted,
+    completedTag,
+    interactionMode,
+    onSelect,
+    onDrillIn,
+    onToggleExpand,
+    onAddChild,
+    onOpenDetails,
+    onTitleSave,
+    onTitleEditCancel,
+    onRequestExport,
+    onRequestInsertTemplate,
+    onRequestDelete,
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -276,78 +297,24 @@ export function ContextCardList({
       </div>
 
       <div className="min-h-0 flex-1 space-y-0 overflow-y-auto pb-8">
-        <GapDrop insertIndex={0} large={nodes.length === 0} emptyHint={nodes.length === 0} />
-        {interactionMode === "expand" ? (
-          <>
-            {nodes.map((node, index) => {
-              const collapsed = cardCollapsedIds.has(node.id);
-              const kids = !collapsed
-                ? visibleChildrenOf(node, { hideCompleted, completedTag })
-                : [];
-              return (
-                <div key={node.id}>
-                  <TaskRow
-                    node={node}
-                    nestDepth={0}
-                    isCollapsed={collapsed}
-                    interactionMode={interactionMode}
-                    fieldVisibility={fieldVisibility}
-                    isSearchFocus={searchFocusNodeId === node.id}
-                    isKeyboardFocus={keyboardFocusNodeId === node.id}
-                    isNestDropTarget={nestDropTargetId === node.id}
-                    isTitleEditing={titleEditNodeId === node.id}
-                    onSelect={() => onSelect(node.id)}
-                    onDrillIn={() => onDrillIn(node.id)}
-                    onToggleExpand={() => onToggleExpand(node.id)}
-                    onAddChild={() => onAddChild(node.id)}
-                    onOpenDetails={() => onOpenDetails(node.id)}
-                    onTitleSave={(title, meta) => onTitleSave(node.id, title, meta)}
-                    onTitleEditCancel={() => onTitleEditCancel(node.id)}
-                    onRequestExport={onRequestExport ? () => onRequestExport(node.id) : undefined}
-                    onRequestInsertTemplate={
-                      onRequestInsertTemplate
-                        ? () => onRequestInsertTemplate(node.id)
-                        : undefined
-                    }
-                    onRequestDelete={onRequestDelete ? () => onRequestDelete(node.id) : undefined}
-                  />
-                  {kids.length > 0 ? (
-                    <div className="mt-0.5 space-y-0.5 border-l border-slate-200/80 ml-3 pl-1">
-                      <NestedCardBranch
-                        nodes={kids}
-                        depth={1}
-                        fieldVisibility={fieldVisibility}
-                        searchFocusNodeId={searchFocusNodeId}
-                        keyboardFocusNodeId={keyboardFocusNodeId}
-                        titleEditNodeId={titleEditNodeId}
-                        nestDropTargetId={nestDropTargetId}
-                        cardCollapsedIds={cardCollapsedIds}
-                        hideCompleted={hideCompleted}
-                        completedTag={completedTag}
-                        interactionMode={interactionMode}
-                        onSelect={onSelect}
-                        onDrillIn={onDrillIn}
-                        onToggleExpand={onToggleExpand}
-                        onAddChild={onAddChild}
-                        onOpenDetails={onOpenDetails}
-                        onTitleSave={onTitleSave}
-                        onTitleEditCancel={onTitleEditCancel}
-                        onRequestExport={onRequestExport}
-                        onRequestInsertTemplate={onRequestInsertTemplate}
-                        onRequestDelete={onRequestDelete}
-                      />
-                    </div>
-                  ) : null}
-                  <GapDrop insertIndex={index + 1} />
-                </div>
-              );
-            })}
-          </>
-        ) : (
-          nodes.map((node, index) => (
+        <GapDrop
+          listParentId={contextNodeId}
+          insertIndex={0}
+          large={nodes.length === 0}
+          emptyHint={nodes.length === 0}
+        />
+        {nodes.map((node, index) => {
+          const collapsed = cardCollapsedIds.has(node.id);
+          const kids =
+            interactionMode === "expand" && !collapsed
+              ? visibleChildrenOf(node, { hideCompleted, completedTag })
+              : [];
+          return (
             <div key={node.id}>
               <TaskRow
                 node={node}
+                nestDepth={0}
+                isCollapsed={collapsed}
                 interactionMode={interactionMode}
                 fieldVisibility={fieldVisibility}
                 isSearchFocus={searchFocusNodeId === node.id}
@@ -356,6 +323,7 @@ export function ContextCardList({
                 isTitleEditing={titleEditNodeId === node.id}
                 onSelect={() => onSelect(node.id)}
                 onDrillIn={() => onDrillIn(node.id)}
+                onToggleExpand={() => onToggleExpand(node.id)}
                 onAddChild={() => onAddChild(node.id)}
                 onOpenDetails={() => onOpenDetails(node.id)}
                 onTitleSave={(title, meta) => onTitleSave(node.id, title, meta)}
@@ -366,10 +334,20 @@ export function ContextCardList({
                 }
                 onRequestDelete={onRequestDelete ? () => onRequestDelete(node.id) : undefined}
               />
-              <GapDrop insertIndex={index + 1} />
+              {kids.length > 0 ? (
+                <div className="mt-0.5 border-l border-slate-200/80 ml-3 pl-1">
+                  <NestedCardBranch
+                    nodes={kids}
+                    listParentId={node.id}
+                    depth={1}
+                    {...shared}
+                  />
+                </div>
+              ) : null}
+              <GapDrop listParentId={contextNodeId} insertIndex={index + 1} />
             </div>
-          ))
-        )}
+          );
+        })}
       </div>
     </div>
   );

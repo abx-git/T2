@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { applyContextListDrop, insertNodeIntoContextList } from "@/lib/context-list-dnd";
+import {
+  applyContextListDrop,
+  contextGapId,
+  insertNodeIntoContextList,
+  parseContextGapId,
+} from "@/lib/context-list-dnd";
 import type { TaskNode } from "@/types/task-node";
 
 function node(id: string, title: string, children: TaskNode[] = []): TaskNode {
@@ -17,18 +22,57 @@ function node(id: string, title: string, children: TaskNode[] = []): TaskNode {
   };
 }
 
+describe("context gap ids", () => {
+  it("roundtrips parent and index", () => {
+    expect(parseContextGapId(contextGapId(null, 2))).toEqual({
+      listParentId: null,
+      insertIndex: 2,
+    });
+    expect(parseContextGapId(contextGapId("parent-a", 1))).toEqual({
+      listParentId: "parent-a",
+      insertIndex: 1,
+    });
+  });
+});
+
 describe("applyContextListDrop", () => {
   it("reorders siblings via gap", () => {
     const roots = [node("a", "A"), node("b", "B"), node("c", "C")];
-    const next = applyContextListDrop(roots, null, "c", { kind: "gap", insertIndex: 0 });
+    const next = applyContextListDrop(roots, null, "c", {
+      kind: "gap",
+      listParentId: null,
+      insertIndex: 0,
+    });
     expect(next.map((n) => n.id)).toEqual(["c", "a", "b"]);
   });
 
-  it("nests under a peer", () => {
-    const roots = [node("a", "A"), node("b", "B")];
-    const next = applyContextListDrop(roots, null, "b", { kind: "nest", targetId: "a" });
+  it("reorders nested siblings via gap", () => {
+    const roots = [node("p", "P", [node("a", "A"), node("b", "B"), node("c", "C")])];
+    const next = applyContextListDrop(roots, null, "c", {
+      kind: "gap",
+      listParentId: "p",
+      insertIndex: 0,
+    });
+    expect(next[0].children.map((n) => n.id)).toEqual(["c", "a", "b"]);
+  });
+
+  it("nests under any card", () => {
+    const roots = [node("a", "A", [node("a1", "A1")]), node("b", "B")];
+    const next = applyContextListDrop(roots, null, "b", { kind: "nest", targetId: "a1" });
     expect(next.map((n) => n.id)).toEqual(["a"]);
-    expect(next[0].children.map((n) => n.id)).toEqual(["b"]);
+    expect(next[0].children.map((n) => n.id)).toEqual(["a1"]);
+    expect(next[0].children[0].children.map((n) => n.id)).toEqual(["b"]);
+  });
+
+  it("moves nested card to root gap", () => {
+    const roots = [node("a", "A", [node("a1", "A1")]), node("b", "B")];
+    const next = applyContextListDrop(roots, null, "a1", {
+      kind: "gap",
+      listParentId: null,
+      insertIndex: 2,
+    });
+    expect(next.map((n) => n.id)).toEqual(["a", "b", "a1"]);
+    expect(next[0].children).toEqual([]);
   });
 });
 
@@ -37,6 +81,7 @@ describe("insertNodeIntoContextList", () => {
     const roots = [node("a", "A"), node("b", "B")];
     const next = insertNodeIntoContextList(roots, null, node("x", "X"), {
       kind: "gap",
+      listParentId: null,
       insertIndex: 1,
     });
     expect(next.map((n) => n.id)).toEqual(["a", "x", "b"]);
@@ -49,5 +94,15 @@ describe("insertNodeIntoContextList", () => {
       targetId: "a",
     });
     expect(next[0].children.find((n) => n.id === "a")?.children.map((n) => n.id)).toEqual(["x"]);
+  });
+
+  it("fügt in nested Lücke ein", () => {
+    const roots = [node("p", "P", [node("a", "A")])];
+    const next = insertNodeIntoContextList(roots, null, node("x", "X"), {
+      kind: "gap",
+      listParentId: "p",
+      insertIndex: 1,
+    });
+    expect(next[0].children.map((n) => n.id)).toEqual(["a", "x"]);
   });
 });

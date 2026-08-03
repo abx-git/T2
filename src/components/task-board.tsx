@@ -211,6 +211,7 @@ export function TaskBoard() {
   const filterTags = useTaskTreeStore((s) => s.filterTags);
   const filterColors = useTaskTreeStore((s) => s.filterColors);
   const filterScheduleKinds = useTaskTreeStore((s) => s.filterScheduleKinds);
+  const filterCombineMode = useTaskTreeStore((s) => s.filterCombineMode);
   const completedTag = useTaskTreeStore((s) => s.completedTag);
   const setCompletedTag = useTaskTreeStore((s) => s.setCompletedTag);
   const canUndo = useStore(useTaskTreeStore.temporal, (s) => s.pastStates.length > 0);
@@ -803,6 +804,7 @@ export function TaskBoard() {
             s.filterScheduleKinds,
             s.cardCollapsedIds,
             s.cardInteractionMode,
+            s.filterCombineMode,
           ),
         );
         setPasteImportOpen(false);
@@ -931,7 +933,7 @@ export function TaskBoard() {
       if (gapFromClip !== null) {
         applyUnifiedDrag(activeNodeId, {
           type: "from-clipboard-to-context",
-          drop: { kind: "gap", insertIndex: gapFromClip },
+          drop: { kind: "gap", ...gapFromClip },
         });
         return;
       }
@@ -953,7 +955,7 @@ export function TaskBoard() {
 
     const gap = parseContextGapId(overId);
     if (gap !== null) {
-      applyContextListDrag(activeNodeId, { kind: "gap", insertIndex: gap });
+      applyContextListDrag(activeNodeId, { kind: "gap", ...gap });
       return;
     }
     const nestKind = over.data.current?.kind as string | undefined;
@@ -972,9 +974,19 @@ export function TaskBoard() {
       filterTags,
       filterColors,
       filterScheduleKinds,
+      filterCombineMode,
     });
     return contextChildren(filtered, contextNodeId);
-  }, [roots, contextNodeId, hideCompletedTasks, completedTag, filterTags, filterColors, filterScheduleKinds]);
+  }, [
+    roots,
+    contextNodeId,
+    hideCompletedTasks,
+    completedTag,
+    filterTags,
+    filterColors,
+    filterScheduleKinds,
+    filterCombineMode,
+  ]);
 
   const visibleExpandCards = useMemo(() => {
     if (cardInteractionMode !== "expand") return [];
@@ -1224,6 +1236,7 @@ export function TaskBoard() {
         s.filterScheduleKinds,
         s.cardCollapsedIds,
         s.cardInteractionMode,
+        s.filterCombineMode,
       ),
     );
   }, [
@@ -1236,6 +1249,7 @@ export function TaskBoard() {
     filterTags,
     filterColors,
     filterScheduleKinds,
+    filterCombineMode,
     completedTag,
     collapsedIds,
     cardCollapsedIds,
@@ -1514,6 +1528,7 @@ export function TaskBoard() {
                 >
                   <ContextCardList
                     nodes={contextListNodes}
+                    contextNodeId={contextNodeId}
                     contextLabel={contextLabel}
                     fieldVisibility={cardFieldVisibility}
                     searchFocusNodeId={searchFocusNodeId}

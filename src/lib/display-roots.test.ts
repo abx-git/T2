@@ -93,4 +93,22 @@ describe("rootsForMindmapDisplay", () => {
     });
     expect(display.map((n) => n.id)).toEqual(["a"]);
   });
+
+  it("kombiniert Filter-Dimensionen mit OR", () => {
+    const due = new Date("2026-06-01T00:00:00");
+    const roots = [
+      node("a", "A", { tags: ["x"], dueDate: due }),
+      node("b", "B", { tags: ["x"] }),
+      node("c", "C", { dueDate: due }),
+      node("d", "D"),
+    ];
+    const display = rootsForMindmapDisplay(roots, {
+      hideCompletedTasks: false,
+      completedTag: "Erledigt",
+      filterTags: ["x"],
+      filterScheduleKinds: ["due"],
+      filterCombineMode: "or",
+    });
+    expect(display.map((n) => n.id).sort()).toEqual(["a", "b", "c"]);
+  });
 });

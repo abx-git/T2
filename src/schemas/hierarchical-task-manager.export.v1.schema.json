@@ -152,7 +152,7 @@
         "filterTags": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Optional: aktive Tag-Filter (OR innerhalb der Tags)."
+          "description": "Optional: aktive Tag-Filter (jedes Tag ein Kriterium)."
         },
         "filterColors": {
           "type": "array",
@@ -160,7 +160,7 @@
             "type": "string",
             "enum": ["sky", "emerald", "amber", "rose", "violet", "cyan", "orange", "slate"]
           },
-          "description": "Optional: aktive Farbfilter (OR innerhalb der Farben)."
+          "description": "Optional: aktive Farbfilter (jede Farbe ein Kriterium)."
         },
         "filterScheduleKinds": {
           "type": "array",
@@ -168,12 +168,12 @@
             "type": "string",
             "enum": ["due", "reminder"]
           },
-          "description": "Optional: aktive Terminfilter — Fälligkeit (`due`) / Erinnerung (`reminder`)."
+          "description": "Optional: Terminfilter — Fälligkeit (`due`) / Erinnerung (`reminder`), je ein Kriterium."
         },
         "filterCombineMode": {
           "type": "string",
           "enum": ["and", "or"],
-          "description": "Optional: Verknüpfung der Dimensionen Tags/Farben/Termine. Standard and."
+          "description": "Optional: Verknüpfung aller Filterkriterien. and = alle müssen erfüllt sein, or = mindestens eines. Standard and."
         },
         "completedTag": {
           "type": "string",

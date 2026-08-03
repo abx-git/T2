@@ -124,29 +124,31 @@ export function TagFilterBar({ onOpenResults }: TagFilterBarProps) {
           type="button"
           onClick={() => setFilterCombineMode("and")}
           className={[
-            "rounded-md px-2 py-1 text-[11px] font-medium transition",
+            "flex h-7 min-w-7 items-center justify-center rounded-md px-1.5 text-sm font-semibold leading-none transition",
             filterCombineMode === "and"
               ? "bg-white text-slate-900 shadow-sm"
               : "text-slate-600 hover:text-slate-900",
           ].join(" ")}
           aria-pressed={filterCombineMode === "and"}
-          title="Alle aktiven Dimensionen (Tags, Farben, Termine) müssen passen"
+          aria-label="UND: alle Filterkriterien müssen erfüllt sein"
+          title="UND — alle Filterkriterien müssen erfüllt sein"
         >
-          UND
+          <span aria-hidden>∧</span>
         </button>
         <button
           type="button"
           onClick={() => setFilterCombineMode("or")}
           className={[
-            "rounded-md px-2 py-1 text-[11px] font-medium transition",
+            "flex h-7 min-w-7 items-center justify-center rounded-md px-1.5 text-sm font-semibold leading-none transition",
             filterCombineMode === "or"
               ? "bg-white text-slate-900 shadow-sm"
               : "text-slate-600 hover:text-slate-900",
           ].join(" ")}
           aria-pressed={filterCombineMode === "or"}
-          title="Eine passende Dimension (Tag, Farbe oder Termin) reicht"
+          aria-label="ODER: mindestens ein Filterkriterium muss erfüllt sein"
+          title="ODER — mindestens ein Filterkriterium muss erfüllt sein"
         >
-          ODER
+          <span aria-hidden>∨</span>
         </button>
       </div>
 

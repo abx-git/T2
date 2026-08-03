@@ -153,24 +153,24 @@ export interface TaskTreeState {
   completedTag: string;
   setCompletedTag: (tag: string) => void;
 
-  /** Tag-Filter (OR innerhalb): Karte sichtbar, wenn Tag gesetzt oder Nachfahre passt. */
+  /** Tag-Filter: jedes Tag ist ein eigenes Kriterium. */
   filterTags: string[];
   setFilterTags: (tags: string[]) => void;
   addFilterTag: (tag: string) => void;
   removeFilterTag: (tag: string) => void;
-  /** Farbfilter (OR innerhalb). */
+  /** Farbfilter: jede Farbe ist ein eigenes Kriterium. */
   filterColors: CardColorId[];
   setFilterColors: (colors: CardColorId[]) => void;
   addFilterColor: (color: CardColorId) => void;
   removeFilterColor: (color: CardColorId) => void;
-  /** Terminfilter (OR innerhalb): Fälligkeit / Erinnerung. */
+  /** Terminfilter: Fälligkeit / Erinnerung je als eigenes Kriterium. */
   filterScheduleKinds: ScheduleFilterKind[];
   setFilterScheduleKinds: (kinds: ScheduleFilterKind[]) => void;
   addFilterScheduleKind: (kind: ScheduleFilterKind) => void;
   removeFilterScheduleKind: (kind: ScheduleFilterKind) => void;
   /**
-   * Verknüpfung der Filter-Dimensionen Tags / Farben / Termine.
-   * `and` = alle aktiven Dimensionen müssen passen; `or` = eine reicht.
+   * Verknüpfung der Filterkriterien (jedes Tag, jede Farbe, jede Terminart).
+   * `and` = alle Kriterien müssen erfüllt sein; `or` = mindestens eines reicht.
    */
   filterCombineMode: FilterCombineMode;
   setFilterCombineMode: (mode: FilterCombineMode) => void;

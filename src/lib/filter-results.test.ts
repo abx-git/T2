@@ -71,7 +71,7 @@ describe("collectFilterMatchingCards", () => {
     }),
   ];
 
-  it("matches tags OR within dimension, AND across", () => {
+  it("AND: Tag und Farbe müssen beide passen", () => {
     const cards = collectFilterMatchingCards(roots, {
       filterTags: ["work"],
       filterColors: ["sky"],
@@ -81,7 +81,7 @@ describe("collectFilterMatchingCards", () => {
     expect(cards.map((c) => c.nodeId)).toEqual(["a"]);
   });
 
-  it("matches dimensions with OR combine mode", () => {
+  it("OR: Tag oder Farbe reicht", () => {
     const cards = collectFilterMatchingCards(roots, {
       filterTags: ["work"],
       filterColors: ["emerald"],
@@ -90,6 +90,21 @@ describe("collectFilterMatchingCards", () => {
       completedTag: DEFAULT_COMPLETED_TAG,
     });
     expect(cards.map((c) => c.nodeId).sort()).toEqual(["a", "a1", "c"]);
+  });
+
+  it("AND: mehrere Tags müssen alle vorhanden sein", () => {
+    const multi = [
+      node({ id: "m1", title: "Both", tags: ["work", "home"] }),
+      node({ id: "m2", title: "Work only", tags: ["work"] }),
+    ];
+    const cards = collectFilterMatchingCards(multi, {
+      filterTags: ["work", "home"],
+      filterColors: [],
+      filterScheduleKinds: [],
+      filterCombineMode: "and",
+      completedTag: DEFAULT_COMPLETED_TAG,
+    });
+    expect(cards.map((c) => c.nodeId)).toEqual(["m1"]);
   });
 
   it("matches schedule kind", () => {

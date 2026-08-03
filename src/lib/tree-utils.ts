@@ -91,7 +91,7 @@ export function getSiblingsList(roots: TaskNode[], listParentId: string | null):
 /**
  * Sichtwald für die Kontext-Liste: erledigte Knoten werden entfernt
  * (Kinder eine Ebene hochgezogen); Filter behält passende Äste
- * (Tags, Farben, Termine — innerhalb OR; Dimensionen je nach filterCombineMode).
+ * (Tags, Farben, Termine — jedes Kriterium einzeln; Verknüpfung per filterCombineMode).
  */
 export function rootsForMindmapDisplay(
   roots: TaskNode[],

@@ -47,7 +47,7 @@ describe("board-filters", () => {
     expect(collectScheduleKindsFromForest(roots)).toEqual(["due", "reminder"]);
   });
 
-  it("matcht Terminfilter OR", () => {
+  it("matcht Terminfilter (Hilfsfunktion: eines reicht)", () => {
     const withDue = node("a", { dueDate: new Date("2026-01-01") });
     const withReminder = node("b", { reminderDate: new Date("2026-01-01") });
     expect(nodeMatchesAnyScheduleFilter(withDue, ["due"])).toBe(true);
@@ -55,25 +55,39 @@ describe("board-filters", () => {
     expect(nodeMatchesAnyScheduleFilter(withReminder, ["due", "reminder"])).toBe(true);
   });
 
-  it("kombiniert Dimensionen mit AND", () => {
-    const n = node("a", { tags: ["x"], cardColor: "sky", dueDate: new Date("2026-01-01") });
+  it("AND: alle Kriterien müssen erfüllt sein", () => {
+    const n = node("a", {
+      tags: ["x", "y"],
+      cardColor: "sky",
+      dueDate: new Date("2026-01-01"),
+    });
     expect(
       nodeMatchesBoardFilters(n, {
-        filterTags: ["x"],
+        filterTags: ["x", "y"],
         filterColors: ["sky"],
         filterScheduleKinds: ["due"],
+        filterCombineMode: "and",
       }),
     ).toBe(true);
     expect(
       nodeMatchesBoardFilters(n, {
+        filterTags: ["x", "z"],
+        filterColors: [],
+        filterScheduleKinds: [],
+        filterCombineMode: "and",
+      }),
+    ).toBe(false);
+    expect(
+      nodeMatchesBoardFilters(n, {
         filterTags: ["x"],
         filterColors: ["rose"],
-        filterScheduleKinds: ["due"],
+        filterScheduleKinds: [],
+        filterCombineMode: "and",
       }),
     ).toBe(false);
   });
 
-  it("kombiniert Dimensionen mit OR", () => {
+  it("OR: ein erfülltes Kriterium reicht", () => {
     const n = node("a", { tags: ["x"], cardColor: "sky" });
     expect(
       nodeMatchesBoardFilters(n, {
@@ -85,12 +99,20 @@ describe("board-filters", () => {
     ).toBe(true);
     expect(
       nodeMatchesBoardFilters(n, {
-        filterTags: ["y"],
+        filterTags: ["y", "z"],
         filterColors: ["rose"],
-        filterScheduleKinds: [],
+        filterScheduleKinds: ["due"],
         filterCombineMode: "or",
       }),
     ).toBe(false);
+    expect(
+      nodeMatchesBoardFilters(n, {
+        filterTags: ["y"],
+        filterColors: ["sky"],
+        filterScheduleKinds: [],
+        filterCombineMode: "or",
+      }),
+    ).toBe(true);
   });
 
   it("übernimmt Farbe nur bei genau einem Farbfilter", () => {

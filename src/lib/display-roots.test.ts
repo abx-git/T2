@@ -78,7 +78,7 @@ describe("rootsForMindmapDisplay", () => {
     expect(display[0]?.children.map((n) => n.id)).toEqual(["b"]);
   });
 
-  it("filtert nach Fälligkeit und kombiniert mit Tag (AND)", () => {
+  it("filtert nach Fälligkeit und Tag (AND)", () => {
     const due = new Date("2026-06-01T00:00:00");
     const roots = [
       node("a", "A", { tags: ["x"], dueDate: due }),
@@ -94,7 +94,7 @@ describe("rootsForMindmapDisplay", () => {
     expect(display.map((n) => n.id)).toEqual(["a"]);
   });
 
-  it("kombiniert Filter-Dimensionen mit OR", () => {
+  it("ODER: Tag oder Fälligkeit reicht", () => {
     const due = new Date("2026-06-01T00:00:00");
     const roots = [
       node("a", "A", { tags: ["x"], dueDate: due }),

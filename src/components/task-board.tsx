@@ -129,6 +129,7 @@ import { redoBoard, undoBoard, useTaskTreeStore } from "@/store/task-tree-store"
 import type { TaskNode } from "@/types/task-node";
 
 import { TagFilterBar } from "./tag-filter-bar";
+import { BetaRibbon } from "./beta-ribbon";
 import { ClipboardDropTarget } from "./clipboard-drop-target";
 import { ClipboardSidebar } from "./clipboard-sidebar";
 import { TaskSearch } from "./task-search";
@@ -1466,7 +1467,8 @@ export function TaskBoard() {
   );
 
   return (
-    <div className="flex h-screen min-h-0 flex-col">
+    <div className="relative flex h-screen min-h-0 flex-col overflow-hidden">
+      <BetaRibbon />
       <WorkingFileSync
         onWorkingFileNameChange={setWorkingFileName}
         onDirtyChange={onWorkingFileDirtyChange}
@@ -1602,6 +1604,18 @@ export function TaskBoard() {
           </div>
         </DndContext>
       </div>
+
+      <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-200/80 bg-white px-4 py-1.5 text-[0.72rem] text-slate-500">
+        <span className="min-w-0 truncate">
+          {workingFileName
+            ? `Arbeitsdatei: ${workingFileName}${workingFileDirty ? " · ungespeichert" : workingFileSaving ? " · speichert …" : " · gespeichert"}`
+            : workingFileAttached
+              ? "Arbeitsdatei verknüpft"
+              : "Keine Arbeitsdatei"}
+        </span>
+        <span className="hidden shrink-0 sm:inline">T2 · © A. Bergmann</span>
+        <span className="shrink-0 sm:hidden">© A. Bergmann</span>
+      </footer>
 
       <JsonExportPreviewDialog
         open={boardJsonExportOpen}

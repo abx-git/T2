@@ -9,3 +9,39 @@
 body {
   @apply bg-canvas text-slate-800 antialiased;
 }
+
+/* Corner beta ribbon — hover shows format-stability warning via title */
+.beta-ribbon {
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 60;
+  width: 5.5rem;
+  height: 5.5rem;
+  overflow: hidden;
+}
+
+.beta-ribbon span {
+  pointer-events: auto;
+  position: absolute;
+  top: 0.7rem;
+  right: -1.85rem;
+  width: 7.25rem;
+  transform: rotate(45deg);
+  background: #eab308;
+  color: #1e293b;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.25);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1.5rem;
+  text-align: center;
+  text-transform: uppercase;
+  cursor: help;
+}
+
+.beta-ribbon span:focus-visible {
+  outline: 2px solid #0ea5e9;
+  outline-offset: 2px;
+}

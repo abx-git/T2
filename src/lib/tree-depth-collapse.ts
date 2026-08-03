@@ -14,7 +14,8 @@ export function collectAllTreeNodeIds(roots: TaskNode[]): string[] {
 }
 
 /**
- * Maximale sichtbare Ebenen in der Hauptansicht (1 = nur Spalte 0 / Wurzelebene).
+ * Maximale sichtbare Ebenen (1 = nur Wurzelebene).
+ * Gilt für Struktur- und Karten-Ebenensteuerung getrennt.
  */
 export function getBoardMaxVisibleLevels(roots: TaskNode[]): number {
   let maxDepth = 0;
@@ -45,8 +46,8 @@ function mergeCollapsedIds(
 }
 
 /**
- * Hauptansicht: `visibleLevels` 1 = nur Wurzelebene; `null` = alles aufklappen.
- * Einmalige Aktion — danach steuern Chevron-Buttons pro Karte.
+ * Struktur oder Karten: `visibleLevels` 1 = nur Wurzelebene; `null` = alles aufklappen.
+ * Einmalige Aktion — danach steuern die jeweiligen Chevron-Buttons pro Knoten.
  */
 export function collapsedIdsAfterBoardDepthAction(
   currentCollapsedIds: readonly string[],

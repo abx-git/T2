@@ -39,6 +39,7 @@ import {
   collapsedIdsAfterBoardDepthAction,
   defaultBoardCollapsedIds,
 } from "@/lib/tree-depth-collapse";
+import type { CardInteractionMode } from "@/lib/card-expand";
 import {
   defaultColorForNewCard,
   parseFilterColors,
@@ -62,6 +63,8 @@ export type BoardHistorySlice = {
   clipboardRoots: TaskNode[];
   pathIds: string[];
   collapsedIds: string[];
+  cardCollapsedIds: string[];
+  cardInteractionMode: CardInteractionMode;
   hideCompletedTasks: boolean;
   completedTag: string;
   filterTags: string[];
@@ -78,6 +81,8 @@ function partializeBoardHistory(state: TaskTreeState): BoardHistorySlice {
     clipboardRoots: state.clipboardRoots,
     pathIds: state.pathIds,
     collapsedIds: state.collapsedIds,
+    cardCollapsedIds: state.cardCollapsedIds,
+    cardInteractionMode: state.cardInteractionMode,
     hideCompletedTasks: state.hideCompletedTasks,
     completedTag: state.completedTag,
     filterTags: state.filterTags,
@@ -95,6 +100,8 @@ function boardHistoryEqual(a: BoardHistorySlice, b: BoardHistorySlice): boolean 
     a.clipboardRoots === b.clipboardRoots &&
     a.pathIds === b.pathIds &&
     a.collapsedIds === b.collapsedIds &&
+    a.cardCollapsedIds === b.cardCollapsedIds &&
+    a.cardInteractionMode === b.cardInteractionMode &&
     a.hideCompletedTasks === b.hideCompletedTasks &&
     a.completedTag === b.completedTag &&
     a.filterTags === b.filterTags &&
@@ -112,11 +119,26 @@ export interface TaskTreeState {
   clipboardRoots: TaskNode[];
   /** Persistierter Pfad (DnD/Import); keine UI-Hervorhebung mehr. */
   pathIds: string[];
-  /** Eingeklappte Knoten-IDs (Kinder ausgeblendet). */
+  /** Eingeklappte Knoten-IDs in der Struktur-Leiste (Kinder ausgeblendet). */
   collapsedIds: string[];
   toggleNodeCollapsed: (nodeId: string) => void;
-  /** Outline gesamt: auf `visibleLevels` Ebenen zu-/aufklappen (`null` = alles öffnen). */
+  /** Struktur-Leiste: auf `visibleLevels` Ebenen zu-/aufklappen (`null` = alles öffnen). */
   applyBoardDepthInView: (visibleLevels: number | null) => void;
+
+  /**
+   * Eingeklappte Knoten-IDs in der Kartenansicht (unabhängig von der Struktur-Leiste).
+   * Nur im Modus `expand` sichtbar als verschachtelte Listen.
+   */
+  cardCollapsedIds: string[];
+  toggleCardCollapsed: (nodeId: string) => void;
+  /** Kartenansicht: auf `visibleLevels` Ebenen zu-/aufklappen (`null` = alles öffnen). */
+  applyCardDepthInView: (visibleLevels: number | null) => void;
+  /**
+   * `navigate` = Doppelklick/Icon springt in den Ast (Drill);
+   * `expand` = Ast lokal aufklappen (mehrere Äste gleichzeitig sichtbar).
+   */
+  cardInteractionMode: CardInteractionMode;
+  setCardInteractionMode: (mode: CardInteractionMode) => void;
 
   /** Erledigte Karten in Spaltenansicht ausblenden (nur Anzeige). */
   hideCompletedTasks: boolean;
@@ -201,6 +223,8 @@ export interface TaskTreeState {
     roots: TaskNode[];
     pathIds: string[];
     collapsedIds?: string[];
+    cardCollapsedIds?: string[];
+    cardInteractionMode?: CardInteractionMode;
     columnTitleOverrides: Record<number, string>;
     hideCompletedTasks?: boolean;
     completedTag?: string;
@@ -273,10 +297,12 @@ function cleanupAfterSubtreeRemoved(
   nextRoots: TaskNode[],
 ): Partial<TaskTreeState> {
   const collapsedIds = state.collapsedIds.filter((id) => !removedIds.has(id));
+  const cardCollapsedIds = state.cardCollapsedIds.filter((id) => !removedIds.has(id));
   return {
     roots: nextRoots,
     pathIds: normalizePathIds(nextRoots, state.pathIds),
     collapsedIds,
+    cardCollapsedIds,
     contextNodeId: normalizeContextNodeId(nextRoots, state.contextNodeId),
   };
 }
@@ -307,6 +333,8 @@ export const useTaskTreeStore = create<TaskTreeState>()(
   clipboardRoots: [],
   pathIds: [],
   collapsedIds: [],
+  cardCollapsedIds: [],
+  cardInteractionMode: "expand",
 
   contextNodeId: null,
 
@@ -463,19 +491,56 @@ export const useTaskTreeStore = create<TaskTreeState>()(
     });
   },
 
+  toggleCardCollapsed: (nodeId) => {
+    set((s) => {
+      const has = s.cardCollapsedIds.includes(nodeId);
+      const cardCollapsedIds = has
+        ? s.cardCollapsedIds.filter((id) => id !== nodeId)
+        : [...s.cardCollapsedIds, nodeId];
+      return { cardCollapsedIds };
+    });
+  },
+
+  applyCardDepthInView: (visibleLevels) => {
+    set((s) => {
+      if (s.roots.length === 0) return {};
+      const cardCollapsedIds = collapsedIdsAfterBoardDepthAction(
+        s.cardCollapsedIds,
+        s.roots,
+        visibleLevels,
+      );
+      if (
+        cardCollapsedIds.length === s.cardCollapsedIds.length &&
+        cardCollapsedIds.every((id, i) => id === s.cardCollapsedIds[i])
+      ) {
+        return {};
+      }
+      return { cardCollapsedIds };
+    });
+  },
+
+  setCardInteractionMode: (mode) => {
+    set({ cardInteractionMode: mode });
+  },
+
   expandToNode: (nodeId) => {
     set((s) => {
       const path = pathFromRootToNode(s.roots, nodeId);
       if (!path) return {};
       const open = new Set(path);
       const nextCollapsed = s.collapsedIds.filter((id) => !open.has(id));
+      const nextCardCollapsed = s.cardCollapsedIds.filter((id) => !open.has(id));
       const collapsedUnchanged =
         nextCollapsed.length === s.collapsedIds.length &&
         nextCollapsed.every((id, i) => id === s.collapsedIds[i]);
+      const cardCollapsedUnchanged =
+        nextCardCollapsed.length === s.cardCollapsedIds.length &&
+        nextCardCollapsed.every((id, i) => id === s.cardCollapsedIds[i]);
       const contextNodeId = contextIdForRevealingNode(s.roots, nodeId);
       return {
         contextNodeId,
         ...(collapsedUnchanged ? {} : { collapsedIds: nextCollapsed }),
+        ...(cardCollapsedUnchanged ? {} : { cardCollapsedIds: nextCardCollapsed }),
       };
     });
   },
@@ -639,10 +704,12 @@ export const useTaskTreeStore = create<TaskTreeState>()(
       const removedIds = collectSubtreeNodeIds(detached);
       const nextRoots = refreshCalculatedEffortsInTree(next, s.completedTag);
       const collapsedIds = s.collapsedIds.filter((id) => !removedIds.has(id));
+      const cardCollapsedIds = s.cardCollapsedIds.filter((id) => !removedIds.has(id));
       return {
         roots: nextRoots,
         pathIds: normalizePathIds(nextRoots, s.pathIds),
         collapsedIds,
+        cardCollapsedIds,
         contextNodeId: normalizeContextNodeId(nextRoots, s.contextNodeId),
       };
     });
@@ -666,10 +733,20 @@ export const useTaskTreeStore = create<TaskTreeState>()(
     const collapsedIds = hadCollapsedInPayload
       ? (payload.collapsedIds ?? []).filter((x): x is string => typeof x === "string")
       : defaultBoardCollapsedIds(roots);
+    const hadCardCollapsedInPayload = payload.cardCollapsedIds !== undefined;
+    const cardCollapsedIds = hadCardCollapsedInPayload
+      ? (payload.cardCollapsedIds ?? []).filter((x): x is string => typeof x === "string")
+      : defaultBoardCollapsedIds(roots);
+    const cardInteractionMode =
+      payload.cardInteractionMode === "navigate" || payload.cardInteractionMode === "expand"
+        ? payload.cardInteractionMode
+        : ("expand" as const);
     set({
       roots,
       pathIds,
       collapsedIds,
+      cardCollapsedIds,
+      cardInteractionMode,
       contextNodeId: null,
       columnTitleOverrides,
       ...(typeof incomingHideDone === "boolean" ? { hideCompletedTasks: incomingHideDone } : {}),

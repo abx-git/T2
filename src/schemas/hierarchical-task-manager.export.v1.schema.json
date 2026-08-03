@@ -182,7 +182,17 @@
         "collapsedIds": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Optional: IDs eingeklappter Knoten (Kinder ausgeblendet)."
+          "description": "Optional: IDs eingeklappter Knoten in der Struktur-Leiste (Kinder ausgeblendet)."
+        },
+        "cardCollapsedIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional: IDs eingeklappter Knoten in der Kartenansicht (unabhängig von der Struktur)."
+        },
+        "cardInteractionMode": {
+          "type": "string",
+          "enum": ["navigate", "expand"],
+          "description": "Optional: Karten-Interaktion — hinein springen (navigate) oder lokal aufklappen (expand). Standard expand."
         }
       },
       "required": ["format", "version", "exportedAt", "scope", "roots", "pathIds", "columnTitleOverrides"],

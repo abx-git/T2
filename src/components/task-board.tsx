@@ -94,8 +94,10 @@ import {
   firstContextCardId,
   focusTargetAfterRemoving,
   navigateContextCard,
+  navigateExpandedCard,
   shouldIgnoreCardKeyboard,
 } from "@/lib/card-keyboard-nav";
+import { flattenVisibleCards } from "@/lib/card-expand";
 import {
   contextChildren,
   contextPathNodes,
@@ -177,6 +179,11 @@ export function TaskBoard() {
   const collapsedIds = useTaskTreeStore((s) => s.collapsedIds);
   const toggleNodeCollapsed = useTaskTreeStore((s) => s.toggleNodeCollapsed);
   const applyBoardDepthInView = useTaskTreeStore((s) => s.applyBoardDepthInView);
+  const cardCollapsedIds = useTaskTreeStore((s) => s.cardCollapsedIds);
+  const toggleCardCollapsed = useTaskTreeStore((s) => s.toggleCardCollapsed);
+  const applyCardDepthInView = useTaskTreeStore((s) => s.applyCardDepthInView);
+  const cardInteractionMode = useTaskTreeStore((s) => s.cardInteractionMode);
+  const setCardInteractionMode = useTaskTreeStore((s) => s.setCardInteractionMode);
   const expandToNode = useTaskTreeStore((s) => s.expandToNode);
   const contextNodeId = useTaskTreeStore((s) => s.contextNodeId);
   const setContextNodeId = useTaskTreeStore((s) => s.setContextNodeId);
@@ -794,6 +801,8 @@ export function TaskBoard() {
             getTemplatesSnapshot(),
             s.filterColors,
             s.filterScheduleKinds,
+            s.cardCollapsedIds,
+            s.cardInteractionMode,
           ),
         );
         setPasteImportOpen(false);
@@ -954,6 +963,7 @@ export function TaskBoard() {
   };
 
   const collapsedSet = useMemo(() => new Set(collapsedIds), [collapsedIds]);
+  const cardCollapsedSet = useMemo(() => new Set(cardCollapsedIds), [cardCollapsedIds]);
 
   const contextListNodes = useMemo(() => {
     const filtered = rootsForMindmapDisplay(roots, {
@@ -965,6 +975,14 @@ export function TaskBoard() {
     });
     return contextChildren(filtered, contextNodeId);
   }, [roots, contextNodeId, hideCompletedTasks, completedTag, filterTags, filterColors, filterScheduleKinds]);
+
+  const visibleExpandCards = useMemo(() => {
+    if (cardInteractionMode !== "expand") return [];
+    return flattenVisibleCards(contextListNodes, cardCollapsedSet, {
+      hideCompleted: hideCompletedTasks,
+      completedTag,
+    });
+  }, [cardInteractionMode, contextListNodes, cardCollapsedSet, hideCompletedTasks, completedTag]);
 
   const breadcrumbPath = useMemo(
     () => contextPathNodes(roots, contextNodeId),
@@ -1016,7 +1034,10 @@ export function TaskBoard() {
 
       let currentId = keyboardFocusNodeId;
       if (isArrow && !currentId) {
-        currentId = firstContextCardId(contextListNodes);
+        currentId =
+          cardInteractionMode === "expand"
+            ? (visibleExpandCards[0]?.node.id ?? null)
+            : firstContextCardId(contextListNodes);
         if (!currentId) return;
       } else if (!currentId) {
         return;
@@ -1032,11 +1053,22 @@ export function TaskBoard() {
               : e.key === "ArrowLeft"
                 ? "left"
                 : "right";
-        const { nextId, shouldDrillIn, shouldDrillUp } = navigateContextCard(
-          contextListNodes,
-          currentId,
-          direction,
-        );
+
+        const nav =
+          cardInteractionMode === "expand"
+            ? navigateExpandedCard(visibleExpandCards, cardCollapsedSet, currentId, direction)
+            : navigateContextCard(contextListNodes, currentId, direction);
+
+        const { nextId, shouldDrillIn, shouldDrillUp, shouldExpand, shouldCollapse } = nav;
+
+        if (shouldExpand && nextId) {
+          if (cardCollapsedSet.has(nextId)) toggleCardCollapsed(nextId);
+          return;
+        }
+        if (shouldCollapse && nextId) {
+          if (!cardCollapsedSet.has(nextId)) toggleCardCollapsed(nextId);
+          return;
+        }
         if (shouldDrillUp) {
           const parentId = contextNodeId;
           drillUp();
@@ -1067,7 +1099,7 @@ export function TaskBoard() {
 
       if (e.key === " " || e.key === "Spacebar") {
         e.preventDefault();
-        toggleNodeCollapsed(currentId);
+        toggleCardCollapsed(currentId);
         return;
       }
 
@@ -1122,12 +1154,15 @@ export function TaskBoard() {
     cardKeyboardBlocked,
     keyboardFocusNodeId,
     contextListNodes,
+    visibleExpandCards,
+    cardCollapsedSet,
+    cardInteractionMode,
     contextNodeId,
     drillUp,
     drillIntoNode,
     hideCompletedTasks,
     completedTag,
-    toggleNodeCollapsed,
+    toggleCardCollapsed,
     addCardAfterSibling,
     addCardAfter,
     expandToNode,
@@ -1187,6 +1222,8 @@ export function TaskBoard() {
         getTemplatesSnapshot(),
         s.filterColors,
         s.filterScheduleKinds,
+        s.cardCollapsedIds,
+        s.cardInteractionMode,
       ),
     );
   }, [
@@ -1201,6 +1238,8 @@ export function TaskBoard() {
     filterScheduleKinds,
     completedTag,
     collapsedIds,
+    cardCollapsedIds,
+    cardInteractionMode,
     boardJsonExportOpen,
   ]);
 
@@ -1275,11 +1314,20 @@ export function TaskBoard() {
           <h1 className="shrink-0 text-lg font-semibold text-slate-900">T2</h1>
           <TaskSearch onSelectNode={handleSearchSelect} />
           {boardMaxVisibleLevels > 1 ? (
-            <DepthLevelsControl
-              maxLevel={boardMaxVisibleLevels}
-              onApplyLevel={(level) => applyBoardDepthInView(level)}
-              onExpandAll={() => applyBoardDepthInView(null)}
-            />
+            <>
+              <DepthLevelsControl
+                label="Struktur"
+                maxLevel={boardMaxVisibleLevels}
+                onApplyLevel={(level) => applyBoardDepthInView(level)}
+                onExpandAll={() => applyBoardDepthInView(null)}
+              />
+              <DepthLevelsControl
+                label="Karten"
+                maxLevel={boardMaxVisibleLevels}
+                onApplyLevel={(level) => applyCardDepthInView(level)}
+                onExpandAll={() => applyCardDepthInView(null)}
+              />
+            </>
           ) : null}
           <ClipboardDropTarget
             count={clipboardRoots.length}
@@ -1472,14 +1520,24 @@ export function TaskBoard() {
                     keyboardFocusNodeId={keyboardFocusNodeId}
                     titleEditNodeId={titleEditNodeId}
                     nestDropTargetId={nestDropTargetId}
+                    interactionMode={cardInteractionMode}
+                    cardCollapsedIds={cardCollapsedSet}
+                    hideCompleted={hideCompletedTasks}
+                    completedTag={completedTag}
                     onSelect={(id) => {
                       setKeyboardFocusNodeId(id);
                       setSearchFocusNodeId(null);
                     }}
                     onDrillIn={handleDrillIn}
+                    onToggleExpand={toggleCardCollapsed}
+                    onInteractionModeChange={setCardInteractionMode}
                     onAddChild={(parentId) => {
                       const id = addCardAfter(parentId);
-                      drillIntoOnly(parentId);
+                      if (cardInteractionMode === "navigate") {
+                        drillIntoOnly(parentId);
+                      } else if (cardCollapsedSet.has(parentId)) {
+                        toggleCardCollapsed(parentId);
+                      }
                       beginEditingNewCard(id);
                     }}
                     onAddSibling={() => {

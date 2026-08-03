@@ -1,3 +1,4 @@
+import type { VisibleCardEntry } from "@/lib/card-expand";
 import { findDirectParentId, findNodeById, getSiblingsList } from "@/lib/tree-utils";
 import type { TaskNode } from "@/types/task-node";
 
@@ -5,12 +6,14 @@ export type CardNavDirection = "up" | "down" | "left" | "right";
 
 export type CardNavResult = {
   nextId: string | null;
-  /** Drill into this node (Right on a parent). */
+  /** Drill into this node (Right on a parent, navigate mode). */
   shouldDrillIn?: boolean;
   /** Leave context to parent (Left). */
   shouldDrillUp?: boolean;
-  /** Outline: expand collapsed parent before entering first child. */
+  /** Expand collapsed parent (expand mode, Right). */
   shouldExpand?: boolean;
+  /** Collapse expanded parent (expand mode, Left). */
+  shouldCollapse?: boolean;
 };
 
 export function shouldIgnoreCardKeyboard(e: KeyboardEvent): boolean {
@@ -27,7 +30,7 @@ export function firstContextCardId(nodes: ReadonlyArray<TaskNode>): string | nul
 }
 
 /**
- * Navigation in the context child list.
+ * Navigation in the context child list (navigate mode).
  * Up/Down = siblings; Right = drill into focused card; Left = drill up.
  */
 export function navigateContextCard(
@@ -50,6 +53,50 @@ export function navigateContextCard(
   const node = siblings[idx];
   if (node.children.length === 0) return { nextId: null };
   return { nextId: node.id, shouldDrillIn: true };
+}
+
+/**
+ * Navigation over a flattened expand-mode card list.
+ * Up/Down = visible rows; Right = expand or enter first child; Left = collapse or parent / drill up.
+ */
+export function navigateExpandedCard(
+  visible: ReadonlyArray<VisibleCardEntry>,
+  collapsedIds: ReadonlySet<string>,
+  currentId: string,
+  direction: CardNavDirection,
+): CardNavResult {
+  const idx = visible.findIndex((row) => row.node.id === currentId);
+  if (idx < 0) return { nextId: null };
+
+  if (direction === "up") {
+    return { nextId: idx > 0 ? visible[idx - 1].node.id : null };
+  }
+  if (direction === "down") {
+    return { nextId: idx < visible.length - 1 ? visible[idx + 1].node.id : null };
+  }
+
+  const row = visible[idx];
+  const hasChildren = row.node.children.length > 0;
+  const collapsed = collapsedIds.has(row.node.id);
+
+  if (direction === "right") {
+    if (!hasChildren) return { nextId: null };
+    if (collapsed) return { nextId: row.node.id, shouldExpand: true };
+    const firstChild = visible[idx + 1];
+    if (firstChild && firstChild.parentId === row.node.id) {
+      return { nextId: firstChild.node.id };
+    }
+    return { nextId: null };
+  }
+
+  // left
+  if (hasChildren && !collapsed) {
+    return { nextId: row.node.id, shouldCollapse: true };
+  }
+  if (row.parentId) {
+    return { nextId: row.parentId };
+  }
+  return { nextId: null, shouldDrillUp: true };
 }
 
 export function focusTargetAfterRemoving(

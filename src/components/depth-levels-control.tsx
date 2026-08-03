@@ -5,6 +5,8 @@ export interface DepthLevelsControlProps {
   maxLevel: number;
   onApplyLevel: (level: number) => void;
   onExpandAll: () => void;
+  /** Kurzes Label vor den Buttons (z. B. „Struktur“ / „Karten“). */
+  label?: string;
   className?: string;
 }
 
@@ -12,6 +14,7 @@ export function DepthLevelsControl({
   maxLevel,
   onApplyLevel,
   onExpandAll,
+  label = "Ebenen",
   className = "",
 }: DepthLevelsControlProps) {
   if (maxLevel <= 0) return null;
@@ -23,16 +26,16 @@ export function DepthLevelsControl({
         className,
       ].join(" ")}
       role="group"
-      aria-label="Ebenen zu- oder aufklappen"
+      aria-label={`${label}: Ebenen zu- oder aufklappen`}
     >
-      <span className="px-1 text-[10px] font-medium text-slate-500">Ebenen</span>
+      <span className="px-1 text-[10px] font-medium text-slate-500">{label}</span>
       {Array.from({ length: maxLevel }, (_, i) => i + 1).map((level) => (
         <button
           key={level}
           type="button"
           onClick={() => onApplyLevel(level)}
           className="min-w-[1.5rem] rounded-md px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-slate-600 transition hover:bg-white hover:text-slate-900"
-          title={`Auf ${level} Ebene${level === 1 ? "" : "n"} einklappen`}
+          title={`${label}: auf ${level} Ebene${level === 1 ? "" : "n"} einklappen`}
         >
           {level}
         </button>
@@ -41,7 +44,7 @@ export function DepthLevelsControl({
         type="button"
         onClick={onExpandAll}
         className="rounded-md px-1.5 py-0.5 text-[11px] font-medium text-slate-600 transition hover:bg-white hover:text-slate-900"
-        title="Alle Ebenen aufklappen"
+        title={`${label}: alle Ebenen aufklappen`}
       >
         Alle
       </button>

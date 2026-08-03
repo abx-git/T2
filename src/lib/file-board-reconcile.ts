@@ -96,6 +96,8 @@ export function boardJsonFromStoreState(): string {
       templates,
       s.filterColors,
       s.filterScheduleKinds,
+      s.cardCollapsedIds,
+      s.cardInteractionMode,
     ),
   );
 }
@@ -132,6 +134,8 @@ export function boardPersistKeyFromStoreState(): string {
     roots: s.roots,
     pathIds: s.pathIds,
     collapsedIds: s.collapsedIds,
+    cardCollapsedIds: s.cardCollapsedIds,
+    cardInteractionMode: s.cardInteractionMode,
     columnTitleOverrides: s.columnTitleOverrides,
     cardFieldVisibility: s.cardFieldVisibility,
     hideCompletedTasks: s.hideCompletedTasks,

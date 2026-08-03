@@ -75,8 +75,12 @@ export interface BoardSnapshotV1 {
   scope: "board";
   roots: TaskNodeJson[];
   pathIds: string[];
-  /** Eingeklappte Knoten (Kinder ausgeblendet). */
+  /** Eingeklappte Knoten in der Struktur-Leiste (Kinder ausgeblendet). */
   collapsedIds?: string[];
+  /** Eingeklappte Knoten in der Kartenansicht (unabhängig von der Struktur). */
+  cardCollapsedIds?: string[];
+  /** Karten: Doppelklick/Icon springt hinein (`navigate`) oder klappt auf (`expand`). */
+  cardInteractionMode?: "navigate" | "expand";
   /** JSON serialisiert Keys als String; beim Laden in Record<number, string> wandeln. */
   columnTitleOverrides: Record<string, string>;
   /** @deprecated Wird ignoriert; Spaltenansicht ist immer aktiv. */
@@ -357,6 +361,13 @@ export function parseExportedDocument(text: string): ExportedDocumentV1 {
       const collapsedIds = Array.isArray(collapsedIdsRaw)
         ? collapsedIdsRaw.filter((x): x is string => typeof x === "string")
         : [];
+      const cardCollapsedIdsRaw = root.cardCollapsedIds;
+      const cardCollapsedIds = Array.isArray(cardCollapsedIdsRaw)
+        ? cardCollapsedIdsRaw.filter((x): x is string => typeof x === "string")
+        : [];
+      const cardModeRaw = root.cardInteractionMode;
+      const cardInteractionMode =
+        cardModeRaw === "navigate" || cardModeRaw === "expand" ? cardModeRaw : undefined;
       const columnTitleOverrides = parseColumnTitleOverridesFromJson(root.columnTitleOverrides);
       const cardFieldVisibility = parseCardFieldVisibilityFromJson(root.cardFieldVisibility);
       const effortOn =
@@ -369,6 +380,8 @@ export function parseExportedDocument(text: string): ExportedDocumentV1 {
         roots,
         pathIds,
         ...(collapsedIds.length ? { collapsedIds } : {}),
+        ...(cardCollapsedIds.length ? { cardCollapsedIds } : {}),
+        ...(cardInteractionMode ? { cardInteractionMode } : {}),
         columnTitleOverrides: Object.fromEntries(
           Object.entries(columnTitleOverrides).map(([k, v]) => [String(k), v]),
         ) as Record<string, string>,
@@ -470,6 +483,8 @@ export function buildBoardSnapshot(
   templates: TemplateRecordV1[] = [],
   filterColors: CardColorId[] = [],
   filterScheduleKinds: ScheduleFilterKind[] = [],
+  cardCollapsedIds: string[] = [],
+  cardInteractionMode: "navigate" | "expand" = "expand",
 ): BoardSnapshotV1 {
   const co: Record<string, string> = {};
   for (const [k, v] of Object.entries(columnTitleOverrides)) {
@@ -485,6 +500,8 @@ export function buildBoardSnapshot(
     roots: roots.map(taskNodeToJson),
     pathIds: [...pathIds],
     collapsedIds: [...collapsedIds],
+    cardCollapsedIds: [...cardCollapsedIds],
+    ...(cardInteractionMode !== "expand" ? { cardInteractionMode } : {}),
     columnTitleOverrides: co,
     showFullTree: false,
     cardFieldVisibility: mergeCardFieldVisibility(cardFieldVisibility),
@@ -563,6 +580,8 @@ export type BoardImportPayload = {
   roots: TaskNode[];
   pathIds: string[];
   collapsedIds?: string[];
+  cardCollapsedIds?: string[];
+  cardInteractionMode?: "navigate" | "expand";
   columnTitleOverrides: Record<number, string>;
   cardFieldVisibility?: CardFieldVisibility;
   hideCompletedTasks?: boolean;
@@ -580,6 +599,12 @@ export function boardSnapshotToReplacePayload(snap: BoardSnapshotV1): BoardImpor
     roots: snap.roots.map(taskNodeFromJson),
     pathIds: snap.pathIds,
     ...(snap.collapsedIds !== undefined ? { collapsedIds: [...snap.collapsedIds] } : {}),
+    ...(snap.cardCollapsedIds !== undefined
+      ? { cardCollapsedIds: [...snap.cardCollapsedIds] }
+      : {}),
+    ...(snap.cardInteractionMode === "navigate" || snap.cardInteractionMode === "expand"
+      ? { cardInteractionMode: snap.cardInteractionMode }
+      : {}),
     columnTitleOverrides: boardSnapshotToColumnOverrides(snap),
     cardFieldVisibility: snap.cardFieldVisibility,
     ...(snap.hideCompletedTasks === true ? { hideCompletedTasks: true } : {}),
@@ -625,6 +650,8 @@ export function stableBoardStateKey(payload: BoardImportPayload): string {
     roots: payload.roots.map(taskNodeToJson),
     pathIds: [...payload.pathIds],
     collapsedIds: [...(payload.collapsedIds ?? [])].sort(),
+    cardCollapsedIds: [...(payload.cardCollapsedIds ?? [])].sort(),
+    cardInteractionMode: payload.cardInteractionMode === "navigate" ? "navigate" : "expand",
     columnTitleOverrides: co,
     cardFieldVisibility: mergeCardFieldVisibility(payload.cardFieldVisibility),
     hideCompletedTasks: payload.hideCompletedTasks === true,

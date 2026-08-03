@@ -79,10 +79,20 @@ export interface TaskRowProps {
   isNestDropTarget?: boolean;
   fieldVisibility: CardFieldVisibility;
   isTitleEditing?: boolean;
+  /** Einrückung in Ebenen (Expand-Modus). */
+  nestDepth?: number;
+  /** Expand-Modus: Knoten lokal eingeklappt. */
+  isCollapsed?: boolean;
+  /**
+   * `navigate` = Chevron/Doppelklick = Hinein;
+   * `expand` = Chevron/Doppelklick = Auf-/Zuklappen.
+   */
+  interactionMode?: "navigate" | "expand";
   onTitleSave?: (title: string, meta?: TaskTitleSaveMeta) => void;
   onTitleEditCancel?: () => void;
   onSelect: () => void;
   onDrillIn: () => void;
+  onToggleExpand?: () => void;
   onAddChild: () => void;
   onOpenDetails: () => void;
   onRequestExport?: () => void;
@@ -97,10 +107,14 @@ export function TaskRow({
   isNestDropTarget = false,
   fieldVisibility,
   isTitleEditing = false,
+  nestDepth = 0,
+  isCollapsed = true,
+  interactionMode = "navigate",
   onTitleSave,
   onTitleEditCancel,
   onSelect,
   onDrillIn,
+  onToggleExpand,
   onAddChild,
   onOpenDetails,
   onRequestExport,
@@ -123,13 +137,13 @@ export function TaskRow({
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: node.id,
     data: { kind: "contextCard" as const, nodeId: node.id },
-    disabled: isTitleEditing,
+    disabled: isTitleEditing || nestDepth > 0,
   });
 
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: node.id,
     data: { kind: "contextNest" as const, nodeId: node.id },
-    disabled: isDragging,
+    disabled: isDragging || nestDepth > 0,
   });
 
   const setRefs = useCallback(
@@ -176,6 +190,11 @@ export function TaskRow({
 
   const done = isTaskMarkedDone(node, completedTag);
   const hasChildren = node.children.length > 0;
+  const expandMode = interactionMode === "expand";
+  const activateChildren = () => {
+    if (expandMode) onToggleExpand?.();
+    else onDrillIn();
+  };
   const cardLink = fieldVisibility.link ? taskLinkHref(node.link) : null;
   const rollupDue = aggregateNextDueOpen(node, completedTag);
   const rollupOverdue = aggregateOverdueDue(node, completedTag);
@@ -212,9 +231,12 @@ export function TaskRow({
         cardLink,
     );
 
-  const style = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
-    : undefined;
+  const style = {
+    ...(transform
+      ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
+      : {}),
+    ...(nestDepth > 0 ? { marginLeft: `${nestDepth * 0.75}rem` } : {}),
+  };
 
   const commitTitle = (meta?: TaskTitleSaveMeta) => {
     onTitleSave?.(titleDraft, meta);
@@ -381,11 +403,13 @@ export function TaskRow({
       onDoubleClick={(e) => {
         if (isInteractiveTarget(e.target) || isTitleEditing) return;
         e.preventDefault();
-        if (hasChildren) onDrillIn();
+        if (hasChildren) activateChildren();
       }}
       onContextMenu={handleContextMenu}
       className={[
-        "group relative flex touch-none cursor-grab items-stretch gap-1 rounded-lg border px-2 py-2 shadow-sm transition active:cursor-grabbing",
+        "group relative flex touch-none items-stretch gap-1 rounded-lg border px-2 py-2 shadow-sm transition",
+        nestDepth > 0 ? "cursor-default" : "cursor-grab active:cursor-grabbing",
+        nestDepth > 0 ? "border-slate-200/70 bg-white/90" : "",
         surface,
         isDragging ? "opacity-40" : "",
         isNestDropTarget || isOver
@@ -530,14 +554,27 @@ export function TaskRow({
           <button
             type="button"
             className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
-            title="Hinein"
-            aria-label="In diese Karte hinein"
+            title={expandMode ? (isCollapsed ? "Aufklappen" : "Zuklappen") : "Hinein"}
+            aria-label={
+              expandMode
+                ? isCollapsed
+                  ? "Ast aufklappen"
+                  : "Ast zuklappen"
+                : "In diese Karte hinein"
+            }
+            aria-expanded={expandMode ? !isCollapsed : undefined}
             onClick={(e) => {
               e.stopPropagation();
-              onDrillIn();
+              activateChildren();
             }}
           >
-            <ChevronRight className="h-4 w-4" aria-hidden />
+            <ChevronRight
+              className={[
+                "h-4 w-4 transition-transform",
+                expandMode && !isCollapsed ? "rotate-90" : "",
+              ].join(" ")}
+              aria-hidden
+            />
             <span className="sr-only">({node.children.length})</span>
           </button>
         ) : null}

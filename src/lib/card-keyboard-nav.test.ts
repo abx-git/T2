@@ -4,7 +4,9 @@ import {
   firstContextCardId,
   focusTargetAfterRemoving,
   navigateContextCard,
+  navigateExpandedCard,
 } from "@/lib/card-keyboard-nav";
+import { flattenVisibleCards } from "@/lib/card-expand";
 import type { TaskNode } from "@/types/task-node";
 
 function node(id: string, title: string, children: TaskNode[] = []): TaskNode {
@@ -49,6 +51,39 @@ describe("navigateContextCard", () => {
   it("firstContextCardId", () => {
     expect(firstContextCardId(siblings)).toBe("a");
     expect(firstContextCardId([])).toBeNull();
+  });
+});
+
+describe("navigateExpandedCard", () => {
+  const roots = [
+    node("a", "A", [node("a1", "A1"), node("a2", "A2")]),
+    node("b", "B"),
+  ];
+
+  it("klappt nach rechts auf und navigiert in Kinder", () => {
+    const collapsed = new Set(["a"]);
+    const visible = flattenVisibleCards(roots, collapsed);
+    expect(navigateExpandedCard(visible, collapsed, "a", "right")).toEqual({
+      nextId: "a",
+      shouldExpand: true,
+    });
+
+    const open = flattenVisibleCards(roots, new Set());
+    expect(navigateExpandedCard(open, new Set(), "a", "right").nextId).toBe("a1");
+    expect(navigateExpandedCard(open, new Set(), "a1", "down").nextId).toBe("a2");
+  });
+
+  it("klappt nach links zu oder geht zum Parent", () => {
+    const open = flattenVisibleCards(roots, new Set());
+    expect(navigateExpandedCard(open, new Set(), "a", "left")).toEqual({
+      nextId: "a",
+      shouldCollapse: true,
+    });
+    expect(navigateExpandedCard(open, new Set(), "a1", "left").nextId).toBe("a");
+    expect(navigateExpandedCard(open, new Set(["a"]), "b", "left")).toEqual({
+      nextId: null,
+      shouldDrillUp: true,
+    });
   });
 });
 

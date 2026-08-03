@@ -97,9 +97,9 @@ export function KeyboardShortcutsHelpDialog({ open, onClose }: KeyboardShortcuts
       hint: "Karte zuerst per Klick oder Pfeiltasten fokussieren (blauer Ring).",
       items: [
         { keys: "↑ ↓", description: "Zwischen Karten in der aktuellen Ebene wechseln" },
-        { keys: "→", description: "In fokussierte Karte hinein (Drill-down)" },
-        { keys: "← / Esc", description: "Eine Ebene höher" },
-        { keys: "Leertaste", description: "In der Struktur Zweig ein-/ausklappen" },
+        { keys: "→", description: "Navigieren: hinein · Aufklappen: Ast öffnen / erstes Kind" },
+        { keys: "← / Esc", description: "Navigieren: eine Ebene höher · Aufklappen: zuklappen / Parent" },
+        { keys: "Leertaste", description: "Karten-Ast ein-/ausklappen (unabhängig von der Struktur)" },
         { keys: "Enter", description: "Geschwisterkarte anlegen und Titel bearbeiten" },
         { keys: "Tab", description: "Unterkarte anlegen und Titel bearbeiten" },
         { keys: "F2", description: "Detailansicht der fokussierten Karte öffnen" },
@@ -128,7 +128,10 @@ export function KeyboardShortcutsHelpDialog({ open, onClose }: KeyboardShortcuts
       title: "Maus",
       items: [
         { keys: "Klick", description: "Karte auswählen" },
-        { keys: "Doppelklick", description: "Hinein (nur mit Unterkarten)" },
+        {
+          keys: "Doppelklick / Chevron",
+          description: "Modus Aufklappen: Ast öffnen · Modus Navigieren: hinein springen",
+        },
         { keys: "Ziehen", description: "Umsortieren oder nesten (Liste oder Struktur links)" },
         { keys: "Rechtsklick", description: "Details öffnen" },
         { keys: "⋯", description: "Aktionen (Farbe, Ändern, …)" },

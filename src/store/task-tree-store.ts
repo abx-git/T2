@@ -194,7 +194,7 @@ export interface TaskTreeState {
 
   /**
    * Pfad bis `nodeId` in der Outline aufklappen und Kontext auf den Parent setzen
-   * (Treffer erscheint in der Kontext-Liste).
+   * (Treffer erscheint in der Kontext-Liste unter den Geschwistern — z. B. Suche).
    */
   expandToNode: (nodeId: string) => void;
 
@@ -571,12 +571,17 @@ export const useTaskTreeStore = create<TaskTreeState>()(
       if (!path) return {};
       const open = new Set(path);
       const nextCollapsed = s.collapsedIds.filter((id) => !open.has(id));
+      const nextCardCollapsed = s.cardCollapsedIds.filter((id) => !open.has(id));
       const collapsedUnchanged =
         nextCollapsed.length === s.collapsedIds.length &&
         nextCollapsed.every((id, i) => id === s.collapsedIds[i]);
+      const cardCollapsedUnchanged =
+        nextCardCollapsed.length === s.cardCollapsedIds.length &&
+        nextCardCollapsed.every((id, i) => id === s.cardCollapsedIds[i]);
       return {
         contextNodeId: nodeId,
         ...(collapsedUnchanged ? {} : { collapsedIds: nextCollapsed }),
+        ...(cardCollapsedUnchanged ? {} : { cardCollapsedIds: nextCardCollapsed }),
       };
     });
   },

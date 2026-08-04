@@ -1314,12 +1314,9 @@ export function TaskBoard() {
 
   const handleOutlineSelect = useCallback(
     (nodeId: string) => {
-      expandToNode(nodeId);
-      setKeyboardFocusNodeId(nodeId);
-      setSearchFocusNodeId(nodeId);
-      setScrollToNodeId(nodeId);
+      handleDrillIn(nodeId);
     },
-    [expandToNode],
+    [handleDrillIn],
   );
 
   const appHeader = (

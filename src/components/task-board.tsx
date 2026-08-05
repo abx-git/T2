@@ -37,6 +37,11 @@ import {
 } from "@/lib/board-pane";
 import { applyBoardJsonToStore, applyBoardPayloadToStore, boardJsonFromStoreState } from "@/lib/file-board-reconcile";
 import {
+  getMobileLayoutServerSnapshot,
+  getMobileLayoutSnapshot,
+  subscribeMobileLayout,
+} from "@/lib/mobile-layout";
+import {
   getTemplatesSnapshot,
   hydrateTemplatesFromIdb,
   subscribeTemplates,
@@ -202,6 +207,13 @@ export function TaskBoard() {
   const setActivePane = useTaskTreeStore((s) => s.setActivePane);
   const splitViewEnabled = useTaskTreeStore((s) => s.splitViewEnabled);
   const setSplitViewEnabled = useTaskTreeStore((s) => s.setSplitViewEnabled);
+  const isMobileLayout = useSyncExternalStore(
+    subscribeMobileLayout,
+    getMobileLayoutSnapshot,
+    getMobileLayoutServerSnapshot,
+  );
+  /** Split View nur Desktop; Einstellung bleibt im Store erhalten. */
+  const showSplitView = splitViewEnabled && !isMobileLayout;
   const setContextNodeId = useTaskTreeStore((s) => s.setContextNodeId);
   const drillIntoNode = useTaskTreeStore((s) => s.drillIntoNode);
   const drillUp = useTaskTreeStore((s) => s.drillUp);
@@ -1446,7 +1458,8 @@ export function TaskBoard() {
         fieldVisibility={cardFieldVisibility}
         searchFocusNodeId={isActive ? searchFocusNodeId : null}
         keyboardFocusNodeId={keyboardFocusByPane[paneId]}
-        titleEditNodeId={titleEditNodeId}
+        // Nur aktive Pane: sonst zwei Titel-Inputs bei gleichem Kontext (Fokus-Race → Edit endet sofort).
+        titleEditNodeId={isActive ? titleEditNodeId : null}
         nestDropTargetId={nestDropTargetId}
         interactionMode={cardInteractionMode}
         cardCollapsedIds={cardCollapsedSet}
@@ -1547,26 +1560,28 @@ export function TaskBoard() {
               setTemplatesOpen(false);
             }}
           />
-          <button
-            type="button"
-            onClick={() => setSplitViewEnabled(!splitViewEnabled)}
-            className={[
-              "flex min-h-8 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition",
-              splitViewEnabled
-                ? "border-sky-300 bg-sky-50 text-sky-900"
-                : "border-slate-200/90 bg-slate-50/80 text-slate-700 hover:bg-white hover:text-slate-900",
-            ].join(" ")}
-            title="Geteilte Ansicht (zwei identische Hälften)"
-            aria-label="Geteilte Ansicht"
-            aria-pressed={splitViewEnabled}
-          >
-            {splitViewEnabled ? (
-              <Columns2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            ) : (
-              <Square className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            )}
-            <span className="hidden sm:inline">Split</span>
-          </button>
+          {!isMobileLayout ? (
+            <button
+              type="button"
+              onClick={() => setSplitViewEnabled(!splitViewEnabled)}
+              className={[
+                "flex min-h-8 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition",
+                splitViewEnabled
+                  ? "border-sky-300 bg-sky-50 text-sky-900"
+                  : "border-slate-200/90 bg-slate-50/80 text-slate-700 hover:bg-white hover:text-slate-900",
+              ].join(" ")}
+              title="Geteilte Ansicht (zwei identische Hälften)"
+              aria-label="Geteilte Ansicht"
+              aria-pressed={splitViewEnabled}
+            >
+              {splitViewEnabled ? (
+                <Columns2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              ) : (
+                <Square className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              )}
+              <span className="hidden sm:inline">Split</span>
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => {
@@ -1715,7 +1730,7 @@ export function TaskBoard() {
                 onToggleCollapsed={toggleNodeCollapsed}
               />
               <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
-                {splitViewEnabled ? (
+                {showSplitView ? (
                   <>
                     {renderPane("left")}
                     <div

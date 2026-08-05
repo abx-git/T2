@@ -10,6 +10,11 @@ import { getTaskCommand } from "@/lib/task-command";
 import { taskLinkHref } from "@/lib/task-link";
 import { isTaskMarkedDone } from "@/lib/task-tags";
 import {
+  isNoteNode,
+  nodeDisplayTitle,
+  normalizeNoteMarkdown,
+} from "@/lib/tree-node-kind";
+import {
   buildSubtreeSnapshot,
   stringifyExportedDocument,
   type SubtreeSnapshotV1,
@@ -66,7 +71,7 @@ export const SUBTREE_EXPORT_ATTRIBUTE_LABELS: Record<SubtreeExportAttributeKey, 
   title: "Titel",
   link: "Link",
   command: "Befehl",
-  description: "Beschreibung / Notizen",
+  description: "Beschreibung / Notizinhalt",
   tags: "Tags",
   dueDate: "Fälligkeit",
   reminderDate: "Erinnerung",
@@ -92,8 +97,12 @@ function formatMarkdownHeadingTitle(
   completedTag: string,
 ): string {
   if (!attrs.title) {
+    if (isNoteNode(node)) return nodeDisplayTitle(node);
     const href = attrs.link ? taskLinkHref(node.link) : null;
     return href ?? "(Ohne Titel)";
+  }
+  if (isNoteNode(node)) {
+    return nodeDisplayTitle(node);
   }
   let text =
     attrs.link && taskLinkHref(node.link)
@@ -112,6 +121,22 @@ function appendMarkdownAttributeLines(
   options: SubtreeBranchExportOptions,
   depth: number,
 ): void {
+  const indent = depth > 0 ? "\t".repeat(depth) : "";
+
+  if (isNoteNode(node)) {
+    if (attrs.id) {
+      lines.push(`- **ID:** \`${formatTaskIdForDisplay(node.id)}\``);
+    }
+    lines.push("- **Typ:** Notiz");
+    if (attrs.description) {
+      const markdown = normalizeNoteMarkdown(node.markdown ?? "").trim();
+      if (markdown) {
+        appendMarkdownDescriptionLines(lines, markdown, indent);
+      }
+    }
+    return;
+  }
+
   const href = taskLinkHref(node.link);
   if (attrs.link && href && !attrs.title) {
     lines.push(`- **Link:** ${href}`);
@@ -149,7 +174,6 @@ function appendMarkdownAttributeLines(
   }
 
   if (attrs.description && node.description.trim()) {
-    const indent = depth > 0 ? "\t".repeat(depth) : "";
     appendMarkdownDescriptionLines(lines, node.description, indent);
   }
 }
@@ -184,10 +208,12 @@ export function taskSubtreeToHeadingMarkdown(
 
 export type BranchExportJsonNode = {
   children: BranchExportJsonNode[];
+  kind?: "card" | "note";
   title?: string;
   link?: string;
   command?: string;
   description?: string;
+  markdown?: string;
   tags?: string[];
   dueDate?: string | null;
   reminderDate?: string | null;
@@ -203,6 +229,21 @@ function nodeToBranchJson(
   options: SubtreeBranchExportOptions,
 ): BranchExportJsonNode {
   const { attributes: attrs } = options;
+
+  if (isNoteNode(node)) {
+    const out: BranchExportJsonNode = {
+      kind: "note",
+      children: node.children.map((ch) => nodeToBranchJson(ch, options)),
+    };
+    if (attrs.title) out.title = node.title;
+    if (attrs.id) out.id = node.id;
+    if (attrs.description) {
+      const markdown = normalizeNoteMarkdown(node.markdown ?? "").trim();
+      if (markdown) out.markdown = markdown;
+    }
+    return out;
+  }
+
   const out: BranchExportJsonNode = {
     children: node.children.map((ch) => nodeToBranchJson(ch, options)),
   };
@@ -272,7 +313,7 @@ export function branchExportFilename(
   format: BranchExportFormat,
   scope: BranchExportScope = "subtree",
 ): string {
-  const base = slugForBackupFilename(root.title.trim() || "karte").slice(0, 48);
+  const base = slugForBackupFilename(nodeDisplayTitle(root) || "karte").slice(0, 48);
   const kind = scope === "card" ? "karte" : "zweig";
   const ext = format === "json" ? "json" : "md";
   return `${base}-${kind}.${ext}`;
@@ -284,7 +325,10 @@ export function exportSubtreeBranch(
   meta?: { sourceNodeTitle?: string },
 ): string {
   const exportRoot = prepareBranchExportRoot(root, options.scope ?? "subtree");
-  const resolvedMeta = { sourceNodeTitle: exportRoot.title, ...meta };
+  const resolvedMeta = {
+    sourceNodeTitle: nodeDisplayTitle(exportRoot),
+    ...meta,
+  };
   if (options.format === "json") {
     return taskSubtreeToBranchJson(exportRoot, options, resolvedMeta);
   }

@@ -18,8 +18,41 @@
       "description": "Datum/Zeit als ISO-8601-String (z. B. von `Date.prototype.toISOString()`), wie in den Exporten verwendet."
     },
     "TaskNodeJson": {
+      "oneOf": [
+        { "$ref": "#/definitions/CardTaskNodeJson" },
+        { "$ref": "#/definitions/NoteTaskNodeJson" }
+      ],
+      "description": "Aufgabenknoten: Karte (Standard) oder Markdown-Notiz (`kind: \"note\"`)."
+    },
+    "NoteTaskNodeJson": {
       "type": "object",
-      "description": "Ein Aufgabenknoten im JSON-Export; Kinder rekursiv gleicher Struktur.",
+      "description": "Markdown-Notiz ohne Karten-Attribute (nur Titel, optional Markdown-Inhalt, Kinder).",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Eindeutige Knoten-ID (z. B. UUID)."
+        },
+        "kind": {
+          "type": "string",
+          "const": "note"
+        },
+        "title": { "type": "string" },
+        "markdown": {
+          "type": "string",
+          "description": "Optional: Markdown-Inhalt."
+        },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/TaskNodeJson" }
+        }
+      },
+      "required": ["id", "kind", "title", "children"],
+      "additionalProperties": false
+    },
+    "CardTaskNodeJson": {
+      "type": "object",
+      "description": "Aufgabenkarte mit Metadaten und optionalen Kindern.",
       "properties": {
         "id": {
           "type": "string",
@@ -29,12 +62,8 @@
         "title": { "type": "string" },
         "kind": {
           "type": "string",
-          "enum": ["card", "note"],
-          "description": "Optional: card (Standard) oder note (Markdown-Notiz ohne Karten-Attribute)."
-        },
-        "markdown": {
-          "type": "string",
-          "description": "Optional: Markdown-Inhalt (nur bei kind \"note\")."
+          "enum": ["card"],
+          "description": "Optional: card (Standard); fehlt `kind`, gilt der Knoten als Karte."
         },
         "link": {
           "type": "string",

@@ -80,6 +80,59 @@ describe("task-tree-json", () => {
     expect(back.title).toBe("Memo");
   });
 
+  it("parses board export containing note nodes", () => {
+    const note: TaskNode = {
+      id: "note-1",
+      kind: "note",
+      title: "Memo",
+      markdown: "# Titel",
+      link: "",
+      description: "",
+      tags: [],
+      dueDate: null,
+      reminderDate: null,
+      effort: 0,
+      children: [],
+    };
+    const doc = buildBoardSnapshot(
+      [note],
+      [],
+      {},
+      mergeCardFieldVisibility({}),
+      false,
+      true,
+    );
+    const text = stringifyExportedDocument(doc);
+    const parsed = parseExportedDocument(text);
+    expect(isBoardSnapshot(parsed)).toBe(true);
+    if (isBoardSnapshot(parsed)) {
+      expect(parsed.roots).toHaveLength(1);
+      expect(parsed.roots[0]!.kind).toBe("note");
+      expect(parsed.roots[0]!.markdown).toBe("# Titel");
+    }
+  });
+
+  it("parses legacy roots-only export with note nodes", () => {
+    const noteJson = taskNodeToJson({
+      id: "note-1",
+      kind: "note",
+      title: "Memo",
+      markdown: "Body",
+      link: "",
+      description: "",
+      tags: [],
+      dueDate: null,
+      reminderDate: null,
+      effort: 0,
+      children: [],
+    });
+    const parsed = parseExportedDocument(JSON.stringify({ roots: [noteJson] }));
+    expect(isBoardSnapshot(parsed)).toBe(true);
+    if (isBoardSnapshot(parsed)) {
+      expect(parsed.roots[0]!.kind).toBe("note");
+    }
+  });
+
   it("roundtrips optional cardColor", () => {
     const n: TaskNode = { ...sampleNode("c"), cardColor: "emerald" };
     const back = taskNodeFromJson(taskNodeToJson(n));

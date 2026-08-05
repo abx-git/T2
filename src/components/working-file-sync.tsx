@@ -101,8 +101,16 @@ export function WorkingFileSync({
       if (!snap) return;
 
       if (choice === "load_file") {
-        if (snap.text.trim()) applyBoardJsonToStore(snap.text);
-        markWorkingFileSynced(snap.text, snap.lastModified);
+        if (snap.text.trim()) {
+          const loaded = applyBoardJsonToStore(snap.text);
+          if (!loaded) {
+            window.alert(
+              "Die Arbeitsdatei konnte nicht gelesen werden (ungültiges JSON). Lokaler Stand bleibt erhalten.",
+            );
+            return;
+          }
+          markWorkingFileSynced(snap.text, snap.lastModified);
+        }
         lastPersistKeyRef.current = boardPersistKeyFromStoreState();
         syncDirty();
         return;
@@ -217,9 +225,12 @@ export function WorkingFileSync({
       if (!isWorkingFileDirty()) {
         suspendAutoPersistRef.current = true;
         try {
-          if (snap.text.trim()) applyBoardJsonToStore(snap.text);
-          markWorkingFileSynced(snap.text, snap.lastModified);
-          lastPersistKeyRef.current = boardPersistKeyFromStoreState();
+          if (snap.text.trim()) {
+            const loaded = applyBoardJsonToStore(snap.text);
+            if (!loaded) return;
+            markWorkingFileSynced(snap.text, snap.lastModified);
+            lastPersistKeyRef.current = boardPersistKeyFromStoreState();
+          }
         } finally {
           suspendAutoPersistRef.current = false;
         }
@@ -239,16 +250,23 @@ export function WorkingFileSync({
         const snap = await readWorkingFileSnapshot(handle);
         if (!snap || !mountedRef.current) return;
 
-        markWorkingFileSessionHydrated();
         suspendAutoPersistRef.current = true;
         try {
           if (snap.text.trim()) {
-            applyBoardJsonToStore(snap.text);
+            const loaded = applyBoardJsonToStore(snap.text);
+            if (!loaded) {
+              console.error("Arbeitsdatei konnte nicht geladen werden — Board-JSON ungültig.");
+              window.alert(
+                "Die Arbeitsdatei konnte nicht geladen werden. Bitte Backup einspielen oder die Datei prüfen.",
+              );
+              return;
+            }
             markWorkingFileSynced(snap.text, snap.lastModified);
           } else {
             markWorkingFileSynced(boardJsonFromStoreState(), snap.lastModified);
             await flushPersist();
           }
+          markWorkingFileSessionHydrated();
         } finally {
           suspendAutoPersistRef.current = false;
         }
@@ -261,10 +279,15 @@ export function WorkingFileSync({
           callbacksRef.current.onNeedsFileSetup?.();
           return;
         }
-        markWorkingFileSessionHydrated();
         suspendAutoPersistRef.current = true;
         try {
-          applyBoardJsonToStore(synced);
+          const loaded = applyBoardJsonToStore(synced);
+          if (!loaded) {
+            console.error("Gespeichertes Board konnte nicht geladen werden.");
+            callbacksRef.current.onNeedsFileSetup?.();
+            return;
+          }
+          markWorkingFileSessionHydrated();
         } finally {
           suspendAutoPersistRef.current = false;
         }
@@ -286,7 +309,9 @@ export function WorkingFileSync({
       await hydrateFromWorkingFileOnce();
       if (!mountedRef.current) return;
 
-      lastPersistKeyRef.current = boardPersistKeyFromStoreState();
+      if (wasWorkingFileSessionHydrated()) {
+        lastPersistKeyRef.current = boardPersistKeyFromStoreState();
+      }
       syncFileLabel();
       syncDirty();
 

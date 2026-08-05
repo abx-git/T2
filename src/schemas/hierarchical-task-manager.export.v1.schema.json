@@ -27,6 +27,15 @@
           "description": "Eindeutige Knoten-ID (z. B. UUID)."
         },
         "title": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": ["card", "note"],
+          "description": "Optional: card (Standard) oder note (Markdown-Notiz ohne Karten-Attribute)."
+        },
+        "markdown": {
+          "type": "string",
+          "description": "Optional: Markdown-Inhalt (nur bei kind \"note\")."
+        },
         "link": {
           "type": "string",
           "description": "Optional: externer Link (http/https); auf der Karte als Icon und Menüpunkt."

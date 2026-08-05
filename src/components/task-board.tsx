@@ -119,6 +119,7 @@ import {
   parseClipboardGapId,
 } from "@/lib/clipboard-dnd";
 import { saveClipboardLinkToCard } from "@/lib/paste-card-link-from-clipboard";
+import { isNoteNode, nodeDisplayTitle } from "@/lib/tree-node-kind";
 import {
   dataStorageButtonClassName,
   deriveStorageDisplayStatus,
@@ -153,6 +154,7 @@ import { WorkingFileSetupDialog } from "./working-file-setup-dialog";
 import { DataStoragePanel } from "./data-storage-panel";
 import { PostImportSaveDialog } from "./post-import-save-dialog";
 import { TaskEditorDialog } from "./task-editor-dialog";
+import { NoteEditorDialog } from "./note-editor-dialog";
 import { KeyboardShortcutsHelpDialog } from "./keyboard-shortcuts-help-dialog";
 
 
@@ -162,9 +164,13 @@ function DragPreviewCard({ id }: { id: string }) {
   const nodeId = boardNodeIdFromDragActive(id) ?? id;
   const node = findNodeById(roots, nodeId) ?? findNodeById(clipboardRoots, nodeId);
   if (!node) return null;
+  const label = nodeDisplayTitle(node);
   return (
     <div className="pointer-events-none w-72 max-w-[85vw] rounded-lg border border-slate-200 bg-white p-3 shadow-2xl ring-2 ring-sky-200/90">
-      <p className="text-sm font-semibold text-slate-900">{node.title.trim() || "(Ohne Titel)"}</p>
+      <p className="text-sm font-semibold text-slate-900">
+        {isNoteNode(node) ? "Notiz: " : ""}
+        {label}
+      </p>
       {node.children.length > 0 ? (
         <p className="mt-1 text-[11px] text-slate-500">
           inkl. {node.children.length} direkte Unterkarte
@@ -197,7 +203,10 @@ export function TaskBoard() {
   const clipboardRoots = useTaskTreeStore((s) => s.clipboardRoots);
   const addCardAfter = useTaskTreeStore((s) => s.addCardAfter);
   const addCardAfterSibling = useTaskTreeStore((s) => s.addCardAfterSibling);
+  const addNoteAfter = useTaskTreeStore((s) => s.addNoteAfter);
+  const addNoteAfterSibling = useTaskTreeStore((s) => s.addNoteAfterSibling);
   const updateCard = useTaskTreeStore((s) => s.updateCard);
+  const updateNote = useTaskTreeStore((s) => s.updateNote);
   const removeCard = useTaskTreeStore((s) => s.removeCard);
   const columnTitleOverrides = useTaskTreeStore((s) => s.columnTitleOverrides);
   const applyColumnTitleDraft = useTaskTreeStore((s) => s.applyColumnTitleDraft);
@@ -694,6 +703,14 @@ export function TaskBoard() {
     openEditor(nodeId);
   };
 
+  const beginEditingNewNote = useCallback((id: string) => {
+    setSearchFocusNodeId(null);
+    setKeyboardFocusNodeId(id);
+    setScrollToNodeId(id);
+    setEditorNodeId(id);
+    setEditorOpen(true);
+  }, []);
+
   /** Neue Karte: Fokus + Titel sofort editierbar. */
   const beginEditingNewCard = useCallback((id: string) => {
     setSearchFocusNodeId(null);
@@ -1005,8 +1022,11 @@ export function TaskBoard() {
   const contextLabel = useMemo(() => {
     if (!contextNodeId) return "Wurzelkarten";
     const n = findNodeById(roots, contextNodeId);
-    return n?.title.trim() || "(Ohne Titel)";
+    return n ? nodeDisplayTitle(n) : "(Ohne Titel)";
   }, [roots, contextNodeId]);
+
+  const editingNode = editorNodeId ? findNodeById(roots, editorNodeId) : null;
+  const editingIsNote = editingNode ? isNoteNode(editingNode) : false;
 
   const boardMaxVisibleLevels = useMemo(() => getBoardMaxVisibleLevels(roots), [roots]);
 
@@ -1157,7 +1177,10 @@ export function TaskBoard() {
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        void saveClipboardLinkToCard(currentId, updateCard);
+        const node = findNodeById(roots, currentId);
+        if (node && !isNoteNode(node)) {
+          void saveClipboardLinkToCard(currentId, updateCard);
+        }
       }
     };
 
@@ -1558,6 +1581,10 @@ export function TaskBoard() {
                       const id = addCardAfter(contextNodeId);
                       beginEditingNewCard(id);
                     }}
+                    onAddNote={() => {
+                      const id = addNoteAfter(contextNodeId);
+                      beginEditingNewNote(id);
+                    }}
                     onOpenDetails={handleOpenDetails}
                     onTitleSave={handleTitleSave}
                     onTitleEditCancel={handleTitleEditCancel}
@@ -1871,7 +1898,7 @@ export function TaskBoard() {
         }}
       />
       <TaskEditorDialog
-        open={editorOpen}
+        open={editorOpen && !editingIsNote}
         nodeId={editorNodeId}
         onClose={closeEditor}
         onSave={(id, fields, meta) => {
@@ -1892,12 +1919,27 @@ export function TaskBoard() {
             : undefined
         }
       />
+      <NoteEditorDialog
+        open={editorOpen && editingIsNote}
+        nodeId={editorNodeId}
+        onClose={closeEditor}
+        onSave={(id, fields) => {
+          updateNote(id, fields);
+        }}
+        onRequestDelete={
+          editorNodeId
+            ? () => {
+                handleRequestDelete(editorNodeId);
+              }
+            : undefined
+        }
+      />
       <ConfirmDialog
         open={pendingDeleteId !== null}
-        title="Karte löschen?"
+        title="Eintrag löschen?"
         message={
           pendingDeleteId
-            ? `„${findNodeById(roots, pendingDeleteId)?.title ?? "Diese Karte"}“ und alle Unteraufgaben endgültig löschen?`
+            ? `„${findNodeById(roots, pendingDeleteId) ? nodeDisplayTitle(findNodeById(roots, pendingDeleteId)!) : "Dieser Eintrag"}“ und alle Untereinträge endgültig löschen?`
             : ""
         }
         onCancel={() => setPendingDeleteId(null)}

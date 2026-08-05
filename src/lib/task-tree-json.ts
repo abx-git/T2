@@ -21,8 +21,9 @@ import {
   uniqNonEmptyTags,
 } from "@/lib/task-tags";
 import { generateUniqueTaskIdFromTaken } from "@/lib/task-id";
-import { normalizeTaskLink } from "@/lib/task-link";
 import { normalizeTaskCommand } from "@/lib/task-command";
+import { normalizeTaskLink } from "@/lib/task-link";
+import { isNoteNode, normalizeNoteMarkdown } from "@/lib/tree-node-kind";
 import type { TaskNode } from "@/types/task-node";
 import hierarchicalTaskManagerExportV1Schema from "@/schemas/hierarchical-task-manager.export.v1.schema.json";
 
@@ -46,16 +47,18 @@ function isLegacyTaskStatus(s: unknown): s is LegacyTaskStatus {
 /** JSON-Darstellung eines Knotens (ISO-Datumstrings). */
 export interface TaskNodeJson {
   id: string;
+  kind?: "card" | "note";
   title: string;
+  markdown?: string;
   link?: string;
   command?: string;
-  description: string;
+  description?: string;
   tags?: string[];
   /** Nur Import älterer Exporte ohne `tags`. */
   status?: LegacyTaskStatus;
-  dueDate: string | null;
-  reminderDate: string | null;
-  effort: number;
+  dueDate?: string | null;
+  reminderDate?: string | null;
+  effort?: number;
   effortUnit?: "hours" | "minutes" | "workdays";
   effortSource?: "manual" | "calculated";
   /** Optionale Kartenfarbe (Palette). */
@@ -124,6 +127,16 @@ export interface SubtreeSnapshotV1 {
 export type ExportedDocumentV1 = BoardSnapshotV1 | SubtreeSnapshotV1;
 
 export function taskNodeToJson(node: TaskNode): TaskNodeJson {
+  if (isNoteNode(node)) {
+    const markdown = normalizeNoteMarkdown(node.markdown ?? "");
+    return {
+      id: node.id,
+      kind: "note",
+      title: node.title,
+      ...(markdown ? { markdown } : {}),
+      children: node.children.map(taskNodeToJson),
+    };
+  }
   return {
     id: node.id,
     title: node.title,
@@ -142,22 +155,38 @@ export function taskNodeToJson(node: TaskNode): TaskNodeJson {
 }
 
 export function taskNodeFromJson(j: TaskNodeJson): TaskNode {
+  if (j.kind === "note") {
+    return {
+      id: j.id,
+      kind: "note",
+      title: j.title,
+      markdown: typeof j.markdown === "string" ? normalizeNoteMarkdown(j.markdown) : "",
+      link: "",
+      description: "",
+      tags: [],
+      dueDate: null,
+      reminderDate: null,
+      effort: 0,
+      children: j.children.map(taskNodeFromJson),
+    };
+  }
   let tags = Array.isArray(j.tags) ? uniqNonEmptyTags(j.tags.filter((x): x is string => typeof x === "string")) : [];
   if (!tags.length && j.status !== undefined && isLegacyTaskStatus(j.status)) {
     tags = tagsFromLegacyStatus(j.status);
   }
   return {
     id: j.id,
+    kind: "card",
     title: j.title,
     link: typeof j.link === "string" ? normalizeTaskLink(j.link) : "",
     ...(typeof j.command === "string" && normalizeTaskCommand(j.command)
       ? { command: normalizeTaskCommand(j.command) }
       : {}),
-    description: j.description,
+    description: j.description ?? "",
     tags,
     dueDate: j.dueDate ? new Date(j.dueDate) : null,
     reminderDate: j.reminderDate ? new Date(j.reminderDate) : null,
-    effort: j.effort,
+    effort: j.effort ?? 0,
     ...(parseEffortUnit(j.effortUnit) ? { effortUnit: parseEffortUnit(j.effortUnit) } : {}),
     ...(parseEffortSource(j.effortSource) === "calculated" ? { effortSource: "calculated" } : {}),
     ...(parseCardColor(j.cardColor) ? { cardColor: parseCardColor(j.cardColor) } : {}),
@@ -253,8 +282,10 @@ function expectTaskNodeJson(raw: unknown, path: string): TaskNodeJson {
   const o = expectObject(raw, `${path}: Objekt erwartet`);
   const id = o.id;
   const title = o.title;
+  const kindRaw = o.kind;
   const linkRaw = o.link;
   const commandRaw = o.command;
+  const markdownRaw = o.markdown;
   const description = o.description;
   const tagsRaw = o.tags;
   const statusLegacy = o.status;
@@ -268,11 +299,17 @@ function expectTaskNodeJson(raw: unknown, path: string): TaskNodeJson {
 
   if (typeof id !== "string" || !id.trim()) throw new Error(`${path}.id: nicht-leere Zeichenkette erwartet`);
   if (typeof title !== "string") throw new Error(`${path}.title: Zeichenkette erwartet`);
+  if (kindRaw !== undefined && kindRaw !== "card" && kindRaw !== "note") {
+    throw new Error(`${path}.kind: card oder note erwartet`);
+  }
   if (linkRaw !== undefined && typeof linkRaw !== "string") {
     throw new Error(`${path}.link: Zeichenkette erwartet`);
   }
   if (commandRaw !== undefined && typeof commandRaw !== "string") {
     throw new Error(`${path}.command: Zeichenkette erwartet`);
+  }
+  if (markdownRaw !== undefined && typeof markdownRaw !== "string") {
+    throw new Error(`${path}.markdown: Zeichenkette erwartet`);
   }
   if (typeof description !== "string") throw new Error(`${path}.description: Zeichenkette erwartet`);
 
@@ -314,6 +351,23 @@ function expectTaskNodeJson(raw: unknown, path: string): TaskNodeJson {
   }
   if (!Array.isArray(children)) throw new Error(`${path}.children: Array erwartet`);
 
+  if (kindRaw === "note") {
+    return {
+      id,
+      kind: "note",
+      title,
+      ...(typeof markdownRaw === "string" && normalizeNoteMarkdown(markdownRaw)
+        ? { markdown: normalizeNoteMarkdown(markdownRaw) }
+        : {}),
+      description: "",
+      tags: [],
+      dueDate: null,
+      reminderDate: null,
+      effort: 0,
+      children: children.map((ch, i) => expectTaskNodeJson(ch, `${path}.children[${i}]`)),
+    };
+  }
+
   let due: string | null = null;
   if (typeof dueDate === "string" && dueDate.trim()) {
     const d = new Date(dueDate);
@@ -329,6 +383,7 @@ function expectTaskNodeJson(raw: unknown, path: string): TaskNodeJson {
 
   return {
     id,
+    kind: "card",
     title,
     ...(typeof linkRaw === "string" && linkRaw.trim() ? { link: linkRaw } : {}),
     ...(typeof commandRaw === "string" && normalizeTaskCommand(commandRaw)

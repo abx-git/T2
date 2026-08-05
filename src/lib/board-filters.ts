@@ -4,6 +4,7 @@ import {
   type CardColorId,
 } from "@/lib/card-color";
 import { tagKey } from "@/lib/task-tags";
+import { isNoteNode } from "@/lib/tree-node-kind";
 import type { TaskNode } from "@/types/task-node";
 
 /** Wie aktive Filterkriterien verknüpft werden. */
@@ -180,7 +181,7 @@ export function boardFilterCriteriaMatches(
  * `or` = mindestens ein Kriterium reicht.
  */
 export function nodeMatchesBoardFilters(
-  node: Pick<TaskNode, "tags" | "dueDate" | "reminderDate" | "cardColor">,
+  node: Pick<TaskNode, "kind" | "tags" | "dueDate" | "reminderDate" | "cardColor">,
   opts: {
     filterTags: string[];
     filterColors: CardColorId[];
@@ -188,6 +189,7 @@ export function nodeMatchesBoardFilters(
     filterCombineMode?: FilterCombineMode;
   },
 ): boolean {
+  if (isNoteNode(node)) return true;
   const matches = boardFilterCriteriaMatches(node, opts);
   if (matches.length === 0) return true;
   const mode = opts.filterCombineMode ?? "and";

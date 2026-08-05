@@ -1,4 +1,5 @@
 import type { TaskNode } from "@/types/task-node";
+import { isNoteNode, nodeDisplayTitle, normalizeNoteMarkdown } from "@/lib/tree-node-kind";
 
 export type TaskSearchHit = {
   nodeId: string;
@@ -19,13 +20,18 @@ function normalizeSearchTerms(raw: string): string[] {
 }
 
 function buildHaystack(node: TaskNode): string {
+  if (isNoteNode(node)) {
+    return [node.title, normalizeNoteMarkdown(node.markdown ?? "")].join(" ").toLowerCase();
+  }
   return [node.title, node.description, ...node.tags].join(" ").toLowerCase();
 }
 
 function scoreNode(node: TaskNode, terms: string[]): number {
-  const title = node.title.toLowerCase();
-  const desc = node.description.toLowerCase();
-  const tags = node.tags.join(" ").toLowerCase();
+  const title = nodeDisplayTitle(node).toLowerCase();
+  const desc = isNoteNode(node)
+    ? normalizeNoteMarkdown(node.markdown ?? "").toLowerCase()
+    : node.description.toLowerCase();
+  const tags = isNoteNode(node) ? "" : node.tags.join(" ").toLowerCase();
   let score = 0;
   for (const term of terms) {
     if (title.includes(term)) score += title.startsWith(term) ? 40 : 25;
@@ -57,7 +63,7 @@ export function searchTaskNodes(
   function walk(nodes: TaskNode[], ancestorTitles: string[]) {
     for (const node of nodes) {
       if (nodeMatchesAllTerms(node, terms)) {
-        const title = node.title.trim() || "(Ohne Titel)";
+        const title = nodeDisplayTitle(node);
         hits.push({
           nodeId: node.id,
           title,
@@ -65,7 +71,7 @@ export function searchTaskNodes(
           score: scoreNode(node, terms),
         });
       }
-      const nextAncestors = [...ancestorTitles, node.title.trim() || "(Ohne Titel)"];
+      const nextAncestors = [...ancestorTitles, nodeDisplayTitle(node)];
       walk(node.children, nextAncestors);
     }
   }

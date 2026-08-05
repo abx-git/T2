@@ -1,8 +1,5 @@
-import {
-  nodeMatchesBoardFilters,
-  type FilterCombineMode,
-  type ScheduleFilterKind,
-} from "@/lib/board-filters";
+import { nodeMatchesBoardFilters, type FilterCombineMode, type ScheduleFilterKind } from "@/lib/board-filters";
+import { isNoteNode } from "@/lib/tree-node-kind";
 import type { CardColorId } from "@/lib/card-color";
 import { isTaskMarkedDone } from "@/lib/task-tags";
 import type { TaskNode } from "@/types/task-node";
@@ -32,6 +29,7 @@ export function updateNodeFields(
       | "title"
       | "link"
       | "command"
+      | "markdown"
       | "description"
       | "tags"
       | "dueDate"
@@ -143,7 +141,7 @@ export function rootsForMindmapDisplay(
     };
     const walk = (n: TaskNode): TaskNode | null => {
       const kids = n.children.map(walk).filter((c): c is TaskNode => c !== null);
-      if (nodeMatchesBoardFilters(n, filterOpts) || kids.length > 0) {
+      if (isNoteNode(n) || nodeMatchesBoardFilters(n, filterOpts) || kids.length > 0) {
         return { ...n, children: kids };
       }
       return null;

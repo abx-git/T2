@@ -1,4 +1,5 @@
 import { isTaskMarkedDone } from "@/lib/task-tags";
+import { isNoteNode } from "@/lib/tree-node-kind";
 import type { TaskNode } from "@/types/task-node";
 
 /** Einheit des Aufwands pro Karte. Fehlt im Export → Stunden (Legacy). */
@@ -87,10 +88,11 @@ export function effortTotalsWeight(t: EffortTotals): number {
 
 /** Effektiver Aufwand dieser Karte (bei `calculated`: Summe offener Kinder). */
 export function getEffectiveEffortTotals(node: TaskNode, completedTag: string): EffortTotals {
+  if (isNoteNode(node)) return emptyEffortTotals();
   if (getEffortSource(node) === "calculated") {
     let totals = emptyEffortTotals();
     for (const child of node.children) {
-      if (isTaskMarkedDone(child, completedTag)) continue;
+      if (isNoteNode(child) || isTaskMarkedDone(child, completedTag)) continue;
       totals = addEffortTotals(totals, getEffectiveEffortTotals(child, completedTag));
     }
     return totals;
@@ -100,13 +102,13 @@ export function getEffectiveEffortTotals(node: TaskNode, completedTag: string): 
 
 /** Σ für Anzeige: bei manuell eigener + Teilbäume; bei berechnet nur effektiver Wert (ohne Doppelzählung). */
 export function rollupDisplayTotals(node: TaskNode, completedTag: string): EffortTotals {
-  if (isTaskMarkedDone(node, completedTag)) return emptyEffortTotals();
+  if (isNoteNode(node) || isTaskMarkedDone(node, completedTag)) return emptyEffortTotals();
   if (getEffortSource(node) === "calculated") {
     return getEffectiveEffortTotals(node, completedTag);
   }
   let totals = effortFromNode(node);
   for (const child of node.children) {
-    if (isTaskMarkedDone(child, completedTag)) continue;
+    if (isNoteNode(child) || isTaskMarkedDone(child, completedTag)) continue;
     totals = addEffortTotals(totals, rollupDisplayTotals(child, completedTag));
   }
   return totals;
@@ -114,8 +116,10 @@ export function rollupDisplayTotals(node: TaskNode, completedTag: string): Effor
 
 /** Σ Aufwand: eigener Wert + Summe aller Nachfahren (ohne Berücksichtigung von calculated). */
 export function aggregateEffortTotals(node: TaskNode): EffortTotals {
+  if (isNoteNode(node)) return emptyEffortTotals();
   let totals = effortFromNode(node);
   for (const child of node.children) {
+    if (isNoteNode(child)) continue;
     totals = addEffortTotals(totals, aggregateEffortTotals(child));
   }
   return totals;
@@ -153,7 +157,7 @@ export function calculateEffortFieldsFromChildren(
 ): { effort: number; effortUnit: EffortUnit } {
   let totals = emptyEffortTotals();
   for (const child of node.children) {
-    if (isTaskMarkedDone(child, completedTag)) continue;
+    if (isNoteNode(child) || isTaskMarkedDone(child, completedTag)) continue;
     totals = addEffortTotals(totals, getEffectiveEffortTotals(child, completedTag));
   }
   return effortTotalsToStoredFields(totals, getEffortUnit(node));

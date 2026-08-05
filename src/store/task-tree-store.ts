@@ -57,7 +57,8 @@ import {
   renameTagInForest,
   tagKey,
 } from "@/lib/task-tags";
-import type { TaskCardEditableFields, TaskNode } from "@/types/task-node";
+import type { NoteEditableFields, TaskCardEditableFields, TaskNode } from "@/types/task-node";
+import { createBlankCardNode, createBlankNoteNode } from "@/lib/tree-node-kind";
 
 /** Felder, die in der Undo-/Redo-Historie liegen (persistierter Board-Stand, ohne Drill-Kontext). */
 export type BoardHistorySlice = {
@@ -225,7 +226,12 @@ export interface TaskTreeState {
   addCardAfter: (parentId: string | null) => string;
   /** Neue Geschwisterkarte direkt unter `afterNodeId`. */
   addCardAfterSibling: (afterNodeId: string) => string | null;
+  /** Neue Notiz am Ende der Geschwisterliste unter `parentId` (`null` = Wurzel). */
+  addNoteAfter: (parentId: string | null) => string;
+  /** Neue Geschwisternotiz direkt unter `afterNodeId`. */
+  addNoteAfterSibling: (afterNodeId: string) => string | null;
   updateCard: (nodeId: string, fields: Partial<TaskCardEditableFields>) => void;
+  updateNote: (nodeId: string, fields: Partial<NoteEditableFields>) => void;
   /** Entfernt die Karte inkl. gesamtem Unterbaum. */
   removeCard: (nodeId: string) => void;
 
@@ -270,6 +276,23 @@ export interface TaskTreeState {
   ) => string[];
 }
 
+function insertNodeAtIndex(
+  set: (fn: (s: TaskTreeState) => Partial<TaskTreeState>) => void,
+  get: () => TaskTreeState,
+  parentId: string | null,
+  index: number,
+  newNode: TaskNode,
+): string {
+  set((s) => {
+    const nextRoots = refreshCalculatedEffortsInTree(
+      insertUnderParent(s.roots, parentId, index, newNode),
+      s.completedTag,
+    );
+    return { roots: nextRoots, pathIds: normalizePathIds(nextRoots, s.pathIds) };
+  });
+  return newNode.id;
+}
+
 function insertCardAtIndex(
   set: (fn: (s: TaskTreeState) => Partial<TaskTreeState>) => void,
   get: () => TaskTreeState,
@@ -279,29 +302,22 @@ function insertCardAtIndex(
   const id = generateUniqueTaskId(get().roots);
   const state = get();
   const cardColor = defaultColorForNewCard(state.filterColors);
-  const newNode: TaskNode = {
-    id,
-    title: "",
-    link: "",
-    command: "",
-    description: "",
+  const newNode = createBlankCardNode(id, {
     tags: defaultTagsForNewCard(state.filterTags),
-    dueDate: null,
-    reminderDate: null,
-    effort: 0,
-    effortUnit: "hours",
-    effortSource: "manual",
     ...(cardColor ? { cardColor } : {}),
-    children: [],
-  };
-  set((s) => {
-    const nextRoots = refreshCalculatedEffortsInTree(
-      insertUnderParent(s.roots, parentId, index, newNode),
-      s.completedTag,
-    );
-    return { roots: nextRoots, pathIds: normalizePathIds(nextRoots, s.pathIds) };
   });
-  return id;
+  return insertNodeAtIndex(set, get, parentId, index, newNode);
+}
+
+function insertNoteAtIndex(
+  set: (fn: (s: TaskTreeState) => Partial<TaskTreeState>) => void,
+  get: () => TaskTreeState,
+  parentId: string | null,
+  index: number,
+): string {
+  const id = generateUniqueTaskId(get().roots);
+  const newNode = createBlankNoteNode(id);
+  return insertNodeAtIndex(set, get, parentId, index, newNode);
 }
 
 function cleanupAfterSubtreeRemoved(
@@ -711,6 +727,21 @@ export const useTaskTreeStore = create<TaskTreeState>()(
     return insertCardAtIndex(set, get, parentId, index);
   },
 
+  addNoteAfter: (parentId) => {
+    const index = getSiblingsList(get().roots, parentId).length;
+    return insertNoteAtIndex(set, get, parentId, index);
+  },
+
+  addNoteAfterSibling: (afterNodeId) => {
+    const roots = get().roots;
+    const parentId = findDirectParentId(roots, afterNodeId);
+    if (parentId === undefined) return null;
+    const sibs = getSiblingsList(roots, parentId);
+    const idx = sibs.findIndex((n) => n.id === afterNodeId);
+    const index = idx >= 0 ? idx + 1 : sibs.length;
+    return insertNoteAtIndex(set, get, parentId, index);
+  },
+
   updateCard: (nodeId, fields) => {
     set((s) => {
       const nextRoots = refreshCalculatedEffortsInTree(
@@ -718,6 +749,16 @@ export const useTaskTreeStore = create<TaskTreeState>()(
         s.completedTag,
       );
       return { roots: nextRoots, pathIds: normalizePathIds(nextRoots, s.pathIds) };
+    });
+  },
+
+  updateNote: (nodeId, fields) => {
+    set((s) => {
+      const nextRoots = updateNodeFields(s.roots, nodeId, fields);
+      return {
+        roots: nextRoots,
+        pathIds: normalizePathIds(nextRoots, s.pathIds),
+      };
     });
   },
 

@@ -60,6 +60,26 @@ describe("task-tree-json", () => {
     expect(back.children[0].tags).toEqual(["In Arbeit"]);
   });
 
+  it("roundtrips markdown note nodes", () => {
+    const note: TaskNode = {
+      id: "note-1",
+      kind: "note",
+      title: "Memo",
+      markdown: "# Titel\n\nInhalt",
+      link: "",
+      description: "",
+      tags: [],
+      dueDate: null,
+      reminderDate: null,
+      effort: 0,
+      children: [],
+    };
+    const back = taskNodeFromJson(taskNodeToJson(note));
+    expect(back.kind).toBe("note");
+    expect(back.markdown).toBe("# Titel\n\nInhalt");
+    expect(back.title).toBe("Memo");
+  });
+
   it("roundtrips optional cardColor", () => {
     const n: TaskNode = { ...sampleNode("c"), cardColor: "emerald" };
     const back = taskNodeFromJson(taskNodeToJson(n));

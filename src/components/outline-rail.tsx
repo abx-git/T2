@@ -1,7 +1,7 @@
 "use client";
 
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import { ChevronDown, ChevronRight, GripVertical, PanelLeftClose, PanelLeft } from "lucide-react";
+import { ChevronDown, ChevronRight, GripVertical, PanelLeftClose, PanelLeft, StickyNote } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { buildBoardOutlineRows } from "@/lib/board-outline";
@@ -10,6 +10,7 @@ import {
   outlineGapId,
   outlineNestId,
 } from "@/lib/outline-dnd";
+import { isNoteNode, nodeDisplayTitle } from "@/lib/tree-node-kind";
 import { isTaskMarkedDone } from "@/lib/task-tags";
 import type { TaskNode } from "@/types/task-node";
 
@@ -125,14 +126,17 @@ function OutlineRow({
           "min-w-0 flex-1 truncate py-0.5 text-left",
           done ? "text-slate-400 line-through" : "",
         ].join(" ")}
-        title={node.title.trim() || "(Ohne Titel)"}
+        title={nodeDisplayTitle(node)}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
           onSelect();
         }}
       >
-        {node.title.trim() || "(Ohne Titel)"}
+        {isNoteNode(node) ? (
+          <StickyNote className="mr-1 inline h-3 w-3 shrink-0 text-violet-600" aria-hidden />
+        ) : null}
+        {nodeDisplayTitle(node)}
       </button>
     </div>
   );

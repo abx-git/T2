@@ -10,6 +10,7 @@ import { uniqNonEmptyTags } from "@/lib/task-tags";
 import { generateUniqueTaskIdFromTaken } from "@/lib/task-id";
 import { normalizeTaskCommand } from "@/lib/task-command";
 import { normalizeTaskLink } from "@/lib/task-link";
+import { isNoteNode, normalizeNoteMarkdown } from "@/lib/tree-node-kind";
 import type { TaskNode } from "@/types/task-node";
 
 const NS_HINT = "hierarchical-task-manager";
@@ -65,12 +66,33 @@ function readMmNode(el: Element, taken: Set<string>): TaskNode {
   const reminderDate = parseIsoDate(el.getAttribute("HIER_TM_REMINDER"));
   const link = normalizeTaskLink(el.getAttribute("HIER_TM_LINK") ?? "");
   const command = normalizeTaskCommand(el.getAttribute("HIER_TM_COMMAND") ?? "");
+  const kindAttr = el.getAttribute("HIER_TM_KIND");
+  const markdown =
+    kindAttr === "note"
+      ? normalizeNoteMarkdown(readNoteDescription(el) || el.getAttribute("HIER_TM_MARKDOWN") || "")
+      : "";
 
   const children: TaskNode[] = [];
   for (const ch of el.children) {
     if (ch.tagName.toLowerCase() === "node") {
       children.push(readMmNode(ch, taken));
     }
+  }
+
+  if (kindAttr === "note") {
+    return {
+      id,
+      kind: "note",
+      title,
+      markdown,
+      link: "",
+      description: "",
+      tags: [],
+      dueDate: null,
+      reminderDate: null,
+      effort: 0,
+      children,
+    };
   }
 
   return {
@@ -130,6 +152,17 @@ function noteXml(description: string): string {
 
 function taskToMmXml(node: TaskNode, depth: number): string {
   const pad = "  ".repeat(depth);
+  if (isNoteNode(node)) {
+    const markdown = normalizeNoteMarkdown(node.markdown ?? "");
+    const textAttr = escAttr(node.title || "Notiz");
+    const kind = ` HIER_TM_KIND="note"`;
+    const mdAttr = markdown ? ` HIER_TM_MARKDOWN="${escAttr(markdown)}"` : "";
+    const childXml = node.children.map((c) => taskToMmXml(c, depth + 1)).join("");
+    if (!node.children.length && !mdAttr) {
+      return `${pad}<node TEXT="${textAttr}"${kind}/>\n`;
+    }
+    return `${pad}<node TEXT="${textAttr}"${kind}${mdAttr}>\n${childXml}${pad}</node>\n`;
+  }
   const tags = node.tags.length ? ` HIER_TM_TAGS="${escAttr(node.tags.join("|"))}"` : "";
   const unit: EffortUnit = getEffortUnit(node);
   const eff = node.effort > 0 ? ` HIER_TM_EFFORT="${escAttr(String(node.effort))}"` : "";

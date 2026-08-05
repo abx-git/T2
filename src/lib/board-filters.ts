@@ -177,6 +177,8 @@ export function boardFilterCriteriaMatches(
 
 /**
  * Karte passt zu den aktiven Filterkriterien.
+ * Notizen haben keine Filter-Facetten — sie matchen nie selbst
+ * (Sichtbarkeit steuert `rootsForMindmapDisplay` über die Elternkarte).
  * `and` = alle Kriterien müssen erfüllt sein;
  * `or` = mindestens ein Kriterium reicht.
  */
@@ -189,7 +191,7 @@ export function nodeMatchesBoardFilters(
     filterCombineMode?: FilterCombineMode;
   },
 ): boolean {
-  if (isNoteNode(node)) return true;
+  if (isNoteNode(node)) return false;
   const matches = boardFilterCriteriaMatches(node, opts);
   if (matches.length === 0) return true;
   const mode = opts.filterCombineMode ?? "and";

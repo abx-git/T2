@@ -81,6 +81,21 @@ describe("collectFilterMatchingCards", () => {
     expect(cards.map((c) => c.nodeId)).toEqual(["a"]);
   });
 
+  it("schließt Notiz-Knoten aus der Trefferliste aus", () => {
+    const withNote = [
+      node({ id: "p", title: "Parent", tags: ["work"] }, [
+        node({ id: "n", title: "Notiz", kind: "note", markdown: "Body", tags: ["work"] }),
+      ]),
+    ];
+    const cards = collectFilterMatchingCards(withNote, {
+      filterTags: ["work"],
+      filterColors: [],
+      filterScheduleKinds: [],
+      completedTag: DEFAULT_COMPLETED_TAG,
+    });
+    expect(cards.map((c) => c.nodeId)).toEqual(["p"]);
+  });
+
   it("OR: Tag oder Farbe reicht", () => {
     const cards = collectFilterMatchingCards(roots, {
       filterTags: ["work"],

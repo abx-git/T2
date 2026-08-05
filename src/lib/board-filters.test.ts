@@ -120,4 +120,28 @@ describe("board-filters", () => {
     expect(defaultColorForNewCard(["sky", "rose"])).toBeUndefined();
     expect(defaultColorForNewCard([])).toBeUndefined();
   });
+
+  it("Notizen matchen keine Board-Filter", () => {
+    const note: TaskNode = {
+      id: "n",
+      title: "N",
+      kind: "note",
+      markdown: "x",
+      link: "",
+      description: "",
+      tags: ["x"],
+      dueDate: new Date("2026-01-01"),
+      reminderDate: null,
+      effort: 0,
+      cardColor: "sky",
+      children: [],
+    };
+    expect(
+      nodeMatchesBoardFilters(note, {
+        filterTags: ["x"],
+        filterColors: [],
+        filterScheduleKinds: [],
+      }),
+    ).toBe(false);
+  });
 });

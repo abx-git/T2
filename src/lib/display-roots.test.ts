@@ -111,4 +111,43 @@ describe("rootsForMindmapDisplay", () => {
     });
     expect(display.map((n) => n.id).sort()).toEqual(["a", "b", "c"]);
   });
+
+  it("zeigt Notizen nur unter filternden Elternkarten", () => {
+    const note = (id: string, title: string, children: TaskNode[] = []): TaskNode => ({
+      id,
+      title,
+      kind: "note",
+      markdown: title,
+      link: "",
+      description: "",
+      tags: [],
+      dueDate: null,
+      reminderDate: null,
+      effort: 0,
+      children,
+    });
+    const roots = [
+      node("a", "A", {
+        tags: ["x"],
+        children: [note("n1", "Notiz unter A"), node("a2", "Kind ohne Tag")],
+      }),
+      node("b", "B", {
+        children: [
+          note("n2", "Notiz unter B"),
+          node("b1", "B1", { tags: ["x"], children: [note("n3", "Notiz unter B1")] }),
+        ],
+      }),
+      note("n-root", "Wurzelnotiz"),
+    ];
+    const display = rootsForMindmapDisplay(roots, {
+      hideCompletedTasks: false,
+      completedTag: "Erledigt",
+      filterTags: ["x"],
+    });
+    expect(display.map((n) => n.id).sort()).toEqual(["a", "b"]);
+    expect(display.find((n) => n.id === "a")?.children.map((c) => c.id)).toEqual(["n1"]);
+    const b = display.find((n) => n.id === "b");
+    expect(b?.children.map((c) => c.id)).toEqual(["b1"]);
+    expect(b?.children[0]?.children.map((c) => c.id)).toEqual(["n3"]);
+  });
 });

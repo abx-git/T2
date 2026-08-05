@@ -139,14 +139,31 @@ export function rootsForMindmapDisplay(
       filterScheduleKinds,
       filterCombineMode,
     };
-    const walk = (n: TaskNode): TaskNode | null => {
-      const kids = n.children.map(walk).filter((c): c is TaskNode => c !== null);
-      if (isNoteNode(n) || nodeMatchesBoardFilters(n, filterOpts) || kids.length > 0) {
-        return { ...n, children: kids };
+    /**
+     * Notizen erscheinen nur, wenn die nächste Eltern-*Karte* den Filter erfüllt.
+     * Nicht passende Notizen werden weggelassen; deren Kinder ggf. angehoben.
+     */
+    const walkMany = (nodes: TaskNode[], parentCardMatches: boolean): TaskNode[] => {
+      const out: TaskNode[] = [];
+      for (const n of nodes) {
+        if (isNoteNode(n)) {
+          const kids = walkMany(n.children, parentCardMatches);
+          if (parentCardMatches) {
+            out.push({ ...n, children: kids });
+          } else {
+            out.push(...kids);
+          }
+          continue;
+        }
+        const selfMatches = nodeMatchesBoardFilters(n, filterOpts);
+        const kids = walkMany(n.children, selfMatches);
+        if (selfMatches || kids.length > 0) {
+          out.push({ ...n, children: kids });
+        }
       }
-      return null;
+      return out;
     };
-    next = next.map(walk).filter((c): c is TaskNode => c !== null);
+    next = walkMany(next, false);
   }
 
   return next;

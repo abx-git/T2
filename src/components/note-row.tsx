@@ -23,8 +23,10 @@ import { createPortal } from "react-dom";
 
 import type { CardInteractionMode } from "@/lib/card-expand";
 import { isCoarsePointerDevice } from "@/lib/coarse-pointer";
-import { nodeDisplayTitle, noteMarkdownPreview } from "@/lib/tree-node-kind";
+import { nodeDisplayTitle } from "@/lib/tree-node-kind";
 import type { TaskNode } from "@/types/task-node";
+
+import { NoteMarkdownContent } from "./note-markdown-content";
 
 const rowMenuItemClass =
   "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-slate-700 hover:bg-slate-50";
@@ -126,7 +128,8 @@ export function NoteRow({
     else onDrillIn();
   };
   const displayTitle = nodeDisplayTitle(node);
-  const preview = noteMarkdownPreview(node.markdown);
+  const hasExplicitTitle = Boolean(node.title.trim());
+  const hasMarkdown = Boolean((node.markdown ?? "").trim());
 
   const style = {
     ...(transform
@@ -260,21 +263,27 @@ export function NoteRow({
       </div>
 
       <div className="min-w-0 flex-1">
-        <button
-          type="button"
-          id={headingId}
-          className="w-full truncate text-left text-sm font-medium text-slate-900 hover:text-violet-900"
-          title={displayTitle}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenDetails();
-          }}
-        >
-          {displayTitle}
-        </button>
-        {preview ? (
-          <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-slate-600">{preview}</p>
+        {hasExplicitTitle ? (
+          <button
+            type="button"
+            id={headingId}
+            className="mb-0.5 w-full truncate text-left text-sm font-medium text-slate-900 hover:text-violet-900"
+            title={displayTitle}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenDetails();
+            }}
+          >
+            {displayTitle}
+          </button>
+        ) : (
+          <span id={headingId} className="sr-only">
+            {displayTitle}
+          </span>
+        )}
+        {hasMarkdown ? (
+          <NoteMarkdownContent markdown={node.markdown} compact />
         ) : (
           <p className="mt-0.5 text-[11px] italic text-slate-400">Leere Notiz — zum Bearbeiten öffnen</p>
         )}

@@ -1,5 +1,9 @@
 import { slugForBackupFilename } from "@/lib/board-backup";
-import { formatObsidianTasksDate, formatObsidianTaskTitle } from "@/lib/obsidian-tasks-export";
+import {
+  appendMarkdownDescriptionLines,
+  formatObsidianTasksDate,
+  formatObsidianTaskTitle,
+} from "@/lib/obsidian-tasks-export";
 import { formatEffortValue, getEffortUnit } from "@/lib/task-effort";
 import { formatTaskIdForDisplay } from "@/lib/task-id";
 import { getTaskCommand } from "@/lib/task-command";
@@ -62,7 +66,7 @@ export const SUBTREE_EXPORT_ATTRIBUTE_LABELS: Record<SubtreeExportAttributeKey, 
   title: "Titel",
   link: "Link",
   command: "Befehl",
-  description: "Beschreibung",
+  description: "Beschreibung / Notizen",
   tags: "Tags",
   dueDate: "Fälligkeit",
   reminderDate: "Erinnerung",
@@ -106,6 +110,7 @@ function appendMarkdownAttributeLines(
   node: TaskNode,
   attrs: SubtreeExportAttributes,
   options: SubtreeBranchExportOptions,
+  depth: number,
 ): void {
   const href = taskLinkHref(node.link);
   if (attrs.link && href && !attrs.title) {
@@ -144,9 +149,8 @@ function appendMarkdownAttributeLines(
   }
 
   if (attrs.description && node.description.trim()) {
-    for (const part of node.description.trim().split(/\r?\n/)) {
-      lines.push(`> ${part}`);
-    }
+    const indent = depth > 0 ? "\t".repeat(depth) : "";
+    appendMarkdownDescriptionLines(lines, node.description, indent);
   }
 }
 
@@ -158,7 +162,7 @@ function walkMarkdown(
 ): void {
   const { attributes: attrs } = options;
   lines.push(`${headingPrefix(depth)}${formatMarkdownHeadingTitle(node, attrs, options.completedTag)}`);
-  appendMarkdownAttributeLines(lines, node, attrs, options);
+  appendMarkdownAttributeLines(lines, node, attrs, options, depth);
   lines.push("");
   for (const child of node.children) {
     walkMarkdown(lines, child, depth + 1, options);

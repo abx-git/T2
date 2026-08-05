@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyContextListDrop,
+  contextCardDragId,
   contextGapId,
+  contextNestDropId,
   insertNodeIntoContextList,
+  parseContextCardDragId,
   parseContextGapId,
+  parseContextNestDropId,
 } from "@/lib/context-list-dnd";
 import type { TaskNode } from "@/types/task-node";
 
@@ -32,6 +36,20 @@ describe("context gap ids", () => {
       listParentId: "parent-a",
       insertIndex: 1,
     });
+  });
+
+  it("roundtrips pane-prefixed gap and nest ids", () => {
+    expect(parseContextGapId(contextGapId(null, 0, "left"))).toEqual({
+      listParentId: null,
+      insertIndex: 0,
+    });
+    expect(parseContextGapId(contextGapId("p", 2, "right"))).toEqual({
+      listParentId: "p",
+      insertIndex: 2,
+    });
+    const nest = contextNestDropId("left", "card-1");
+    expect(parseContextNestDropId(nest)).toBe("card-1");
+    expect(parseContextCardDragId(contextCardDragId("right", "card-2"))).toBe("card-2");
   });
 });
 

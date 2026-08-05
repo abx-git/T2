@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import type { CardFieldVisibility } from "@/lib/card-field-visibility";
 import type { CardInteractionMode } from "@/lib/card-expand";
 import { visibleChildrenOf } from "@/lib/card-expand";
+import type { BoardPaneId } from "@/lib/board-pane";
 import { contextGapId } from "@/lib/context-list-dnd";
 import { isNoteNode } from "@/lib/tree-node-kind";
 import type { TaskNode } from "@/types/task-node";
@@ -15,19 +16,21 @@ import { NoteRow } from "./note-row";
 import { TaskRow, type TaskTitleSaveMeta } from "./task-row";
 
 function GapDrop({
+  paneId,
   listParentId,
   insertIndex,
   large,
   emptyHint,
 }: {
+  paneId: BoardPaneId;
   listParentId: string | null;
   insertIndex: number;
   large?: boolean;
   emptyHint?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({
-    id: contextGapId(listParentId, insertIndex),
-    data: { kind: "contextGap" as const, listParentId, insertIndex },
+    id: contextGapId(listParentId, insertIndex, paneId),
+    data: { kind: "contextGap" as const, listParentId, insertIndex, paneId },
   });
   return (
     <div
@@ -59,6 +62,7 @@ function GapDrop({
 }
 
 type CardBranchSharedProps = {
+  paneId: BoardPaneId;
   fieldVisibility: CardFieldVisibility;
   searchFocusNodeId?: string | null;
   keyboardFocusNodeId?: string | null;
@@ -94,6 +98,7 @@ function TreeEntryRow({
   isCollapsed: boolean;
 }) {
   const {
+    paneId,
     fieldVisibility,
     searchFocusNodeId,
     keyboardFocusNodeId,
@@ -115,6 +120,7 @@ function TreeEntryRow({
   } = shared;
 
   const common = {
+    paneId,
     nestDepth,
     isCollapsed,
     interactionMode,
@@ -160,6 +166,7 @@ function NestedCardBranch({
   depth: number;
 }) {
   const {
+    paneId,
     fieldVisibility,
     searchFocusNodeId,
     keyboardFocusNodeId,
@@ -183,7 +190,7 @@ function NestedCardBranch({
 
   return (
     <div className="space-y-0">
-      <GapDrop listParentId={listParentId} insertIndex={0} />
+      <GapDrop paneId={paneId} listParentId={listParentId} insertIndex={0} />
       {nodes.map((node, index) => {
         const collapsed = cardCollapsedIds.has(node.id);
         const kids =
@@ -208,7 +215,7 @@ function NestedCardBranch({
                 />
               </div>
             ) : null}
-            <GapDrop listParentId={listParentId} insertIndex={index + 1} />
+            <GapDrop paneId={paneId} listParentId={listParentId} insertIndex={index + 1} />
           </div>
         );
       })}
@@ -217,6 +224,7 @@ function NestedCardBranch({
 }
 
 export interface ContextCardListProps {
+  paneId: BoardPaneId;
   nodes: TaskNode[];
   /** Parent der angezeigten Liste (`null` = Board-Wurzeln). */
   contextNodeId: string | null;
@@ -246,6 +254,7 @@ export interface ContextCardListProps {
 }
 
 export function ContextCardList({
+  paneId,
   nodes,
   contextNodeId,
   contextLabel,
@@ -274,13 +283,16 @@ export function ContextCardList({
 }: ContextCardListProps) {
   useEffect(() => {
     if (!keyboardFocusNodeId) return;
-    const el = document.querySelector(`[data-task-card-id="${CSS.escape(keyboardFocusNodeId)}"]`);
+    const el = document.querySelector(
+      `[data-board-pane="${paneId}"][data-task-card-id="${CSS.escape(keyboardFocusNodeId)}"]`,
+    );
     if (el instanceof HTMLElement) {
       el.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
-  }, [keyboardFocusNodeId]);
+  }, [keyboardFocusNodeId, paneId]);
 
   const shared: CardBranchSharedProps = {
+    paneId,
     fieldVisibility,
     searchFocusNodeId,
     keyboardFocusNodeId,
@@ -364,6 +376,7 @@ export function ContextCardList({
 
       <div className="min-h-0 flex-1 space-y-0 overflow-y-auto pb-8">
         <GapDrop
+          paneId={paneId}
           listParentId={contextNodeId}
           insertIndex={0}
           large={nodes.length === 0}
@@ -393,7 +406,7 @@ export function ContextCardList({
                   />
                 </div>
               ) : null}
-              <GapDrop listParentId={contextNodeId} insertIndex={index + 1} />
+              <GapDrop paneId={paneId} listParentId={contextNodeId} insertIndex={index + 1} />
             </div>
           );
         })}

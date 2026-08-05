@@ -41,6 +41,11 @@ export function boardNodeIdFromDragActive(activeId: string | number): string | n
   const s = String(activeId);
   const fromOutline = parseOutlineDragId(s);
   if (fromOutline) return fromOutline;
+  // Lazy import avoided: context card ids use pane:…:context-card:… or legacy bare id.
+  const paneMatch = /^pane:(?:left|right):context-card:(.+)$/.exec(s);
+  if (paneMatch?.[1]) return paneMatch[1];
+  const bareCard = /^context-card:(.+)$/.exec(s);
+  if (bareCard?.[1]) return bareCard[1];
   return s;
 }
 

@@ -158,6 +158,21 @@ describe("formatFilterResultsMarkdown", () => {
     expect(md).toContain("**Task**");
   });
 
+  it("includes notes as indented blockquote", () => {
+    const md = formatFilterResultsMarkdown(
+      [node({ id: "t", title: "Task", tags: ["x"], description: "Wichtig\nZweite Zeile" })],
+      {
+        style: "plain",
+        filterTags: ["x"],
+        filterColors: [],
+        filterScheduleKinds: [],
+        completedTag: DEFAULT_COMPLETED_TAG,
+      },
+    );
+    expect(md).toContain("\t> Wichtig");
+    expect(md).toContain("\t> Zweite Zeile");
+  });
+
   it("checklist export uses checkboxes", () => {
     const md = formatFilterResultsMarkdown(
       [node({ id: "t", title: "Task", tags: ["x"] })],

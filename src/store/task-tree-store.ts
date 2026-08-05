@@ -3,8 +3,13 @@ import { temporal } from "zundo";
 
 import {
   contextIdForRevealingNode,
-  normalizeContextNodeId,
 } from "@/lib/board-context";
+import {
+  DEFAULT_PANE_CONTEXTS,
+  normalizePaneContexts,
+  type BoardPaneId,
+  type PaneContexts,
+} from "@/lib/board-pane";
 import {
   collectSubtreeNodeIds,
   detachNodeById,
@@ -200,15 +205,22 @@ export interface TaskTreeState {
   expandToNode: (nodeId: string) => void;
 
   /**
-   * Drill-down-Kontext: `null` = Wurzelkarten in der Liste;
-   * sonst Kinder von `contextNodeId`.
+   * Drill-down-Kontext der aktiven Pane (`null` = Wurzelkarten).
+   * Gespiegelt aus `contextByPane[activePane]` für bestehende Call-Sites.
    */
   contextNodeId: string | null;
-  setContextNodeId: (nodeId: string | null) => void;
+  /** Unabhängiger Drill-Kontext je Hälfte. */
+  contextByPane: PaneContexts;
+  activePane: BoardPaneId;
+  setActivePane: (pane: BoardPaneId) => void;
+  /** Geteilte Hauptansicht (zwei identische Panes); Standard an. */
+  splitViewEnabled: boolean;
+  setSplitViewEnabled: (on: boolean) => void;
+  setContextNodeId: (nodeId: string | null, pane?: BoardPaneId) => void;
   /** In diese Karte hinein (Kontext = nodeId). */
-  drillIntoNode: (nodeId: string) => void;
+  drillIntoNode: (nodeId: string, pane?: BoardPaneId) => void;
   /** Eine Ebene nach oben. */
-  drillUp: () => void;
+  drillUp: (pane?: BoardPaneId) => void;
 
   /** DnD innerhalb der Kontext-Liste (Reorder / Nest). */
   applyContextListDrag: (activeId: string, drop: ContextListDrop) => void;
@@ -320,6 +332,17 @@ function insertNoteAtIndex(
   return insertNodeAtIndex(set, get, parentId, index, newNode);
 }
 
+function syncActiveContext(
+  contextByPane: PaneContexts,
+  activePane: BoardPaneId,
+): Pick<TaskTreeState, "contextByPane" | "contextNodeId" | "activePane"> {
+  return {
+    contextByPane,
+    activePane,
+    contextNodeId: contextByPane[activePane],
+  };
+}
+
 function cleanupAfterSubtreeRemoved(
   state: TaskTreeState,
   removedIds: Set<string>,
@@ -327,12 +350,13 @@ function cleanupAfterSubtreeRemoved(
 ): Partial<TaskTreeState> {
   const collapsedIds = state.collapsedIds.filter((id) => !removedIds.has(id));
   const cardCollapsedIds = state.cardCollapsedIds.filter((id) => !removedIds.has(id));
+  const contextByPane = normalizePaneContexts(nextRoots, state.contextByPane);
   return {
     roots: nextRoots,
     pathIds: normalizePathIds(nextRoots, state.pathIds),
     collapsedIds,
     cardCollapsedIds,
-    contextNodeId: normalizeContextNodeId(nextRoots, state.contextNodeId),
+    ...syncActiveContext(contextByPane, state.activePane),
   };
 }
 
@@ -366,6 +390,9 @@ export const useTaskTreeStore = create<TaskTreeState>()(
   cardInteractionMode: "expand",
 
   contextNodeId: null,
+  contextByPane: { ...DEFAULT_PANE_CONTEXTS },
+  activePane: "left",
+  splitViewEnabled: true,
 
   hideCompletedTasks: false,
 
@@ -571,18 +598,40 @@ export const useTaskTreeStore = create<TaskTreeState>()(
       const cardCollapsedUnchanged =
         nextCardCollapsed.length === s.cardCollapsedIds.length &&
         nextCardCollapsed.every((id, i) => id === s.cardCollapsedIds[i]);
-      const contextNodeId = contextIdForRevealingNode(s.roots, nodeId);
+      const nextContext = contextIdForRevealingNode(s.roots, nodeId);
+      const contextByPane = { ...s.contextByPane, [s.activePane]: nextContext };
       return {
-        contextNodeId,
+        ...syncActiveContext(contextByPane, s.activePane),
         ...(collapsedUnchanged ? {} : { collapsedIds: nextCollapsed }),
         ...(cardCollapsedUnchanged ? {} : { cardCollapsedIds: nextCardCollapsed }),
       };
     });
   },
 
-  setContextNodeId: (nodeId) => {
+  setActivePane: (pane) => {
     set((s) => {
-      if (nodeId === null) return { contextNodeId: null };
+      if (s.activePane === pane) return {};
+      return syncActiveContext(s.contextByPane, pane);
+    });
+  },
+
+  setSplitViewEnabled: (on) => {
+    set((s) => {
+      if (s.splitViewEnabled === on) return {};
+      if (!on) {
+        return { splitViewEnabled: false, ...syncActiveContext(s.contextByPane, s.activePane) };
+      }
+      return { splitViewEnabled: true };
+    });
+  },
+
+  setContextNodeId: (nodeId, pane) => {
+    set((s) => {
+      const targetPane = pane ?? s.activePane;
+      if (nodeId === null) {
+        const contextByPane = { ...s.contextByPane, [targetPane]: null };
+        return syncActiveContext(contextByPane, s.activePane);
+      }
       if (!findNodeById(s.roots, nodeId)) return {};
       const path = pathFromRootToNode(s.roots, nodeId);
       if (!path) return {};
@@ -595,24 +644,28 @@ export const useTaskTreeStore = create<TaskTreeState>()(
       const cardCollapsedUnchanged =
         nextCardCollapsed.length === s.cardCollapsedIds.length &&
         nextCardCollapsed.every((id, i) => id === s.cardCollapsedIds[i]);
+      const contextByPane = { ...s.contextByPane, [targetPane]: nodeId };
       return {
-        contextNodeId: nodeId,
+        ...syncActiveContext(contextByPane, s.activePane),
         ...(collapsedUnchanged ? {} : { collapsedIds: nextCollapsed }),
         ...(cardCollapsedUnchanged ? {} : { cardCollapsedIds: nextCardCollapsed }),
       };
     });
   },
 
-  drillIntoNode: (nodeId) => {
-    get().setContextNodeId(nodeId);
+  drillIntoNode: (nodeId, pane) => {
+    get().setContextNodeId(nodeId, pane);
   },
 
-  drillUp: () => {
+  drillUp: (pane) => {
     set((s) => {
-      if (!s.contextNodeId) return {};
-      const parent = findDirectParentId(s.roots, s.contextNodeId);
-      if (parent === undefined) return { contextNodeId: null };
-      return { contextNodeId: parent };
+      const targetPane = pane ?? s.activePane;
+      const current = s.contextByPane[targetPane];
+      if (!current) return {};
+      const parent = findDirectParentId(s.roots, current);
+      const next = parent === undefined ? null : parent;
+      const contextByPane = { ...s.contextByPane, [targetPane]: next };
+      return syncActiveContext(contextByPane, s.activePane);
     });
   },
 
@@ -623,10 +676,11 @@ export const useTaskTreeStore = create<TaskTreeState>()(
         s.completedTag,
       );
       const nextPath = pathIdsAfterNodeMove(nextRoots, activeId, s.pathIds);
+      const contextByPane = normalizePaneContexts(nextRoots, s.contextByPane);
       return {
         roots: nextRoots,
         pathIds: nextPath,
-        contextNodeId: normalizeContextNodeId(nextRoots, s.contextNodeId),
+        ...syncActiveContext(contextByPane, s.activePane),
       };
     });
   },
@@ -639,10 +693,11 @@ export const useTaskTreeStore = create<TaskTreeState>()(
       );
       if (nextRoots === s.roots) return {};
       const nextPath = pathIdsAfterNodeMove(nextRoots, activeId, s.pathIds);
+      const contextByPane = normalizePaneContexts(nextRoots, s.contextByPane);
       return {
         roots: nextRoots,
         pathIds: nextPath,
-        contextNodeId: normalizeContextNodeId(nextRoots, s.contextNodeId),
+        ...syncActiveContext(contextByPane, s.activePane),
       };
     });
   },
@@ -679,11 +734,12 @@ export const useTaskTreeStore = create<TaskTreeState>()(
         );
         if (boardNext === s.roots) return {};
         const nextPath = pathIdsAfterNodeMove(boardNext, detached.id, s.pathIds);
+        const contextByPane = normalizePaneContexts(boardNext, s.contextByPane);
         return {
           roots: boardNext,
           pathIds: nextPath,
           clipboardRoots: refreshCalculatedEffortsInTree(clipNext, s.completedTag),
-          contextNodeId: normalizeContextNodeId(boardNext, s.contextNodeId),
+          ...syncActiveContext(contextByPane, s.activePane),
         };
       }
 
@@ -696,11 +752,12 @@ export const useTaskTreeStore = create<TaskTreeState>()(
         );
         if (boardNext === s.roots) return {};
         const nextPath = pathIdsAfterNodeMove(boardNext, detached.id, s.pathIds);
+        const contextByPane = normalizePaneContexts(boardNext, s.contextByPane);
         return {
           roots: boardNext,
           pathIds: nextPath,
           clipboardRoots: refreshCalculatedEffortsInTree(clipNext, s.completedTag),
-          contextNodeId: normalizeContextNodeId(boardNext, s.contextNodeId),
+          ...syncActiveContext(contextByPane, s.activePane),
         };
       }
 
@@ -770,12 +827,13 @@ export const useTaskTreeStore = create<TaskTreeState>()(
       const nextRoots = refreshCalculatedEffortsInTree(next, s.completedTag);
       const collapsedIds = s.collapsedIds.filter((id) => !removedIds.has(id));
       const cardCollapsedIds = s.cardCollapsedIds.filter((id) => !removedIds.has(id));
+      const contextByPane = normalizePaneContexts(nextRoots, s.contextByPane);
       return {
         roots: nextRoots,
         pathIds: normalizePathIds(nextRoots, s.pathIds),
         collapsedIds,
         cardCollapsedIds,
-        contextNodeId: normalizeContextNodeId(nextRoots, s.contextNodeId),
+        ...syncActiveContext(contextByPane, s.activePane),
       };
     });
   },
@@ -813,7 +871,7 @@ export const useTaskTreeStore = create<TaskTreeState>()(
       collapsedIds,
       cardCollapsedIds,
       cardInteractionMode,
-      contextNodeId: null,
+      ...syncActiveContext({ ...DEFAULT_PANE_CONTEXTS }, "left"),
       columnTitleOverrides,
       ...(typeof incomingHideDone === "boolean" ? { hideCompletedTasks: incomingHideDone } : {}),
       ...(typeof incomingCompletedTag === "string"

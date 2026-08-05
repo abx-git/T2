@@ -38,8 +38,10 @@ import {
   cardColorClass,
   type CardColorId,
 } from "@/lib/card-color";
+import type { BoardPaneId } from "@/lib/board-pane";
 import { isCoarsePointerDevice } from "@/lib/coarse-pointer";
 import { writeClipboardText } from "@/lib/clipboard";
+import { contextCardDragId, contextNestDropId } from "@/lib/context-list-dnd";
 import {
   effortTotalsIsEmpty,
   formatEffortTotals,
@@ -77,6 +79,8 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 
 export interface TaskRowProps {
   node: TaskNode;
+  /** Pane for unique DnD ids when split view is on. */
+  paneId: BoardPaneId;
   isSearchFocus?: boolean;
   isKeyboardFocus?: boolean;
   isNestDropTarget?: boolean;
@@ -105,6 +109,7 @@ export interface TaskRowProps {
 
 export function TaskRow({
   node,
+  paneId,
   isSearchFocus = false,
   isKeyboardFocus = false,
   isNestDropTarget = false,
@@ -149,14 +154,14 @@ export function TaskRow({
   }, []);
 
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: node.id,
-    data: { kind: "contextCard" as const, nodeId: node.id },
+    id: contextCardDragId(paneId, node.id),
+    data: { kind: "contextCard" as const, nodeId: node.id, paneId },
     disabled: isTitleEditing,
   });
 
   const { setNodeRef: setDropRef, isOver } = useDroppable({
-    id: node.id,
-    data: { kind: "contextNest" as const, nodeId: node.id },
+    id: contextNestDropId(paneId, node.id),
+    data: { kind: "contextNest" as const, nodeId: node.id, paneId },
     disabled: isDragging,
   });
 
@@ -421,6 +426,7 @@ export function TaskRow({
     <article
       ref={setRefs}
       data-task-card-id={node.id}
+      data-board-pane={paneId}
       aria-labelledby={headingId}
       style={style}
       {...attributes}

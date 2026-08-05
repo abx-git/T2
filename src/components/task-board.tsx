@@ -13,7 +13,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { CircleHelp, FileStack, HardDrive, Redo2, Settings2, SlidersHorizontal, Tag, Undo2 } from "lucide-react";
+import { CircleHelp, Columns2, FileStack, HardDrive, Redo2, Settings2, SlidersHorizontal, Square, Tag, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent } from "react";
 import { useStore } from "zustand";
 
@@ -30,6 +30,11 @@ import {
   getLocalBackup,
 } from "@/lib/board-backup";
 import { boardCollisionDetection } from "@/lib/board-dnd-collision";
+import {
+  BOARD_PANE_IDS,
+  type BoardPaneId,
+  type PaneContexts,
+} from "@/lib/board-pane";
 import { applyBoardJsonToStore, applyBoardPayloadToStore, boardJsonFromStoreState } from "@/lib/file-board-reconcile";
 import {
   getTemplatesSnapshot,
@@ -104,7 +109,7 @@ import {
 } from "@/lib/board-context";
 import {
   parseContextGapId,
-  type ContextListDrop,
+  parseContextNestDropId,
 } from "@/lib/context-list-dnd";
 import {
   boardNodeIdFromDragActive,
@@ -131,12 +136,11 @@ import type { TaskNode } from "@/types/task-node";
 
 import { TagFilterBar } from "./tag-filter-bar";
 import { BetaRibbon } from "./beta-ribbon";
+import { BoardPane } from "./board-pane";
 import { ClipboardDropTarget } from "./clipboard-drop-target";
 import { ClipboardSidebar } from "./clipboard-sidebar";
 import { TaskSearch } from "./task-search";
-import { BreadcrumbTrail } from "./breadcrumb-trail";
 import { OutlineRail } from "./outline-rail";
-import { ContextCardList } from "./context-card-list";
 import { CardFieldVisibilityDialog } from "./card-field-visibility-dialog";
 import { ConfirmDialog } from "./confirm-dialog";
 import { DepthLevelsControl } from "./depth-levels-control";
@@ -193,6 +197,11 @@ export function TaskBoard() {
   const setCardInteractionMode = useTaskTreeStore((s) => s.setCardInteractionMode);
   const expandToNode = useTaskTreeStore((s) => s.expandToNode);
   const contextNodeId = useTaskTreeStore((s) => s.contextNodeId);
+  const contextByPane = useTaskTreeStore((s) => s.contextByPane);
+  const activePane = useTaskTreeStore((s) => s.activePane);
+  const setActivePane = useTaskTreeStore((s) => s.setActivePane);
+  const splitViewEnabled = useTaskTreeStore((s) => s.splitViewEnabled);
+  const setSplitViewEnabled = useTaskTreeStore((s) => s.setSplitViewEnabled);
   const setContextNodeId = useTaskTreeStore((s) => s.setContextNodeId);
   const drillIntoNode = useTaskTreeStore((s) => s.drillIntoNode);
   const drillUp = useTaskTreeStore((s) => s.drillUp);
@@ -228,7 +237,19 @@ export function TaskBoard() {
   const canRedo = useStore(useTaskTreeStore.temporal, (s) => s.futureStates.length > 0);
 
   const [searchFocusNodeId, setSearchFocusNodeId] = useState<string | null>(null);
-  const [keyboardFocusNodeId, setKeyboardFocusNodeId] = useState<string | null>(null);
+  const [keyboardFocusByPane, setKeyboardFocusByPane] = useState<PaneContexts>({
+    left: null,
+    right: null,
+  });
+  const keyboardFocusNodeId = keyboardFocusByPane[activePane];
+  const setKeyboardFocusNodeId = useCallback(
+    (nodeId: string | null, pane: BoardPaneId = activePane) => {
+      setKeyboardFocusByPane((prev) =>
+        prev[pane] === nodeId ? prev : { ...prev, [pane]: nodeId },
+      );
+    },
+    [activePane],
+  );
 
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [nestDropTargetId, setNestDropTargetId] = useState<string | null>(null);
@@ -299,7 +320,7 @@ export function TaskBoard() {
     if (!scrollToNodeId) return;
     const reveal = () => {
       const target = document.querySelector(
-        `[data-task-card-id="${CSS.escape(scrollToNodeId)}"]`,
+        `[data-board-pane="${activePane}"][data-task-card-id="${CSS.escape(scrollToNodeId)}"]`,
       );
       if (!(target instanceof HTMLElement)) return false;
       target.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -314,7 +335,7 @@ export function TaskBoard() {
       if (frame < 8) requestAnimationFrame(tryReveal);
     };
     requestAnimationFrame(tryReveal);
-  }, [scrollToNodeId]);
+  }, [scrollToNodeId, activePane]);
 
   const handleSearchSelect = useCallback(
     (nodeId: string) => {
@@ -876,8 +897,10 @@ export function TaskBoard() {
     }
     const kind = over.data.current?.kind as string | undefined;
     if (kind === "contextNest") {
-      const id = String(over.id);
-      setNestDropTargetId(id === String(event.active.id) ? null : id);
+      const nestId =
+        (over.data.current?.nodeId as string | undefined) ?? parseContextNestDropId(over.id);
+      const activeNodeId = boardNodeIdFromDragActive(event.active.id);
+      setNestDropTargetId(nestId && nestId !== activeNodeId ? nestId : null);
       return;
     }
     if (kind === "outlineNest") {
@@ -956,11 +979,15 @@ export function TaskBoard() {
         return;
       }
       const nestFromClip = over.data.current?.kind as string | undefined;
-      if (nestFromClip === "contextNest" && overId !== activeNodeId) {
-        applyUnifiedDrag(activeNodeId, {
-          type: "from-clipboard-to-context",
-          drop: { kind: "nest", targetId: overId },
-        });
+      if (nestFromClip === "contextNest") {
+        const nestTarget =
+          (over.data.current?.nodeId as string | undefined) ?? parseContextNestDropId(overId);
+        if (nestTarget && nestTarget !== activeNodeId) {
+          applyUnifiedDrag(activeNodeId, {
+            type: "from-clipboard-to-context",
+            drop: { kind: "nest", targetId: nestTarget },
+          });
+        }
       }
       return;
     }
@@ -977,53 +1004,92 @@ export function TaskBoard() {
       return;
     }
     const nestKind = over.data.current?.kind as string | undefined;
-    if (nestKind === "contextNest" && overId !== activeNodeId) {
-      applyContextListDrag(activeNodeId, { kind: "nest", targetId: overId });
+    if (nestKind === "contextNest") {
+      const nestTarget =
+        (over.data.current?.nodeId as string | undefined) ?? parseContextNestDropId(overId);
+      if (nestTarget && nestTarget !== activeNodeId) {
+        applyContextListDrag(activeNodeId, { kind: "nest", targetId: nestTarget });
+      }
     }
   };
 
   const collapsedSet = useMemo(() => new Set(collapsedIds), [collapsedIds]);
   const cardCollapsedSet = useMemo(() => new Set(cardCollapsedIds), [cardCollapsedIds]);
 
-  const contextListNodes = useMemo(() => {
-    const filtered = rootsForMindmapDisplay(roots, {
+  const filteredRoots = useMemo(
+    () =>
+      rootsForMindmapDisplay(roots, {
+        hideCompletedTasks,
+        completedTag,
+        filterTags,
+        filterColors,
+        filterScheduleKinds,
+        filterCombineMode,
+      }),
+    [
+      roots,
       hideCompletedTasks,
       completedTag,
       filterTags,
       filterColors,
       filterScheduleKinds,
       filterCombineMode,
-    });
-    return contextChildren(filtered, contextNodeId);
-  }, [
-    roots,
-    contextNodeId,
-    hideCompletedTasks,
-    completedTag,
-    filterTags,
-    filterColors,
-    filterScheduleKinds,
-    filterCombineMode,
-  ]);
-
-  const visibleExpandCards = useMemo(() => {
-    if (cardInteractionMode !== "expand") return [];
-    return flattenVisibleCards(contextListNodes, cardCollapsedSet, {
-      hideCompleted: hideCompletedTasks,
-      completedTag,
-    });
-  }, [cardInteractionMode, contextListNodes, cardCollapsedSet, hideCompletedTasks, completedTag]);
-
-  const breadcrumbPath = useMemo(
-    () => contextPathNodes(roots, contextNodeId),
-    [roots, contextNodeId],
+    ],
   );
 
-  const contextLabel = useMemo(() => {
-    if (!contextNodeId) return "Wurzelkarten";
-    const n = findNodeById(roots, contextNodeId);
-    return n ? nodeDisplayTitle(n) : "(Ohne Titel)";
-  }, [roots, contextNodeId]);
+  const contextListNodesByPane = useMemo(() => {
+    const result = {} as Record<BoardPaneId, TaskNode[]>;
+    for (const pane of BOARD_PANE_IDS) {
+      result[pane] = contextChildren(filteredRoots, contextByPane[pane]);
+    }
+    return result;
+  }, [filteredRoots, contextByPane]);
+
+  const contextListNodes = contextListNodesByPane[activePane];
+
+  const visibleExpandCardsByPane = useMemo(() => {
+    const result = {} as Record<BoardPaneId, ReturnType<typeof flattenVisibleCards>>;
+    for (const pane of BOARD_PANE_IDS) {
+      result[pane] =
+        cardInteractionMode === "expand"
+          ? flattenVisibleCards(contextListNodesByPane[pane], cardCollapsedSet, {
+              hideCompleted: hideCompletedTasks,
+              completedTag,
+            })
+          : [];
+    }
+    return result;
+  }, [
+    cardInteractionMode,
+    contextListNodesByPane,
+    cardCollapsedSet,
+    hideCompletedTasks,
+    completedTag,
+  ]);
+
+  const visibleExpandCards = visibleExpandCardsByPane[activePane];
+
+  const breadcrumbPathByPane = useMemo(() => {
+    const result = {} as Record<BoardPaneId, TaskNode[]>;
+    for (const pane of BOARD_PANE_IDS) {
+      result[pane] = contextPathNodes(roots, contextByPane[pane]);
+    }
+    return result;
+  }, [roots, contextByPane]);
+
+  const contextLabelByPane = useMemo(() => {
+    const result = {} as Record<BoardPaneId, string>;
+    for (const pane of BOARD_PANE_IDS) {
+      const ctx = contextByPane[pane];
+      if (!ctx) {
+        result[pane] = "Wurzelkarten";
+        continue;
+      }
+      const n = findNodeById(roots, ctx);
+      result[pane] = n ? nodeDisplayTitle(n) : "(Ohne Titel)";
+    }
+    return result;
+  }, [roots, contextByPane]);
 
   const editingNode = editorNodeId ? findNodeById(roots, editorNodeId) : null;
   const editingIsNote = editingNode ? isNoteNode(editingNode) : false;
@@ -1313,34 +1379,120 @@ export function TaskBoard() {
 
   /** Drill-in ohne Fokus-Override (z. B. wenn danach beginEditingNewCard folgt). */
   const drillIntoOnly = useCallback(
-    (nodeId: string) => {
-      drillIntoNode(nodeId);
+    (nodeId: string, pane: BoardPaneId = activePane) => {
+      drillIntoNode(nodeId, pane);
       setSearchFocusNodeId(null);
     },
-    [drillIntoNode],
+    [drillIntoNode, activePane],
   );
 
   const handleDrillIn = useCallback(
-    (nodeId: string) => {
-      drillIntoNode(nodeId);
+    (nodeId: string, pane: BoardPaneId = activePane) => {
+      if (pane !== activePane) setActivePane(pane);
+      drillIntoNode(nodeId, pane);
       const kids = contextChildren(useTaskTreeStore.getState().roots, nodeId, {
         hideCompleted: hideCompletedTasks,
         completedTag,
       });
       const first = firstContextCardId(kids);
-      setKeyboardFocusNodeId(first);
+      setKeyboardFocusNodeId(first, pane);
       setSearchFocusNodeId(null);
       if (first) setScrollToNodeId(first);
     },
-    [drillIntoNode, hideCompletedTasks, completedTag],
+    [drillIntoNode, hideCompletedTasks, completedTag, activePane, setActivePane, setKeyboardFocusNodeId],
   );
 
   const handleOutlineSelect = useCallback(
     (nodeId: string) => {
-      handleDrillIn(nodeId);
+      handleDrillIn(nodeId, activePane);
     },
-    [handleDrillIn],
+    [handleDrillIn, activePane],
   );
+
+  const renderPane = (paneId: BoardPaneId) => {
+    const ctx = contextByPane[paneId];
+    const nodes = contextListNodesByPane[paneId];
+    const isActive = activePane === paneId;
+    return (
+      <BoardPane
+        key={paneId}
+        paneId={paneId}
+        active={isActive}
+        dragging={Boolean(activeDragId)}
+        contextNodeId={ctx}
+        breadcrumbPath={breadcrumbPathByPane[paneId]}
+        contextLabel={contextLabelByPane[paneId]}
+        nodes={nodes}
+        fieldVisibility={cardFieldVisibility}
+        searchFocusNodeId={isActive ? searchFocusNodeId : null}
+        keyboardFocusNodeId={keyboardFocusByPane[paneId]}
+        titleEditNodeId={titleEditNodeId}
+        nestDropTargetId={nestDropTargetId}
+        interactionMode={cardInteractionMode}
+        cardCollapsedIds={cardCollapsedSet}
+        hideCompleted={hideCompletedTasks}
+        completedTag={completedTag}
+        onActivate={() => setActivePane(paneId)}
+        onNavigateRoot={() => {
+          setActivePane(paneId);
+          setContextNodeId(null, paneId);
+          setKeyboardFocusNodeId(firstContextCardId(contextChildren(roots, null)), paneId);
+        }}
+        onNavigateTo={(id) => {
+          setActivePane(paneId);
+          setContextNodeId(id, paneId);
+          const kids = contextChildren(useTaskTreeStore.getState().roots, id);
+          setKeyboardFocusNodeId(firstContextCardId(kids), paneId);
+        }}
+        onDrillUp={() => {
+          setActivePane(paneId);
+          const leaving = contextByPane[paneId];
+          drillUp(paneId);
+          if (leaving) {
+            setKeyboardFocusNodeId(leaving, paneId);
+            setScrollToNodeId(leaving);
+          }
+        }}
+        onSelect={(id) => {
+          setActivePane(paneId);
+          setKeyboardFocusNodeId(id, paneId);
+          setSearchFocusNodeId(null);
+        }}
+        onDrillIn={(id) => handleDrillIn(id, paneId)}
+        onToggleExpand={toggleCardCollapsed}
+        onInteractionModeChange={setCardInteractionMode}
+        onAddChild={(parentId) => {
+          setActivePane(paneId);
+          const id = addCardAfter(parentId);
+          if (cardInteractionMode === "navigate") {
+            drillIntoOnly(parentId, paneId);
+          } else if (cardCollapsedSet.has(parentId)) {
+            toggleCardCollapsed(parentId);
+          }
+          beginEditingNewCard(id);
+        }}
+        onAddSibling={() => {
+          setActivePane(paneId);
+          const id = addCardAfter(ctx);
+          beginEditingNewCard(id);
+        }}
+        onAddNote={() => {
+          setActivePane(paneId);
+          const id = addNoteAfter(ctx);
+          beginEditingNewNote(id);
+        }}
+        onOpenDetails={handleOpenDetails}
+        onTitleSave={handleTitleSave}
+        onTitleEditCancel={handleTitleEditCancel}
+        onRequestExport={(nodeId) => {
+          const n = findNodeById(roots, nodeId);
+          if (n) setBranchExportNode(n);
+        }}
+        onRequestInsertTemplate={(nodeId) => setTemplateInsertParentId(nodeId)}
+        onRequestDelete={handleRequestDelete}
+      />
+    );
+  };
 
   const appHeader = (
     <header className="shrink-0 border-b border-slate-200/80 bg-white px-6 py-4 shadow-sm">
@@ -1372,6 +1524,26 @@ export function TaskBoard() {
               setTemplatesOpen(false);
             }}
           />
+          <button
+            type="button"
+            onClick={() => setSplitViewEnabled(!splitViewEnabled)}
+            className={[
+              "flex min-h-8 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition",
+              splitViewEnabled
+                ? "border-sky-300 bg-sky-50 text-sky-900"
+                : "border-slate-200/90 bg-slate-50/80 text-slate-700 hover:bg-white hover:text-slate-900",
+            ].join(" ")}
+            title="Geteilte Ansicht (zwei identische Hälften)"
+            aria-label="Geteilte Ansicht"
+            aria-pressed={splitViewEnabled}
+          >
+            {splitViewEnabled ? (
+              <Columns2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            ) : (
+              <Square className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            )}
+            <span className="hidden sm:inline">Split</span>
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -1519,83 +1691,19 @@ export function TaskBoard() {
                 onSelectNode={handleOutlineSelect}
                 onToggleCollapsed={toggleNodeCollapsed}
               />
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                <div className="shrink-0 border-b border-slate-100 px-4 py-2">
-                  <BreadcrumbTrail
-                    path={breadcrumbPath}
-                    onNavigateRoot={() => {
-                      setContextNodeId(null);
-                      setKeyboardFocusNodeId(firstContextCardId(contextChildren(roots, null)));
-                    }}
-                    onNavigateTo={(id) => {
-                      setContextNodeId(id);
-                      const kids = contextChildren(useTaskTreeStore.getState().roots, id);
-                      setKeyboardFocusNodeId(firstContextCardId(kids));
-                    }}
-                    onDrillUp={() => {
-                      const leaving = contextNodeId;
-                      drillUp();
-                      if (leaving) {
-                        setKeyboardFocusNodeId(leaving);
-                        setScrollToNodeId(leaving);
-                      }
-                    }}
-                  />
-                </div>
-                <div
-                  className={[
-                    "flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3",
-                    activeDragId ? "touch-none" : "",
-                  ].join(" ")}
-                >
-                  <ContextCardList
-                    nodes={contextListNodes}
-                    contextNodeId={contextNodeId}
-                    contextLabel={contextLabel}
-                    fieldVisibility={cardFieldVisibility}
-                    searchFocusNodeId={searchFocusNodeId}
-                    keyboardFocusNodeId={keyboardFocusNodeId}
-                    titleEditNodeId={titleEditNodeId}
-                    nestDropTargetId={nestDropTargetId}
-                    interactionMode={cardInteractionMode}
-                    cardCollapsedIds={cardCollapsedSet}
-                    hideCompleted={hideCompletedTasks}
-                    completedTag={completedTag}
-                    onSelect={(id) => {
-                      setKeyboardFocusNodeId(id);
-                      setSearchFocusNodeId(null);
-                    }}
-                    onDrillIn={handleDrillIn}
-                    onToggleExpand={toggleCardCollapsed}
-                    onInteractionModeChange={setCardInteractionMode}
-                    onAddChild={(parentId) => {
-                      const id = addCardAfter(parentId);
-                      if (cardInteractionMode === "navigate") {
-                        drillIntoOnly(parentId);
-                      } else if (cardCollapsedSet.has(parentId)) {
-                        toggleCardCollapsed(parentId);
-                      }
-                      beginEditingNewCard(id);
-                    }}
-                    onAddSibling={() => {
-                      const id = addCardAfter(contextNodeId);
-                      beginEditingNewCard(id);
-                    }}
-                    onAddNote={() => {
-                      const id = addNoteAfter(contextNodeId);
-                      beginEditingNewNote(id);
-                    }}
-                    onOpenDetails={handleOpenDetails}
-                    onTitleSave={handleTitleSave}
-                    onTitleEditCancel={handleTitleEditCancel}
-                    onRequestExport={(nodeId) => {
-                      const n = findNodeById(roots, nodeId);
-                      if (n) setBranchExportNode(n);
-                    }}
-                    onRequestInsertTemplate={(nodeId) => setTemplateInsertParentId(nodeId)}
-                    onRequestDelete={handleRequestDelete}
-                  />
-                </div>
+              <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
+                {splitViewEnabled ? (
+                  <>
+                    {renderPane("left")}
+                    <div
+                      className="w-px shrink-0 bg-slate-200"
+                      aria-hidden
+                    />
+                    {renderPane("right")}
+                  </>
+                ) : (
+                  renderPane(activePane)
+                )}
               </div>
               <ClipboardSidebar
                 open={clipboardOpen}

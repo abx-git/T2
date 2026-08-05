@@ -1,5 +1,8 @@
 import { formatDueHint, isDueOverdue } from "@/lib/aggregates";
-import { formatObsidianTasksDate } from "@/lib/obsidian-tasks-export";
+import {
+  appendMarkdownDescriptionLines,
+  formatObsidianTasksDate,
+} from "@/lib/obsidian-tasks-export";
 import { isTaskMarkedDone } from "@/lib/task-tags";
 import type { TaskNode } from "@/types/task-node";
 
@@ -10,6 +13,7 @@ export type AppointmentsMarkdownStyle = "plain" | "obsidian";
 export interface AppointmentEntry {
   nodeId: string;
   title: string;
+  description: string;
   date: Date;
   kind: AppointmentKind;
   done: boolean;
@@ -62,6 +66,7 @@ export function collectAppointmentsFromForest(
         entries.push({
           nodeId: node.id,
           title,
+          description: node.description,
           date: node.dueDate,
           kind: "due",
           done,
@@ -73,6 +78,7 @@ export function collectAppointmentsFromForest(
         entries.push({
           nodeId: node.id,
           title,
+          description: node.description,
           date: node.reminderDate,
           kind: "reminder",
           done,
@@ -136,6 +142,7 @@ export function formatAppointmentsMarkdown(
 
   for (const entry of entries) {
     lines.push(options.style === "obsidian" ? formatObsidianLine(entry) : formatPlainLine(entry));
+    appendMarkdownDescriptionLines(lines, entry.description, "\t");
   }
 
   lines.push("");

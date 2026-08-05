@@ -22,7 +22,9 @@ import {
 import { createPortal } from "react-dom";
 
 import type { CardInteractionMode } from "@/lib/card-expand";
+import type { BoardPaneId } from "@/lib/board-pane";
 import { isCoarsePointerDevice } from "@/lib/coarse-pointer";
+import { contextCardDragId, contextNestDropId } from "@/lib/context-list-dnd";
 import { nodeDisplayTitle } from "@/lib/tree-node-kind";
 import type { TaskNode } from "@/types/task-node";
 
@@ -46,6 +48,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 
 export interface NoteRowProps {
   node: TaskNode;
+  paneId: BoardPaneId;
   isSearchFocus?: boolean;
   isKeyboardFocus?: boolean;
   isNestDropTarget?: boolean;
@@ -64,6 +67,7 @@ export interface NoteRowProps {
 
 export function NoteRow({
   node,
+  paneId,
   isSearchFocus = false,
   isKeyboardFocus = false,
   isNestDropTarget = false,
@@ -87,13 +91,13 @@ export function NoteRow({
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
 
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: node.id,
-    data: { kind: "contextCard" as const, nodeId: node.id },
+    id: contextCardDragId(paneId, node.id),
+    data: { kind: "contextCard" as const, nodeId: node.id, paneId },
   });
 
   const { setNodeRef: setDropRef, isOver } = useDroppable({
-    id: node.id,
-    data: { kind: "contextNest" as const, nodeId: node.id },
+    id: contextNestDropId(paneId, node.id),
+    data: { kind: "contextNest" as const, nodeId: node.id, paneId },
     disabled: isDragging,
   });
 
@@ -226,6 +230,7 @@ export function NoteRow({
     <article
       ref={setRefs}
       data-task-card-id={node.id}
+      data-board-pane={paneId}
       aria-labelledby={headingId}
       style={style}
       {...attributes}

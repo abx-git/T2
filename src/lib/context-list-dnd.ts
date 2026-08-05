@@ -3,6 +3,12 @@
  */
 
 import {
+  parseContextPanePrefixedId,
+  stripContextPanePrefix,
+  withContextPanePrefix,
+  type BoardPaneId,
+} from "@/lib/board-pane";
+import {
   detachNodeById,
   findNodeById,
   gapIndexToInsertAfterDetach,
@@ -17,20 +23,32 @@ export type ContextListDrop =
   | { kind: "nest"; targetId: string };
 
 export const CONTEXT_GAP_PREFIX = "context-gap:";
+export const CONTEXT_CARD_PREFIX = "context-card:";
+export const CONTEXT_NEST_PREFIX = "context-nest:";
 const CONTEXT_GAP_ROOT = "__root__";
 
-export function contextGapId(listParentId: string | null, insertIndex: number): string {
+function bareContextGapId(listParentId: string | null, insertIndex: number): string {
   const key = listParentId === null ? CONTEXT_GAP_ROOT : encodeURIComponent(listParentId);
   return `${CONTEXT_GAP_PREFIX}${key}|${insertIndex}`;
+}
+
+/** Gap droppable id; pass `pane` when rendering dual panes. */
+export function contextGapId(
+  listParentId: string | null,
+  insertIndex: number,
+  pane?: BoardPaneId,
+): string {
+  const bare = bareContextGapId(listParentId, insertIndex);
+  return pane ? withContextPanePrefix(pane, bare) : bare;
 }
 
 export function parseContextGapId(overId: string | number): {
   listParentId: string | null;
   insertIndex: number;
 } | null {
-  const s = String(overId);
-  if (!s.startsWith(CONTEXT_GAP_PREFIX)) return null;
-  const rest = s.slice(CONTEXT_GAP_PREFIX.length);
+  const bare = stripContextPanePrefix(overId);
+  if (!bare.startsWith(CONTEXT_GAP_PREFIX)) return null;
+  const rest = bare.slice(CONTEXT_GAP_PREFIX.length);
   const sep = rest.indexOf("|");
   if (sep === -1) return null;
   const keyStr = rest.slice(0, sep);
@@ -46,6 +64,37 @@ export function parseContextGapId(overId: string | number): {
     }
   }
   return { listParentId, insertIndex };
+}
+
+export function contextCardDragId(pane: BoardPaneId, nodeId: string): string {
+  return withContextPanePrefix(pane, `${CONTEXT_CARD_PREFIX}${nodeId}`);
+}
+
+export function parseContextCardDragId(activeId: string | number): string | null {
+  const bare = stripContextPanePrefix(activeId);
+  if (!bare.startsWith(CONTEXT_CARD_PREFIX)) return null;
+  const id = bare.slice(CONTEXT_CARD_PREFIX.length);
+  return id || null;
+}
+
+export function contextNestDropId(pane: BoardPaneId, nodeId: string): string {
+  return withContextPanePrefix(pane, `${CONTEXT_NEST_PREFIX}${nodeId}`);
+}
+
+export function parseContextNestDropId(overId: string | number): string | null {
+  const bare = stripContextPanePrefix(overId);
+  if (!bare.startsWith(CONTEXT_NEST_PREFIX)) return null;
+  const id = bare.slice(CONTEXT_NEST_PREFIX.length);
+  return id || null;
+}
+
+/** True if id is a context gap (with or without pane prefix). */
+export function isContextGapDroppableId(id: string | number): boolean {
+  return stripContextPanePrefix(id).startsWith(CONTEXT_GAP_PREFIX);
+}
+
+export function contextPaneFromDroppableId(id: string | number): BoardPaneId | null {
+  return parseContextPanePrefixedId(id)?.pane ?? null;
 }
 
 function gapParentValid(

@@ -55,14 +55,15 @@ export function formatObsidianTaskTitle(node: Pick<TaskNode, "title" | "link">):
   return `[${escapeMarkdownLinkText(label)}](${href})`;
 }
 
-function appendDescriptionLines(
+/** Beschreibung/Notizen als eingerückter Blockzitat unter der Aufgabe. */
+export function appendMarkdownDescriptionLines(
   lines: string[],
   description: string,
-  listIndent: string,
+  indent = "",
 ): void {
   const trimmed = description.trim();
   if (!trimmed) return;
-  const quotePrefix = `${listIndent}> `;
+  const quotePrefix = `${indent}> `;
   for (const part of trimmed.split(/\r?\n/)) {
     lines.push(`${quotePrefix}${part}`);
   }
@@ -110,7 +111,7 @@ function walkNode(
   lines.push(formatTaskLine(node, depth, options));
 
   if (options.includeDescription !== false && node.description.trim()) {
-    appendDescriptionLines(lines, node.description, listIndent);
+    appendMarkdownDescriptionLines(lines, node.description, listIndent);
   }
 
   for (const child of node.children) {

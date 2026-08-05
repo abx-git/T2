@@ -31,6 +31,7 @@ describe("outline id helpers", () => {
     expect(parseOutlineDragId(outlineDragId("a"))).toBe("a");
     expect(boardNodeIdFromDragActive(outlineDragId("a"))).toBe("a");
     expect(boardNodeIdFromDragActive("a")).toBe("a");
+    expect(boardNodeIdFromDragActive("pane:left:context-card:xyz")).toBe("xyz");
     expect(outlineDropFromOverId(outlineGapId(null, "b"))).toEqual({
       kind: "gap",
       listParentId: null,

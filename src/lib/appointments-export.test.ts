@@ -78,4 +78,19 @@ describe("formatAppointmentsMarkdown", () => {
     expect(md).toContain("- [ ] Task");
     expect(md).toContain("📅 2026-05-18");
   });
+
+  it("includes notes as indented blockquote", () => {
+    const md = formatAppointmentsMarkdown(
+      [
+        node({
+          id: "t",
+          title: "Task",
+          description: "Notiztext",
+          dueDate: new Date(2026, 4, 18, 12, 0, 0, 0),
+        }),
+      ],
+      { style: "plain", completedTag: DEFAULT_COMPLETED_TAG },
+    );
+    expect(md).toContain("\t> Notiztext");
+  });
 });

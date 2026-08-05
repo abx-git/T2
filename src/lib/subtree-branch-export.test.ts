@@ -43,8 +43,16 @@ describe("taskSubtreeToHeadingMarkdown", () => {
     const md = taskSubtreeToHeadingMarkdown(root, baseOpts);
     expect(md).toMatch(/^# \[Parent\]\(https:\/\/example\.org\/p\)/m);
     expect(md).toContain("## Child");
-    expect(md).toContain("> Notiz");
+    expect(md).toContain("\t> Notiz");
     expect(md).not.toContain("\t-");
+  });
+
+  it("emits root notes as unindented blockquote", () => {
+    const root = node({ id: "r", title: "Root", description: "Zeile 1\nZeile 2" });
+    const md = taskSubtreeToHeadingMarkdown(root, baseOpts);
+    expect(md).toContain("> Zeile 1");
+    expect(md).toContain("> Zeile 2");
+    expect(md).not.toContain("\t> Zeile");
   });
 
   it("omits unchecked attributes", () => {
@@ -71,6 +79,17 @@ describe("taskSubtreeToBranchJson", () => {
     expect(parsed.root.title).toBe("A");
     expect(parsed.root.id).toBe("a");
     expect(parsed.root.description).toBeUndefined();
+  });
+
+  it("includes description in filtered branch JSON when enabled", () => {
+    const root = node({ id: "a", title: "A", description: "Meine Notiz" });
+    const text = taskSubtreeToBranchJson(root, {
+      format: "json",
+      attributes: DEFAULT_SUBTREE_EXPORT_ATTRIBUTES,
+      completedTag: DEFAULT_COMPLETED_TAG,
+    });
+    const parsed = JSON.parse(text) as { root: { description?: string } };
+    expect(parsed.root.description).toBe("Meine Notiz");
   });
 
   it("supports import-compatible subtree snapshot", () => {

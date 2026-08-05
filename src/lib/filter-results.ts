@@ -11,6 +11,7 @@ import {
   type ScheduleFilterKind,
 } from "@/lib/board-filters";
 import type { CardColorId } from "@/lib/card-color";
+import { appendMarkdownDescriptionLines } from "@/lib/obsidian-tasks-export";
 import { isTaskMarkedDone } from "@/lib/task-tags";
 import type { TaskNode } from "@/types/task-node";
 
@@ -20,6 +21,7 @@ export interface FilterResultCard {
   nodeId: string;
   title: string;
   pathTitles: string[];
+  description: string;
   tags: string[];
   cardColor?: CardColorId;
   dueDate: Date | null;
@@ -101,6 +103,7 @@ export function collectFilterMatchingCards(
           nodeId: node.id,
           title,
           pathTitles,
+          description: node.description,
           tags: [...node.tags],
           cardColor: node.cardColor,
           dueDate: node.dueDate,
@@ -206,6 +209,7 @@ export function formatFilterResultsMarkdown(
     lines.push(
       options.style === "checklist" ? formatChecklistCardLine(card) : formatPlainCardLine(card),
     );
+    appendMarkdownDescriptionLines(lines, card.description, "\t");
   }
 
   lines.push("");

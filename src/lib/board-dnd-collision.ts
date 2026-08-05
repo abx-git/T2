@@ -66,7 +66,9 @@ export function isOutlineDroppable(container: DroppableContainer): boolean {
 
 export function isContextDroppable(container: DroppableContainer): boolean {
   const kind = droppableKind(container);
-  return kind === "contextNest" || kind === "contextGap" || String(container.id).startsWith("context-gap:");
+  if (kind === "contextNest" || kind === "contextGap") return true;
+  const id = String(container.id);
+  return id.includes("context-gap:") || id.includes("context-nest:");
 }
 
 /** True, wenn der Zeiger im Bounding-Box-Bereich der Outline-Droppables liegt. */
@@ -132,7 +134,7 @@ export const boardCollisionDetection: CollisionDetection = (args) => {
 
     const nest = hits.find((c) => c.data?.droppableContainer?.data?.current?.kind === "contextNest");
     if (nest) return [nest];
-    const gap = hits.find((c) => String(c.id).startsWith("context-gap:"));
+    const gap = hits.find((c) => String(c.id).includes("context-gap:"));
     if (gap) return [gap];
     return [hits[0]!];
   }

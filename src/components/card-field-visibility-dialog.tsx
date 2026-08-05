@@ -8,6 +8,11 @@ import {
   mergeCardFieldVisibility,
   type CardFieldVisibility,
 } from "@/lib/card-field-visibility";
+import {
+  DEFAULT_NOTE_ACCENT,
+  NOTE_ACCENT_OPTIONS,
+  type NoteAccentId,
+} from "@/lib/note-accent";
 import { DEFAULT_COMPLETED_TAG } from "@/lib/task-tags";
 
 export interface CardFieldVisibilityDialogProps {
@@ -15,8 +20,14 @@ export interface CardFieldVisibilityDialogProps {
   value: CardFieldVisibility;
   effortOnTasksEnabled: boolean;
   completedTag: string;
+  noteAccentColor: NoteAccentId;
   onClose: () => void;
-  onApply: (next: CardFieldVisibility, effortOnTasksEnabled: boolean, completedTag: string) => void;
+  onApply: (
+    next: CardFieldVisibility,
+    effortOnTasksEnabled: boolean,
+    completedTag: string,
+    noteAccentColor: NoteAccentId,
+  ) => void;
 }
 
 export function CardFieldVisibilityDialog({
@@ -24,6 +35,7 @@ export function CardFieldVisibilityDialog({
   value,
   effortOnTasksEnabled,
   completedTag,
+  noteAccentColor,
   onClose,
   onApply,
 }: CardFieldVisibilityDialogProps) {
@@ -32,13 +44,15 @@ export function CardFieldVisibilityDialog({
   const [draft, setDraft] = useState<CardFieldVisibility>(() => mergeCardFieldVisibility(value));
   const [effortOn, setEffortOn] = useState(effortOnTasksEnabled);
   const [doneTag, setDoneTag] = useState(completedTag);
+  const [noteAccent, setNoteAccent] = useState<NoteAccentId>(noteAccentColor);
 
   useLayoutEffect(() => {
     if (!open) return;
     setDraft(mergeCardFieldVisibility(value));
     setEffortOn(effortOnTasksEnabled);
     setDoneTag(completedTag);
-  }, [open, value, effortOnTasksEnabled, completedTag]);
+    setNoteAccent(noteAccentColor);
+  }, [open, value, effortOnTasksEnabled, completedTag, noteAccentColor]);
 
   if (!open) return null;
 
@@ -47,7 +61,12 @@ export function CardFieldVisibilityDialog({
   };
 
   const handleApply = () => {
-    onApply(mergeCardFieldVisibility(draft), effortOn, doneTag.trim() || DEFAULT_COMPLETED_TAG);
+    onApply(
+      mergeCardFieldVisibility(draft),
+      effortOn,
+      doneTag.trim() || DEFAULT_COMPLETED_TAG,
+      noteAccent || DEFAULT_NOTE_ACCENT,
+    );
     onClose();
   };
 
@@ -110,6 +129,39 @@ export function CardFieldVisibilityDialog({
               Karten mit diesem Tag gelten als erledigt (Filter ausblenden, KP, überfällig, Meilenstein-Summen). Groß-/
               Kleinschreibung beim Tag auf der Karte egal.
             </p>
+          </div>
+
+          <div className="rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2">
+            <p className="text-xs font-medium text-slate-600">Notizfarbe</p>
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              Akzent für Markdown-Notizen (Standard Blaugrau).
+            </p>
+            <div
+              className="mt-2 flex flex-wrap gap-1.5"
+              role="group"
+              aria-label="Notizfarbe"
+            >
+              {NOTE_ACCENT_OPTIONS.map((opt) => {
+                const selected = noteAccent === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    title={opt.label}
+                    aria-label={opt.label}
+                    aria-pressed={selected}
+                    onClick={() => setNoteAccent(opt.id)}
+                    className={[
+                      "h-7 w-7 rounded-full border-2 shadow-sm transition",
+                      opt.swatchClass,
+                      selected
+                        ? "border-sky-500 ring-2 ring-sky-300/80"
+                        : "border-transparent hover:border-slate-300",
+                    ].join(" ")}
+                  />
+                );
+              })}
+            </div>
           </div>
         </div>
 

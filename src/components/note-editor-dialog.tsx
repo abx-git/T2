@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 import { formatTaskIdForDisplay, isLoxTaskId } from "@/lib/task-id";
+import { noteAccentClasses } from "@/lib/note-accent";
 import { isNoteNode, nodeDisplayTitle, normalizeNoteMarkdown } from "@/lib/tree-node-kind";
 import { findNodeById } from "@/lib/tree-utils";
 import { useTaskTreeStore } from "@/store/task-tree-store";
@@ -28,6 +29,8 @@ export function NoteEditorDialog({
   const titleId = useId();
   const markdownId = useId();
   const roots = useTaskTreeStore((s) => s.roots);
+  const noteAccentColor = useTaskTreeStore((s) => s.noteAccentColor);
+  const accent = noteAccentClasses(noteAccentColor);
   const node = nodeId ? findNodeById(roots, nodeId) : null;
 
   const [title, setTitle] = useState("");
@@ -130,7 +133,10 @@ export function NoteEditorDialog({
               id="note-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none ring-violet-500/30 focus:ring-2"
+              className={[
+                "mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2",
+                accent.editorRing,
+              ].join(" ")}
               placeholder="Kurzbezeichnung für Struktur und Suche"
             />
           </div>
@@ -145,7 +151,10 @@ export function NoteEditorDialog({
               onChange={(e) => setMarkdown(e.target.value)}
               rows={14}
               spellCheck={true}
-              className="mt-1 min-h-[12rem] w-full flex-1 resize-y rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm leading-relaxed text-slate-900 outline-none ring-violet-500/30 focus:ring-2"
+              className={[
+                "mt-1 min-h-[12rem] w-full flex-1 resize-y rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm leading-relaxed text-slate-900 outline-none focus:ring-2",
+                accent.editorRing,
+              ].join(" ")}
               placeholder="# Überschrift&#10;&#10;Notiztext …"
             />
           </div>
@@ -173,7 +182,9 @@ export function NoteEditorDialog({
             </button>
             <button
               type="submit"
-              className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700"
+              className={["rounded-lg px-4 py-2 text-sm font-medium text-white", accent.editorPrimary].join(
+                " ",
+              )}
             >
               Speichern
             </button>

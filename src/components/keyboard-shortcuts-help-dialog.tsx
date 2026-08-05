@@ -102,6 +102,8 @@ export function KeyboardShortcutsHelpDialog({ open, onClose }: KeyboardShortcuts
         { keys: "Leertaste", description: "Karten-Ast ein-/ausklappen (unabhängig von der Struktur)" },
         { keys: "Enter", description: "Geschwisterkarte anlegen und Titel bearbeiten" },
         { keys: "Tab", description: "Unterkarte anlegen und Titel bearbeiten" },
+        { keys: "Shift + Enter", description: "Geschwisternotiz anlegen und bearbeiten" },
+        { keys: "Shift + Tab", description: "Unternotiz anlegen und bearbeiten" },
         { keys: "F2", description: "Detailansicht der fokussierten Karte öffnen" },
         { keys: `${mod} + K`, description: "Link oder Befehl aus Zwischenablage speichern" },
         { keys: "Entf / Rücktaste", description: "Karte löschen (mit Bestätigung)" },

@@ -225,6 +225,8 @@ export function TaskBoard() {
   const cardFieldVisibility = useTaskTreeStore((s) => s.cardFieldVisibility);
   const applyCardFieldVisibility = useTaskTreeStore((s) => s.applyCardFieldVisibility);
   const effortOnTasksEnabled = useTaskTreeStore((s) => s.effortOnTasksEnabled);
+  const noteAccentColor = useTaskTreeStore((s) => s.noteAccentColor);
+  const setNoteAccentColor = useTaskTreeStore((s) => s.setNoteAccentColor);
   const setEffortOnTasksEnabled = useTaskTreeStore((s) => s.setEffortOnTasksEnabled);
   const hideCompletedTasks = useTaskTreeStore((s) => s.hideCompletedTasks);
   const filterTags = useTaskTreeStore((s) => s.filterTags);
@@ -730,7 +732,7 @@ export function TaskBoard() {
     setScrollToNodeId(id);
     setEditorNodeId(id);
     setEditorOpen(true);
-  }, []);
+  }, [setKeyboardFocusNodeId]);
 
   /** Neue Karte: Fokus + Titel sofort editierbar. */
   const beginEditingNewCard = useCallback((id: string) => {
@@ -738,7 +740,7 @@ export function TaskBoard() {
     setKeyboardFocusNodeId(id);
     setTitleEditNodeId(id);
     setScrollToNodeId(id);
-  }, []);
+  }, [setKeyboardFocusNodeId]);
 
   const handleTitleSave = (
     nodeId: string,
@@ -844,6 +846,7 @@ export function TaskBoard() {
             s.cardCollapsedIds,
             s.cardInteractionMode,
             s.filterCombineMode,
+            s.noteAccentColor,
           ),
         );
         setPasteImportOpen(false);
@@ -1204,6 +1207,12 @@ export function TaskBoard() {
 
       if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
+        if (e.shiftKey) {
+          const id = addNoteAfterSibling(currentId);
+          if (!id) return;
+          beginEditingNewNote(id);
+          return;
+        }
         const id = addCardAfterSibling(currentId);
         if (!id) return;
         beginEditingNewCard(id);
@@ -1212,6 +1221,12 @@ export function TaskBoard() {
 
       if (e.key === "Tab" && !e.altKey) {
         e.preventDefault();
+        if (e.shiftKey) {
+          const id = addNoteAfter(currentId);
+          expandToNode(id);
+          beginEditingNewNote(id);
+          return;
+        }
         const id = addCardAfter(currentId);
         expandToNode(id);
         beginEditingNewCard(id);
@@ -1267,8 +1282,11 @@ export function TaskBoard() {
     toggleCardCollapsed,
     addCardAfterSibling,
     addCardAfter,
+    addNoteAfterSibling,
+    addNoteAfter,
     expandToNode,
     beginEditingNewCard,
+    beginEditingNewNote,
     updateCard,
   ]);
 
@@ -1327,6 +1345,7 @@ export function TaskBoard() {
         s.cardCollapsedIds,
         s.cardInteractionMode,
         s.filterCombineMode,
+        s.noteAccentColor,
       ),
     );
   }, [
@@ -1344,6 +1363,7 @@ export function TaskBoard() {
     collapsedIds,
     cardCollapsedIds,
     cardInteractionMode,
+    noteAccentColor,
     boardJsonExportOpen,
   ]);
 
@@ -1478,7 +1498,10 @@ export function TaskBoard() {
         }}
         onAddNote={() => {
           setActivePane(paneId);
-          const id = addNoteAfter(ctx);
+          const focusId = keyboardFocusByPane[paneId];
+          const id = focusId
+            ? (addNoteAfterSibling(focusId) ?? addNoteAfter(ctx))
+            : addNoteAfter(ctx);
           beginEditingNewNote(id);
         }}
         onOpenDetails={handleOpenDetails}
@@ -1998,11 +2021,13 @@ export function TaskBoard() {
         value={cardFieldVisibility}
         effortOnTasksEnabled={effortOnTasksEnabled}
         completedTag={completedTag}
+        noteAccentColor={noteAccentColor}
         onClose={() => setCardFieldsOpen(false)}
-        onApply={(next, effortOn, doneTag) => {
+        onApply={(next, effortOn, doneTag, noteAccent) => {
           applyCardFieldVisibility(next);
           setEffortOnTasksEnabled(effortOn);
           setCompletedTag(doneTag);
+          setNoteAccentColor(noteAccent);
         }}
       />
       <TaskEditorDialog

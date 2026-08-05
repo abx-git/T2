@@ -11,7 +11,9 @@ import {
   outlineNestId,
 } from "@/lib/outline-dnd";
 import { isNoteNode, nodeDisplayTitle } from "@/lib/tree-node-kind";
+import { noteAccentClasses } from "@/lib/note-accent";
 import { isTaskMarkedDone } from "@/lib/task-tags";
+import { useTaskTreeStore } from "@/store/task-tree-store";
 import type { TaskNode } from "@/types/task-node";
 
 export interface OutlineRailProps {
@@ -71,6 +73,8 @@ function OutlineRow({
   onSelect: () => void;
   onToggleCollapsed: () => void;
 }) {
+  const noteAccentColor = useTaskTreeStore((s) => s.noteAccentColor);
+  const accent = noteAccentClasses(noteAccentColor);
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
     id: outlineDragId(node.id),
     data: { kind: "outlineCard" as const, source: "outline" as const, nodeId: node.id },
@@ -91,7 +95,11 @@ function OutlineRow({
         "group flex touch-none cursor-grab items-center gap-0.5 rounded-md px-0.5 py-0.5 text-left text-xs active:cursor-grabbing",
         selected ? "bg-sky-100/90 text-sky-950" : "text-slate-700 hover:bg-white",
         isDragging ? "opacity-40" : "",
-        isNestTarget || isOver ? "bg-violet-50 ring-1 ring-violet-300" : "",
+        isNestTarget || isOver
+          ? isNoteNode(node)
+            ? accent.outlineNest
+            : "bg-violet-50 ring-1 ring-violet-300"
+          : "",
       ].join(" ")}
       style={{ paddingLeft: `${4 + depth * 12}px` }}
       {...attributes}
@@ -134,7 +142,10 @@ function OutlineRow({
         }}
       >
         {isNoteNode(node) ? (
-          <StickyNote className="mr-1 inline h-3 w-3 shrink-0 text-violet-600" aria-hidden />
+          <StickyNote
+            className={["mr-1 inline h-3 w-3 shrink-0", accent.outlineIcon].join(" ")}
+            aria-hidden
+          />
         ) : null}
         {nodeDisplayTitle(node)}
       </button>

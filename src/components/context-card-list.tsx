@@ -9,7 +9,9 @@ import type { CardInteractionMode } from "@/lib/card-expand";
 import { visibleChildrenOf } from "@/lib/card-expand";
 import type { BoardPaneId } from "@/lib/board-pane";
 import { contextGapId } from "@/lib/context-list-dnd";
+import { noteAccentClasses } from "@/lib/note-accent";
 import { isNoteNode } from "@/lib/tree-node-kind";
+import { useTaskTreeStore } from "@/store/task-tree-store";
 import type { TaskNode } from "@/types/task-node";
 
 import { NoteRow } from "./note-row";
@@ -49,9 +51,11 @@ function GapDrop({
     >
       {emptyHint ? (
         <p className="pointer-events-none text-center text-sm text-slate-500">
-          Keine Karten hier.{" "}
-          <kbd className="rounded border px-1 text-[11px]">Enter</kbd> für Geschwister,{" "}
-          <kbd className="rounded border px-1 text-[11px]">Tab</kbd> für Unterkarte.
+          Keine Einträge hier.{" "}
+          <kbd className="rounded border px-1 text-[11px]">Enter</kbd> /{" "}
+          <kbd className="rounded border px-1 text-[11px]">Tab</kbd> für Karten,{" "}
+          <kbd className="rounded border px-1 text-[11px]">Shift+Enter</kbd> /{" "}
+          <kbd className="rounded border px-1 text-[11px]">Shift+Tab</kbd> für Notizen.
           <span className="mt-2 block text-xs text-slate-400">
             Oder Karte aus der Zwischenablage hierher ziehen.
           </span>
@@ -281,6 +285,8 @@ export function ContextCardList({
   onRequestInsertTemplate,
   onRequestDelete,
 }: ContextCardListProps) {
+  const noteAccentColor = useTaskTreeStore((s) => s.noteAccentColor);
+  const accent = noteAccentClasses(noteAccentColor);
   useEffect(() => {
     if (!keyboardFocusNodeId) return;
     const el = document.querySelector(
@@ -366,7 +372,9 @@ export function ContextCardList({
           <button
             type="button"
             onClick={onAddNote}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-xs font-medium text-violet-800 hover:bg-violet-100"
+            className={["inline-flex items-center gap-1.5 rounded-lg border", accent.listButton].join(
+              " ",
+            )}
           >
             <Plus className="h-3.5 w-3.5" aria-hidden />
             Notiz

@@ -55,6 +55,11 @@ import {
 } from "@/lib/board-filters";
 import type { CardColorId } from "@/lib/card-color";
 import {
+  DEFAULT_NOTE_ACCENT,
+  parseNoteAccent,
+  type NoteAccentId,
+} from "@/lib/note-accent";
+import {
   DEFAULT_COMPLETED_TAG,
   defaultTagsForNewCard,
   normalizeCompletedTag,
@@ -81,6 +86,7 @@ export type BoardHistorySlice = {
   filterCombineMode: FilterCombineMode;
   cardFieldVisibility: CardFieldVisibility;
   effortOnTasksEnabled: boolean;
+  noteAccentColor: NoteAccentId;
   columnTitleOverrides: Record<number, string>;
 };
 
@@ -100,6 +106,7 @@ function partializeBoardHistory(state: TaskTreeState): BoardHistorySlice {
     filterCombineMode: state.filterCombineMode,
     cardFieldVisibility: state.cardFieldVisibility,
     effortOnTasksEnabled: state.effortOnTasksEnabled,
+    noteAccentColor: state.noteAccentColor,
     columnTitleOverrides: state.columnTitleOverrides,
   };
 }
@@ -120,6 +127,7 @@ function boardHistoryEqual(a: BoardHistorySlice, b: BoardHistorySlice): boolean 
     a.filterCombineMode === b.filterCombineMode &&
     a.cardFieldVisibility === b.cardFieldVisibility &&
     a.effortOnTasksEnabled === b.effortOnTasksEnabled &&
+    a.noteAccentColor === b.noteAccentColor &&
     a.columnTitleOverrides === b.columnTitleOverrides
   );
 }
@@ -193,6 +201,10 @@ export interface TaskTreeState {
   effortOnTasksEnabled: boolean;
   setEffortOnTasksEnabled: (on: boolean) => void;
 
+  /** Akzentfarbe für Notiz-Karten (Chrome). */
+  noteAccentColor: NoteAccentId;
+  setNoteAccentColor: (color: NoteAccentId) => void;
+
   /** Anzeige-Namen der Spalten (Index → Titel); leer / gleich Standard → nicht gesetzt. */
   columnTitleOverrides: Record<number, string>;
   /** Setzt die sichtbaren Spalten-Titel aus einem Dialog-Entwurf (Länge = Anzahl Spalten). */
@@ -263,6 +275,7 @@ export interface TaskTreeState {
     filterCombineMode?: FilterCombineMode;
     cardFieldVisibility?: CardFieldVisibility;
     effortOnTasksEnabled?: boolean;
+    noteAccentColor?: NoteAccentId;
     clipboardRoots?: TaskNode[];
   }) => void;
   /**
@@ -516,6 +529,12 @@ export const useTaskTreeStore = create<TaskTreeState>()(
 
   setEffortOnTasksEnabled: (on) => {
     set({ effortOnTasksEnabled: on });
+  },
+
+  noteAccentColor: DEFAULT_NOTE_ACCENT,
+
+  setNoteAccentColor: (color) => {
+    set({ noteAccentColor: parseNoteAccent(color) });
   },
 
   columnTitleOverrides: {},
@@ -851,6 +870,7 @@ export const useTaskTreeStore = create<TaskTreeState>()(
       filterCombineMode: incomingFilterCombine,
       cardFieldVisibility: incomingVisibility,
       effortOnTasksEnabled: incomingEffort,
+      noteAccentColor: incomingNoteAccent,
     } = payload;
     const pathIds = normalizePathIds(roots, incomingPath);
     const hadCollapsedInPayload = payload.collapsedIds !== undefined;
@@ -896,6 +916,9 @@ export const useTaskTreeStore = create<TaskTreeState>()(
         : {}),
       cardFieldVisibility: mergeCardFieldVisibility(incomingVisibility),
       ...(typeof incomingEffort === "boolean" ? { effortOnTasksEnabled: incomingEffort } : {}),
+      ...(incomingNoteAccent !== undefined
+        ? { noteAccentColor: parseNoteAccent(incomingNoteAccent) }
+        : {}),
       clipboardRoots: payload.clipboardRoots ?? [],
     });
   },

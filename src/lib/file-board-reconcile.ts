@@ -99,6 +99,7 @@ export function boardJsonFromStoreState(): string {
       s.cardCollapsedIds,
       s.cardInteractionMode,
       s.filterCombineMode,
+      s.noteAccentColor,
     ),
   );
 }
@@ -141,6 +142,7 @@ export function boardPersistKeyFromStoreState(): string {
     cardFieldVisibility: s.cardFieldVisibility,
     hideCompletedTasks: s.hideCompletedTasks,
     effortOnTasksEnabled: s.effortOnTasksEnabled,
+    noteAccentColor: s.noteAccentColor,
     filterTags: s.filterTags,
     filterColors: s.filterColors,
     filterScheduleKinds: s.filterScheduleKinds,

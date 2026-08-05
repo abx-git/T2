@@ -25,7 +25,9 @@ import type { CardInteractionMode } from "@/lib/card-expand";
 import type { BoardPaneId } from "@/lib/board-pane";
 import { isCoarsePointerDevice } from "@/lib/coarse-pointer";
 import { contextCardDragId, contextNestDropId } from "@/lib/context-list-dnd";
+import { noteAccentClasses } from "@/lib/note-accent";
 import { nodeDisplayTitle } from "@/lib/tree-node-kind";
+import { useTaskTreeStore } from "@/store/task-tree-store";
 import type { TaskNode } from "@/types/task-node";
 
 import { NoteMarkdownContent } from "./note-markdown-content";
@@ -83,6 +85,8 @@ export function NoteRow({
   onRequestInsertTemplate,
   onRequestDelete,
 }: NoteRowProps) {
+  const noteAccentColor = useTaskTreeStore((s) => s.noteAccentColor);
+  const accent = noteAccentClasses(noteAccentColor);
   const headingId = useId();
   const menuRef = useRef<HTMLDivElement>(null);
   const menuPanelRef = useRef<HTMLDivElement>(null);
@@ -248,22 +252,25 @@ export function NoteRow({
       }}
       onContextMenu={handleContextMenu}
       className={[
-        "group relative flex touch-none cursor-grab items-stretch gap-1 rounded-lg border border-violet-200/80 bg-violet-50/40 px-2 py-2 shadow-sm transition active:cursor-grabbing",
-        nestDepth > 0 ? "bg-violet-50/30" : "",
+        "group relative flex touch-none cursor-grab items-stretch gap-1 rounded-lg border px-2 py-2 shadow-sm transition active:cursor-grabbing",
+        accent.cardBorderBg,
+        nestDepth > 0 ? accent.cardBorderBgNested : "",
         isDragging ? "opacity-40" : "",
-        isNestDropTarget || isOver
-          ? "border-violet-400 bg-violet-50/90 ring-2 ring-violet-300/70"
-          : "",
+        isNestDropTarget || isOver ? accent.nestDrop : "",
         isSearchFocus ? "ring-2 ring-amber-300/90" : "",
-        isKeyboardFocus && !isSearchFocus ? "ring-2 ring-violet-300/90" : "",
+        isKeyboardFocus && !isSearchFocus ? accent.keyboardRing : "",
       ].join(" ")}
     >
       <span
-        className="absolute inset-y-0 left-0 w-1 rounded-l-lg bg-violet-400/80"
+        className={["absolute inset-y-0 left-0 w-1 rounded-l-lg", accent.accentBar].join(" ")}
         aria-hidden
       />
 
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center text-violet-600">
+      <div
+        className={["mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center", accent.icon].join(
+          " ",
+        )}
+      >
         <StickyNote className="h-4 w-4" aria-hidden />
       </div>
 
@@ -272,7 +279,10 @@ export function NoteRow({
           <button
             type="button"
             id={headingId}
-            className="mb-0.5 w-full truncate text-left text-sm font-medium text-slate-900 hover:text-violet-900"
+            className={[
+              "mb-0.5 w-full truncate text-left text-sm font-medium text-slate-900",
+              accent.titleHover,
+            ].join(" ")}
             title={displayTitle}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
@@ -300,7 +310,10 @@ export function NoteRow({
       >
         <button
           type="button"
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-violet-200/90 bg-white text-violet-700 hover:bg-violet-50"
+          className={[
+            "flex h-7 w-7 items-center justify-center rounded-md border",
+            accent.actionButton,
+          ].join(" ")}
           title="Unterkarte"
           aria-label="Unterkarte anlegen"
           onClick={(e) => {

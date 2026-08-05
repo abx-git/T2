@@ -227,6 +227,11 @@
           "type": "boolean",
           "description": "Optional: Aufwand an Aufgaben erlauben (Standard true). Bei `false` werden keine Aufwände bearbeitet oder angezeigt."
         },
+        "noteAccentColor": {
+          "type": "string",
+          "enum": ["steel", "slate", "sky", "cyan", "emerald", "amber", "rose", "violet"],
+          "description": "Optional: Akzentfarbe für Markdown-Notizen (Standard steel = Blaugrau)."
+        },
         "collapsedIds": {
           "type": "array",
           "items": { "type": "string" },

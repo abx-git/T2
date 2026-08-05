@@ -1,6 +1,11 @@
 import { mergeCardFieldVisibility, parseCardFieldVisibilityFromJson, type CardFieldVisibility } from "@/lib/card-field-visibility";
 import { parseCardColor, type CardColorId } from "@/lib/card-color";
 import {
+  DEFAULT_NOTE_ACCENT,
+  parseNoteAccent,
+  type NoteAccentId,
+} from "@/lib/note-accent";
+import {
   parseFilterColors,
   parseFilterCombineMode,
   parseScheduleFilterKinds,
@@ -108,6 +113,8 @@ export interface BoardSnapshotV1 {
   completedTag?: string;
   /** Aufwand (Stunden) an Karten erlauben; optional, Standard true. */
   effortOnTasksEnabled?: boolean;
+  /** Akzentfarbe für Notiz-Darstellung; optional, Standard „steel“ (Blaugrau). */
+  noteAccentColor?: NoteAccentId;
   /** Zwischenablage: abgelegte Teilbäume (Spezial-Ast). */
   clipboardRoots?: TaskNodeJson[];
   /** Vorlagen-Bibliothek (Portabilität mit der Arbeitsdatei). */
@@ -444,6 +451,8 @@ export function parseExportedDocument(text: string): ExportedDocumentV1 {
       const cardFieldVisibility = parseCardFieldVisibilityFromJson(root.cardFieldVisibility);
       const effortOn =
         typeof root.effortOnTasksEnabled === "boolean" ? root.effortOnTasksEnabled : undefined;
+      const noteAccent =
+        root.noteAccentColor !== undefined ? parseNoteAccent(root.noteAccentColor) : undefined;
       return {
         format: EXPORT_FORMAT,
         version: EXPORT_VERSION,
@@ -479,6 +488,7 @@ export function parseExportedDocument(text: string): ExportedDocumentV1 {
           ? { completedTag: normalizeCompletedTag(root.completedTag) }
           : {}),
         ...(effortOn !== undefined ? { effortOnTasksEnabled: effortOn } : {}),
+        ...(noteAccent !== undefined ? { noteAccentColor: noteAccent } : {}),
         ...(Array.isArray(root.clipboardRoots)
           ? {
               clipboardRoots: (root.clipboardRoots as unknown[]).map((r, i) =>
@@ -561,6 +571,7 @@ export function buildBoardSnapshot(
   cardCollapsedIds: string[] = [],
   cardInteractionMode: "navigate" | "expand" = "expand",
   filterCombineMode: FilterCombineMode = "and",
+  noteAccentColor: NoteAccentId = DEFAULT_NOTE_ACCENT,
 ): BoardSnapshotV1 {
   const co: Record<string, string> = {};
   for (const [k, v] of Object.entries(columnTitleOverrides)) {
@@ -591,6 +602,9 @@ export function buildBoardSnapshot(
       ? { completedTag: normalizeCompletedTag(completedTag) }
       : {}),
     ...(effortOnTasksEnabled ? {} : { effortOnTasksEnabled: false }),
+    ...(noteAccentColor !== DEFAULT_NOTE_ACCENT
+      ? { noteAccentColor: parseNoteAccent(noteAccentColor) }
+      : {}),
     ...(clipboardRoots.length ? { clipboardRoots: clipboardRoots.map(taskNodeToJson) } : {}),
     ...(templates.length
       ? {
@@ -669,6 +683,7 @@ export type BoardImportPayload = {
   filterCombineMode?: FilterCombineMode;
   completedTag?: string;
   effortOnTasksEnabled?: boolean;
+  noteAccentColor?: NoteAccentId;
   clipboardRoots?: TaskNode[];
   templates?: TemplateRecordV1[];
 };
@@ -697,6 +712,9 @@ export function boardSnapshotToReplacePayload(snap: BoardSnapshotV1): BoardImpor
       : {}),
     ...(snap.completedTag ? { completedTag: normalizeCompletedTag(snap.completedTag) } : {}),
     ...(snap.effortOnTasksEnabled === false ? { effortOnTasksEnabled: false } : {}),
+    ...(snap.noteAccentColor !== undefined
+      ? { noteAccentColor: parseNoteAccent(snap.noteAccentColor) }
+      : {}),
     ...(snap.clipboardRoots?.length
       ? { clipboardRoots: snap.clipboardRoots.map(taskNodeFromJson) }
       : {}),
@@ -738,6 +756,7 @@ export function stableBoardStateKey(payload: BoardImportPayload): string {
     cardFieldVisibility: mergeCardFieldVisibility(payload.cardFieldVisibility),
     hideCompletedTasks: payload.hideCompletedTasks === true,
     effortOnTasksEnabled: payload.effortOnTasksEnabled !== false,
+    noteAccentColor: parseNoteAccent(payload.noteAccentColor),
     filterTags: tags,
     filterColors: colors,
     filterScheduleKinds: schedule,

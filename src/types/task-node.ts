@@ -14,6 +14,8 @@ export interface TaskNode {
   title: string;
   /** Externer Link; wenn gesetzt, Link-Icon und Menüpunkt „Link öffnen“. */
   link: string;
+  /** Shell-Befehl; wenn gesetzt, Terminal-Icon — Klick kopiert in die Zwischenablage. */
+  command?: string;
   description: string;
   tags: string[];
   dueDate: Date | null;
@@ -31,6 +33,7 @@ export type TaskCardEditableFields = Pick<
   TaskNode,
   | "title"
   | "link"
+  | "command"
   | "description"
   | "tags"
   | "dueDate"

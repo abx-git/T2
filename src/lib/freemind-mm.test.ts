@@ -27,6 +27,7 @@ describe("freemind-mm", () => {
         id: "id-1",
         title: "Projekt",
         link: "https://example.org/p",
+        command: "npm test",
         description: "Hinweis",
         tags: ["Demo"],
         dueDate: null,
@@ -55,6 +56,7 @@ describe("freemind-mm", () => {
     expect(back[0]!.tags).toContain("Demo");
     expect(back[0]!.effort).toBe(3);
     expect(back[0]!.link).toBe("https://example.org/p");
+    expect(back[0]!.command).toBe("npm test");
     expect(back[0]!.children[0]!.title).toBe("Teil");
   });
 

@@ -31,6 +31,7 @@ export function updateNodeFields(
       TaskNode,
       | "title"
       | "link"
+      | "command"
       | "description"
       | "tags"
       | "dueDate"

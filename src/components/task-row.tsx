@@ -11,6 +11,7 @@ import {
   ListPlus,
   MoreHorizontal,
   Pencil,
+  Terminal,
   Trash2,
 } from "lucide-react";
 import {
@@ -38,12 +39,14 @@ import {
   type CardColorId,
 } from "@/lib/card-color";
 import { isCoarsePointerDevice } from "@/lib/coarse-pointer";
+import { writeClipboardText } from "@/lib/clipboard";
 import {
   effortTotalsIsEmpty,
   formatEffortTotals,
   rollupDisplayTotals,
 } from "@/lib/task-effort";
 import { formatTaskIdForDisplay } from "@/lib/task-id";
+import { getTaskCommand } from "@/lib/task-command";
 import { taskLinkHref } from "@/lib/task-link";
 import {
   isTaskMarkedDone,
@@ -133,6 +136,17 @@ export function TaskRow({
   const [coarsePointer, setCoarsePointer] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
+  const [commandCopied, setCommandCopied] = useState(false);
+
+  const copyCardCommand = useCallback(async (command: string) => {
+    const ok = await writeClipboardText(command);
+    if (ok) {
+      setCommandCopied(true);
+      window.setTimeout(() => setCommandCopied(false), 2000);
+      return;
+    }
+    window.alert("In die Zwischenablage kopieren ist in diesem Kontext nicht möglich.");
+  }, []);
 
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: node.id,
@@ -196,6 +210,7 @@ export function TaskRow({
     else onDrillIn();
   };
   const cardLink = fieldVisibility.link ? taskLinkHref(node.link) : null;
+  const cardCommand = fieldVisibility.command ? getTaskCommand(node.command) : null;
   const rollupDue = aggregateNextDueOpen(node, completedTag);
   const rollupOverdue = aggregateOverdueDue(node, completedTag);
   const dueHint = fieldVisibility.dueDate
@@ -228,7 +243,8 @@ export function TaskRow({
         descriptionPreview ||
         effortLabel ||
         idLabel ||
-        cardLink,
+        cardLink ||
+        cardCommand,
     );
 
   const style = {
@@ -340,6 +356,20 @@ export function TaskRow({
           >
             <ExternalLink className="h-3.5 w-3.5" aria-hidden />
             Link öffnen
+          </button>
+        ) : null}
+        {cardCommand ? (
+          <button
+            type="button"
+            role="menuitem"
+            className={rowMenuItemClass}
+            onClick={() => {
+              setMenuOpen(false);
+              void copyCardCommand(cardCommand);
+            }}
+          >
+            <Terminal className="h-3.5 w-3.5" aria-hidden />
+            {commandCopied ? "Kopiert" : "Befehl kopieren"}
           </button>
         ) : null}
         {onRequestExport ? (
@@ -522,6 +552,21 @@ export function TaskRow({
                   <ExternalLink className="h-3 w-3" aria-hidden />
                   Link
                 </a>
+              ) : null}
+              {cardCommand ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-0.5 text-[10px] text-violet-700 hover:text-violet-900"
+                  title="Befehl in Zwischenablage kopieren"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void copyCardCommand(cardCommand);
+                  }}
+                >
+                  <Terminal className="h-3 w-3" aria-hidden />
+                  {commandCopied ? "Kopiert" : "Befehl"}
+                </button>
               ) : null}
               {visibleTags.slice(0, 4).map((t) => (
                 <span key={t} className={tagChipClass(t, completedTag)}>

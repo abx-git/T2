@@ -2,6 +2,7 @@ import { slugForBackupFilename } from "@/lib/board-backup";
 import { formatObsidianTasksDate, formatObsidianTaskTitle } from "@/lib/obsidian-tasks-export";
 import { formatEffortValue, getEffortUnit } from "@/lib/task-effort";
 import { formatTaskIdForDisplay } from "@/lib/task-id";
+import { getTaskCommand } from "@/lib/task-command";
 import { taskLinkHref } from "@/lib/task-link";
 import { isTaskMarkedDone } from "@/lib/task-tags";
 import {
@@ -15,6 +16,7 @@ import type { TaskNode } from "@/types/task-node";
 export const SUBTREE_EXPORT_ATTRIBUTE_KEYS = [
   "title",
   "link",
+  "command",
   "description",
   "tags",
   "dueDate",
@@ -46,6 +48,7 @@ export interface SubtreeBranchExportOptions {
 export const DEFAULT_SUBTREE_EXPORT_ATTRIBUTES: SubtreeExportAttributes = {
   title: true,
   link: true,
+  command: true,
   description: true,
   tags: true,
   dueDate: true,
@@ -58,6 +61,7 @@ export const DEFAULT_SUBTREE_EXPORT_ATTRIBUTES: SubtreeExportAttributes = {
 export const SUBTREE_EXPORT_ATTRIBUTE_LABELS: Record<SubtreeExportAttributeKey, string> = {
   title: "Titel",
   link: "Link",
+  command: "Befehl",
   description: "Beschreibung",
   tags: "Tags",
   dueDate: "Fälligkeit",
@@ -106,6 +110,10 @@ function appendMarkdownAttributeLines(
   const href = taskLinkHref(node.link);
   if (attrs.link && href && !attrs.title) {
     lines.push(`- **Link:** ${href}`);
+  }
+  const command = attrs.command ? getTaskCommand(node.command) : null;
+  if (command && !attrs.title) {
+    lines.push(`- **Befehl:** \`${command.replace(/`/g, "\\`")}\``);
   }
 
   if (attrs.id) {
@@ -174,6 +182,7 @@ export type BranchExportJsonNode = {
   children: BranchExportJsonNode[];
   title?: string;
   link?: string;
+  command?: string;
   description?: string;
   tags?: string[];
   dueDate?: string | null;
@@ -198,6 +207,10 @@ function nodeToBranchJson(
   if (attrs.link) {
     const href = taskLinkHref(node.link);
     if (href) out.link = href;
+  }
+  if (attrs.command) {
+    const command = getTaskCommand(node.command);
+    if (command) out.command = command;
   }
   if (attrs.description && node.description.trim()) out.description = node.description;
   if (attrs.tags && node.tags.length > 0) out.tags = [...node.tags];

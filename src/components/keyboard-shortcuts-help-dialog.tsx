@@ -103,7 +103,7 @@ export function KeyboardShortcutsHelpDialog({ open, onClose }: KeyboardShortcuts
         { keys: "Enter", description: "Geschwisterkarte anlegen und Titel bearbeiten" },
         { keys: "Tab", description: "Unterkarte anlegen und Titel bearbeiten" },
         { keys: "F2", description: "Detailansicht der fokussierten Karte öffnen" },
-        { keys: `${mod} + K`, description: "Link aus Zwischenablage speichern" },
+        { keys: `${mod} + K`, description: "Link oder Befehl aus Zwischenablage speichern" },
         { keys: "Entf / Rücktaste", description: "Karte löschen (mit Bestätigung)" },
       ],
     },

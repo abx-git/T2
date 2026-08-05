@@ -22,6 +22,7 @@ import {
 } from "@/lib/task-tags";
 import { generateUniqueTaskIdFromTaken } from "@/lib/task-id";
 import { normalizeTaskLink } from "@/lib/task-link";
+import { normalizeTaskCommand } from "@/lib/task-command";
 import type { TaskNode } from "@/types/task-node";
 import hierarchicalTaskManagerExportV1Schema from "@/schemas/hierarchical-task-manager.export.v1.schema.json";
 
@@ -47,6 +48,7 @@ export interface TaskNodeJson {
   id: string;
   title: string;
   link?: string;
+  command?: string;
   description: string;
   tags?: string[];
   /** Nur Import älterer Exporte ohne `tags`. */
@@ -126,6 +128,7 @@ export function taskNodeToJson(node: TaskNode): TaskNodeJson {
     id: node.id,
     title: node.title,
     ...((node.link ?? "").trim() ? { link: (node.link ?? "").trim() } : {}),
+    ...((node.command ?? "").trim() ? { command: normalizeTaskCommand(node.command ?? "") } : {}),
     description: node.description,
     tags: [...node.tags],
     dueDate: node.dueDate ? node.dueDate.toISOString() : null,
@@ -147,6 +150,9 @@ export function taskNodeFromJson(j: TaskNodeJson): TaskNode {
     id: j.id,
     title: j.title,
     link: typeof j.link === "string" ? normalizeTaskLink(j.link) : "",
+    ...(typeof j.command === "string" && normalizeTaskCommand(j.command)
+      ? { command: normalizeTaskCommand(j.command) }
+      : {}),
     description: j.description,
     tags,
     dueDate: j.dueDate ? new Date(j.dueDate) : null,
@@ -248,6 +254,7 @@ function expectTaskNodeJson(raw: unknown, path: string): TaskNodeJson {
   const id = o.id;
   const title = o.title;
   const linkRaw = o.link;
+  const commandRaw = o.command;
   const description = o.description;
   const tagsRaw = o.tags;
   const statusLegacy = o.status;
@@ -263,6 +270,9 @@ function expectTaskNodeJson(raw: unknown, path: string): TaskNodeJson {
   if (typeof title !== "string") throw new Error(`${path}.title: Zeichenkette erwartet`);
   if (linkRaw !== undefined && typeof linkRaw !== "string") {
     throw new Error(`${path}.link: Zeichenkette erwartet`);
+  }
+  if (commandRaw !== undefined && typeof commandRaw !== "string") {
+    throw new Error(`${path}.command: Zeichenkette erwartet`);
   }
   if (typeof description !== "string") throw new Error(`${path}.description: Zeichenkette erwartet`);
 
@@ -321,6 +331,9 @@ function expectTaskNodeJson(raw: unknown, path: string): TaskNodeJson {
     id,
     title,
     ...(typeof linkRaw === "string" && linkRaw.trim() ? { link: linkRaw } : {}),
+    ...(typeof commandRaw === "string" && normalizeTaskCommand(commandRaw)
+      ? { command: normalizeTaskCommand(commandRaw) }
+      : {}),
     description,
     tags,
     dueDate: due,

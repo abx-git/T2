@@ -8,6 +8,7 @@ import {
 } from "@/lib/task-effort";
 import { uniqNonEmptyTags } from "@/lib/task-tags";
 import { generateUniqueTaskIdFromTaken } from "@/lib/task-id";
+import { normalizeTaskCommand } from "@/lib/task-command";
 import { normalizeTaskLink } from "@/lib/task-link";
 import type { TaskNode } from "@/types/task-node";
 
@@ -63,6 +64,7 @@ function readMmNode(el: Element, taken: Set<string>): TaskNode {
   const dueDate = parseIsoDate(el.getAttribute("HIER_TM_DUE"));
   const reminderDate = parseIsoDate(el.getAttribute("HIER_TM_REMINDER"));
   const link = normalizeTaskLink(el.getAttribute("HIER_TM_LINK") ?? "");
+  const command = normalizeTaskCommand(el.getAttribute("HIER_TM_COMMAND") ?? "");
 
   const children: TaskNode[] = [];
   for (const ch of el.children) {
@@ -75,6 +77,7 @@ function readMmNode(el: Element, taken: Set<string>): TaskNode {
     id,
     title,
     link,
+    ...(command ? { command } : {}),
     description: desc,
     tags,
     dueDate,
@@ -141,13 +144,16 @@ function taskToMmXml(node: TaskNode, depth: number): string {
   const due = node.dueDate ? ` HIER_TM_DUE="${escAttr(node.dueDate.toISOString())}"` : "";
   const rem = node.reminderDate ? ` HIER_TM_REMINDER="${escAttr(node.reminderDate.toISOString())}"` : "";
   const link = node.link.trim() ? ` HIER_TM_LINK="${escAttr(node.link)}"` : "";
+  const command = (node.command ?? "").trim()
+    ? ` HIER_TM_COMMAND="${escAttr(normalizeTaskCommand(node.command ?? ""))}"`
+    : "";
   const note = noteXml(node.description);
   const childXml = node.children.map((c) => taskToMmXml(c, depth + 1)).join("");
   const textAttr = escAttr(node.title);
   if (!node.children.length && !note) {
-    return `${pad}<node TEXT="${textAttr}"${tags}${eff}${effUnit}${effSrc}${due}${rem}${link}/>\n`;
+    return `${pad}<node TEXT="${textAttr}"${tags}${eff}${effUnit}${effSrc}${due}${rem}${link}${command}/>\n`;
   }
-  return `${pad}<node TEXT="${textAttr}"${tags}${eff}${effUnit}${effSrc}${due}${rem}${link}>\n${note}${childXml}${pad}</node>\n`;
+  return `${pad}<node TEXT="${textAttr}"${tags}${eff}${effUnit}${effSrc}${due}${rem}${link}${command}>\n${note}${childXml}${pad}</node>\n`;
 }
 
 /** Serialisiert den Board-Baum als FreeMind-XML (UTF-8, eine map-Wurzel). */

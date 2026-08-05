@@ -19,6 +19,7 @@ import {
   type EffortUnit,
 } from "@/lib/task-effort";
 import { formatTaskIdForDisplay, isLoxTaskId } from "@/lib/task-id";
+import { normalizeTaskCommand } from "@/lib/task-command";
 import { normalizeTaskLink } from "@/lib/task-link";
 import { findNodeById } from "@/lib/tree-utils";
 import {
@@ -61,6 +62,7 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
 
   const [title, setTitle] = useState("");
   const [link, setLink] = useState("");
+  const [command, setCommand] = useState("");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [tagDraft, setTagDraft] = useState("");
@@ -76,6 +78,7 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
     if (!open || !node) return;
     setTitle(node.title);
     setLink(node.link);
+    setCommand(node.command ?? "");
     setDescription(node.description);
     setTags([...node.tags]);
     setTagDraft("");
@@ -184,6 +187,7 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
       {
         title: title.trim(),
         link: normalizeTaskLink(link),
+        command: normalizeTaskCommand(command),
         description: description.trim(),
         tags: uniqNonEmptyTags(tags),
         effort: nextEffort,
@@ -281,6 +285,23 @@ export function TaskEditorDialog({ open, nodeId, onClose, onSave, onRequestDelet
             />
             <p className="mt-0.5 text-[10px] text-slate-500">
               Auf der Karte: Link-Icon und Eintrag im Kontextmenü.
+            </p>
+          </div>
+          <div>
+            <label htmlFor="task-command" className="block text-xs font-medium text-slate-600">
+              Befehl
+            </label>
+            <textarea
+              id="task-command"
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              rows={2}
+              spellCheck={false}
+              className="mt-1 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm text-slate-900 outline-none ring-sky-500/30 focus:ring-2"
+              placeholder="z. B. npm run build (optional)"
+            />
+            <p className="mt-0.5 text-[10px] text-slate-500">
+              Auf der Karte: Terminal-Icon — Klick kopiert den Befehl in die Zwischenablage.
             </p>
           </div>
           {v.description ? (

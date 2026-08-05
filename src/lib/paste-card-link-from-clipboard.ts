@@ -1,16 +1,26 @@
 import { readClipboardText } from "@/lib/clipboard";
+import { normalizeTaskCommand } from "@/lib/task-command";
 import { normalizeTaskLink } from "@/lib/task-link";
 
-/** Liest einen Link aus der Zwischenablage und speichert ihn auf der Karte, falls gültig. */
+type CardClipboardFields = { link?: string; command?: string };
+
+/** Liest Zwischenablage: gültige URL → `link`, sonst → `command`. */
 export async function saveClipboardLinkToCard(
   nodeId: string,
-  updateCard: (id: string, fields: { link: string }) => void,
+  updateCard: (id: string, fields: CardClipboardFields) => void,
 ): Promise<void> {
   const text = await readClipboardText();
   if (text === null) return;
 
-  const href = normalizeTaskLink(text);
-  if (!href) return;
+  const trimmed = text.trim();
+  if (!trimmed) return;
 
-  updateCard(nodeId, { link: href });
+  const href = normalizeTaskLink(trimmed);
+  if (href) {
+    updateCard(nodeId, { link: href });
+    return;
+  }
+
+  const command = normalizeTaskCommand(trimmed);
+  if (command) updateCard(nodeId, { command });
 }

@@ -26,6 +26,7 @@ const withSerwist = withSerwistInit({
 });
 
 const nextConfig: NextConfig = {
+  transpilePackages: ["@mdxeditor/editor"],
   ...(basePath ? { basePath, assetPrefix: basePath } : {}),
   ...(isStaticExport
     ? {

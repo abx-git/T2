@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import type { MDXEditorMethods } from "@mdxeditor/editor";
 
 import { formatTaskIdForDisplay, isLoxTaskId } from "@/lib/task-id";
 import { noteAccentClasses } from "@/lib/note-accent";
@@ -8,6 +9,8 @@ import { isNoteNode, nodeDisplayTitle, normalizeNoteMarkdown } from "@/lib/tree-
 import { findNodeById } from "@/lib/tree-utils";
 import { useTaskTreeStore } from "@/store/task-tree-store";
 import type { NoteEditableFields } from "@/types/task-node";
+
+import { NoteMarkdownEditor } from "./note-markdown-editor";
 
 export type NoteEditorSaveMeta = { addSiblingAfter?: boolean };
 
@@ -34,20 +37,30 @@ export function NoteEditorDialog({
   const node = nodeId ? findNodeById(roots, nodeId) : null;
 
   const [title, setTitle] = useState("");
+  /** Initialer Markdown-Wert; Änderungen laufen über onChange / getMarkdown. */
+  const [markdownSeed, setMarkdownSeed] = useState("");
   const [markdown, setMarkdown] = useState("");
-  const markdownRef = useRef<HTMLTextAreaElement>(null);
+  const [editorKey, setEditorKey] = useState(0);
+  const editorRef = useRef<MDXEditorMethods>(null);
 
   useEffect(() => {
-    if (!open || !node || !isNoteNode(node)) return;
-    setTitle(node.title);
-    setMarkdown(node.markdown ?? "");
-  }, [open, node]);
+    if (!open || !nodeId) return;
+    const n = findNodeById(useTaskTreeStore.getState().roots, nodeId);
+    if (!n || !isNoteNode(n)) return;
+    const md = n.markdown ?? "";
+    setTitle(n.title);
+    setMarkdown(md);
+    setMarkdownSeed(md);
+    setEditorKey((k) => k + 1);
+  }, [open, nodeId]);
 
   useEffect(() => {
-    if (!open || !node) return;
-    const t = window.setTimeout(() => markdownRef.current?.focus({ preventScroll: true }), 0);
+    if (!open || !nodeId) return;
+    const t = window.setTimeout(() => {
+      editorRef.current?.focus(undefined, { preventScroll: true, defaultSelection: "rootEnd" });
+    }, 80);
     return () => clearTimeout(t);
-  }, [open, node]);
+  }, [open, nodeId, editorKey]);
 
   if (!open || !nodeId) return null;
 
@@ -74,12 +87,15 @@ export function NoteEditorDialog({
     );
   }
 
+  const currentMarkdown = () =>
+    normalizeNoteMarkdown(editorRef.current?.getMarkdown() ?? markdown);
+
   const saveFields = (meta?: NoteEditorSaveMeta) => {
     onSave(
       node.id,
       {
         title: title.trim(),
-        markdown: normalizeNoteMarkdown(markdown),
+        markdown: currentMarkdown(),
       },
       meta,
     );
@@ -103,7 +119,7 @@ export function NoteEditorDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="flex max-h-[min(92vh,44rem)] w-full max-w-2xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl"
+        className="flex max-h-[min(92vh,48rem)] w-full max-w-3xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl"
         onMouseDown={(e) => e.stopPropagation()}
         onSubmit={onSubmit}
       >
@@ -112,7 +128,7 @@ export function NoteEditorDialog({
             Notiz bearbeiten
           </h2>
           <p className="mt-1 text-xs text-slate-500">
-            Markdown-Inhalt — Einordnung und Verschieben wie bei Karten.
+            Formatierter Markdown-Editor — Umschalter für Quelltext in der Toolbar.
           </p>
         </div>
 
@@ -142,21 +158,24 @@ export function NoteEditorDialog({
           </div>
           <div className="flex min-h-0 flex-1 flex-col">
             <label htmlFor={markdownId} className="block text-xs font-medium text-slate-600">
-              Markdown
+              Inhalt
             </label>
-            <textarea
-              ref={markdownRef}
+            <div
               id={markdownId}
-              value={markdown}
-              onChange={(e) => setMarkdown(e.target.value)}
-              rows={14}
-              spellCheck={true}
               className={[
-                "mt-1 min-h-[12rem] w-full flex-1 resize-y rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm leading-relaxed text-slate-900 outline-none focus:ring-2",
+                "note-mdx-editor mt-1 min-h-[14rem] overflow-hidden rounded-lg border border-slate-200 focus-within:ring-2",
                 accent.editorRing,
               ].join(" ")}
-              placeholder="# Überschrift&#10;&#10;Notiztext …"
-            />
+            >
+              <NoteMarkdownEditor
+                key={editorKey}
+                ref={editorRef}
+                markdown={markdownSeed}
+                onChange={(value) => setMarkdown(value)}
+                contentEditableClassName="note-mdx-content min-h-[12rem] px-3 py-2 text-sm leading-relaxed text-slate-900 outline-none"
+                placeholder="Notiz schreiben…"
+              />
+            </div>
           </div>
         </div>
 

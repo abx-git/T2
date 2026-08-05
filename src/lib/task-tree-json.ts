@@ -302,14 +302,33 @@ function expectTaskNodeJson(raw: unknown, path: string): TaskNodeJson {
   if (kindRaw !== undefined && kindRaw !== "card" && kindRaw !== "note") {
     throw new Error(`${path}.kind: card oder note erwartet`);
   }
+  if (markdownRaw !== undefined && typeof markdownRaw !== "string") {
+    throw new Error(`${path}.markdown: Zeichenkette erwartet`);
+  }
+  if (!Array.isArray(children)) throw new Error(`${path}.children: Array erwartet`);
+
+  if (kindRaw === "note") {
+    return {
+      id,
+      kind: "note",
+      title,
+      ...(typeof markdownRaw === "string" && normalizeNoteMarkdown(markdownRaw)
+        ? { markdown: normalizeNoteMarkdown(markdownRaw) }
+        : {}),
+      description: "",
+      tags: [],
+      dueDate: null,
+      reminderDate: null,
+      effort: 0,
+      children: children.map((ch, i) => expectTaskNodeJson(ch, `${path}.children[${i}]`)),
+    };
+  }
+
   if (linkRaw !== undefined && typeof linkRaw !== "string") {
     throw new Error(`${path}.link: Zeichenkette erwartet`);
   }
   if (commandRaw !== undefined && typeof commandRaw !== "string") {
     throw new Error(`${path}.command: Zeichenkette erwartet`);
-  }
-  if (markdownRaw !== undefined && typeof markdownRaw !== "string") {
-    throw new Error(`${path}.markdown: Zeichenkette erwartet`);
   }
   if (typeof description !== "string") throw new Error(`${path}.description: Zeichenkette erwartet`);
 
@@ -349,25 +368,6 @@ function expectTaskNodeJson(raw: unknown, path: string): TaskNodeJson {
   if (reminderDate != null && typeof reminderDate !== "string") {
     throw new Error(`${path}.reminderDate: null oder ISO-String`);
   }
-  if (!Array.isArray(children)) throw new Error(`${path}.children: Array erwartet`);
-
-  if (kindRaw === "note") {
-    return {
-      id,
-      kind: "note",
-      title,
-      ...(typeof markdownRaw === "string" && normalizeNoteMarkdown(markdownRaw)
-        ? { markdown: normalizeNoteMarkdown(markdownRaw) }
-        : {}),
-      description: "",
-      tags: [],
-      dueDate: null,
-      reminderDate: null,
-      effort: 0,
-      children: children.map((ch, i) => expectTaskNodeJson(ch, `${path}.children[${i}]`)),
-    };
-  }
-
   let due: string | null = null;
   if (typeof dueDate === "string" && dueDate.trim()) {
     const d = new Date(dueDate);

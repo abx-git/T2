@@ -157,7 +157,6 @@ import { PasteListDialog } from "./paste-list-dialog";
 import { TemplateInsertDialog } from "./template-insert-dialog";
 import { TemplateSaveDialog } from "./template-save-dialog";
 import { TemplatesSidebar } from "./templates-sidebar";
-import { LevelNamesSetupDialog } from "./level-names-setup-dialog";
 import { TagRenameDialog } from "./tag-rename-dialog";
 import { WorkingFileSync } from "./working-file-sync";
 import { WorkingFileSetupDialog } from "./working-file-setup-dialog";
@@ -231,7 +230,6 @@ export function TaskBoard() {
   const updateNote = useTaskTreeStore((s) => s.updateNote);
   const removeCard = useTaskTreeStore((s) => s.removeCard);
   const columnTitleOverrides = useTaskTreeStore((s) => s.columnTitleOverrides);
-  const applyColumnTitleDraft = useTaskTreeStore((s) => s.applyColumnTitleDraft);
   const importSubtreeRoot = useTaskTreeStore((s) => s.importSubtreeRoot);
   const applyTemplateUnder = useTaskTreeStore((s) => s.applyTemplateUnder);
   const importPastedCards = useTaskTreeStore((s) => s.importPastedCards);
@@ -271,7 +269,6 @@ export function TaskBoard() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorNodeId, setEditorNodeId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [levelSetupOpen, setLevelSetupOpen] = useState(false);
   const [cardFieldsOpen, setCardFieldsOpen] = useState(false);
   const [tagRenameOpen, setTagRenameOpen] = useState(false);
   const [pendingBoardImport, setPendingBoardImport] = useState<BoardSnapshotV1 | null>(null);
@@ -1117,7 +1114,6 @@ export function TaskBoard() {
     editorOpen ||
     pendingDeleteId !== null ||
     activeDragId !== null ||
-    levelSetupOpen ||
     cardFieldsOpen ||
     tagRenameOpen ||
     pendingBoardImport !== null ||
@@ -1631,7 +1627,6 @@ export function TaskBoard() {
             onExpandBoardDepth={() => applyBoardDepthInView(null)}
             onApplyCardDepth={(level) => applyCardDepthInView(level)}
             onExpandCardDepth={() => applyCardDepthInView(null)}
-            onOpenLevelSetup={() => setLevelSetupOpen(true)}
             onOpenTagRename={() => setTagRenameOpen(true)}
             onOpenCardFields={() => setCardFieldsOpen(true)}
             onOpenHelp={() => setHelpOpen(true)}
@@ -1893,7 +1888,7 @@ export function TaskBoard() {
         title="Backup einspielen?"
         message={
           pendingBoardImport
-            ? `Alle Karten, Drill-Pfad, Ebenen-Namen und Einstellungen werden ersetzt (${pendingBoardImport.roots.length} Wurzelkarten). Die Arbeitsdatei wird nicht automatisch angepasst — danach können Sie speichern. Nicht rückgängig machbar.`
+            ? `Alle Karten, Drill-Pfad und Einstellungen werden ersetzt (${pendingBoardImport.roots.length} Wurzelkarten). Die Arbeitsdatei wird nicht automatisch angepasst — danach können Sie speichern. Nicht rückgängig machbar.`
             : ""
         }
         confirmLabel="Einspielen"
@@ -1984,13 +1979,6 @@ export function TaskBoard() {
         onExportSchema={() => {
           downloadExportSchema();
         }}
-      />
-      <LevelNamesSetupDialog
-        open={levelSetupOpen}
-        columnCount={Math.max(1, boardMaxVisibleLevels)}
-        overrides={columnTitleOverrides}
-        onClose={() => setLevelSetupOpen(false)}
-        onApply={applyColumnTitleDraft}
       />
       <KeyboardShortcutsHelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
       <TagRenameDialog open={tagRenameOpen} onClose={() => setTagRenameOpen(false)} />

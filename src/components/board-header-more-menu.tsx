@@ -4,7 +4,6 @@ import {
   CircleHelp,
   Columns2,
   MoreHorizontal,
-  Settings2,
   SlidersHorizontal,
   Square,
   Tag,
@@ -22,7 +21,6 @@ export interface BoardHeaderMoreMenuProps {
   onExpandBoardDepth: () => void;
   onApplyCardDepth: (level: number) => void;
   onExpandCardDepth: () => void;
-  onOpenLevelSetup: () => void;
   onOpenTagRename: () => void;
   onOpenCardFields: () => void;
   onOpenHelp: () => void;
@@ -41,7 +39,6 @@ export function BoardHeaderMoreMenu({
   onExpandBoardDepth,
   onApplyCardDepth,
   onExpandCardDepth,
-  onOpenLevelSetup,
   onOpenTagRename,
   onOpenCardFields,
   onOpenHelp,
@@ -138,15 +135,6 @@ export function BoardHeaderMoreMenu({
           ) : null}
 
           <div className="mt-1 border-t border-slate-100 pt-1">
-            <button
-              type="button"
-              role="menuitem"
-              className={itemClass}
-              onClick={() => closeAnd(onOpenLevelSetup)}
-            >
-              <Settings2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              Ebenen umbenennen
-            </button>
             <button
               type="button"
               role="menuitem"

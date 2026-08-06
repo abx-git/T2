@@ -405,7 +405,7 @@ export const useTaskTreeStore = create<TaskTreeState>()(
   contextNodeId: null,
   contextByPane: { ...DEFAULT_PANE_CONTEXTS },
   activePane: "left",
-  splitViewEnabled: true,
+  splitViewEnabled: false,
 
   hideCompletedTasks: false,
 

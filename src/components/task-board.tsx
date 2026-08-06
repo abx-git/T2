@@ -13,7 +13,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { CircleHelp, Columns2, FileStack, HardDrive, Redo2, Settings2, SlidersHorizontal, Square, Tag, Undo2 } from "lucide-react";
+import { FileStack, HardDrive, Redo2, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent } from "react";
 import { useStore } from "zustand";
 
@@ -140,6 +140,7 @@ import {
 import { redoBoard, undoBoard, useTaskTreeStore } from "@/store/task-tree-store";
 import type { TaskNode } from "@/types/task-node";
 
+import { BoardHeaderMoreMenu } from "./board-header-more-menu";
 import { TagFilterBar } from "./tag-filter-bar";
 import { BetaRibbon } from "./beta-ribbon";
 import { BoardPane } from "./board-pane";
@@ -149,7 +150,6 @@ import { TaskSearch } from "./task-search";
 import { OutlineRail } from "./outline-rail";
 import { CardFieldVisibilityDialog } from "./card-field-visibility-dialog";
 import { ConfirmDialog } from "./confirm-dialog";
-import { DepthLevelsControl } from "./depth-levels-control";
 import { ImportSubtreeDialog } from "./import-subtree-dialog";
 import { FilterResultsDialog } from "./filter-results-dialog";
 import { BranchExportDialog, JsonExportPreviewDialog, JsonPasteImportDialog } from "./json-clipboard-dialog";
@@ -1537,88 +1537,20 @@ export function TaskBoard() {
   };
 
   const appHeader = (
-    <header className="shrink-0 border-b border-slate-200/80 bg-white px-6 py-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-          <h1 className="shrink-0 text-lg font-semibold text-slate-900">T2</h1>
+    <header className="shrink-0 border-b border-slate-200/80 bg-white">
+      <div className="flex items-center gap-2 px-3 py-2 sm:gap-3 sm:px-4">
+        <h1 className="shrink-0 text-sm font-semibold tracking-tight text-slate-900">T2</h1>
+
+        <div className="min-w-0 flex-1">
           <TaskSearch onSelectNode={handleSearchSelect} />
-          {boardMaxVisibleLevels > 1 ? (
-            <>
-              <DepthLevelsControl
-                label="Struktur"
-                maxLevel={boardMaxVisibleLevels}
-                onApplyLevel={(level) => applyBoardDepthInView(level)}
-                onExpandAll={() => applyBoardDepthInView(null)}
-              />
-              <DepthLevelsControl
-                label="Karten"
-                maxLevel={boardMaxVisibleLevels}
-                onApplyLevel={(level) => applyCardDepthInView(level)}
-                onExpandAll={() => applyCardDepthInView(null)}
-              />
-            </>
-          ) : null}
-          <ClipboardDropTarget
-            count={clipboardRoots.length}
-            open={clipboardOpen}
-            onToggle={() => {
-              setClipboardOpen((v) => !v);
-              setTemplatesOpen(false);
-            }}
-          />
-          {!isMobileLayout ? (
-            <button
-              type="button"
-              onClick={() => setSplitViewEnabled(!splitViewEnabled)}
-              className={[
-                "flex min-h-8 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition",
-                splitViewEnabled
-                  ? "border-sky-300 bg-sky-50 text-sky-900"
-                  : "border-slate-200/90 bg-slate-50/80 text-slate-700 hover:bg-white hover:text-slate-900",
-              ].join(" ")}
-              title="Geteilte Ansicht (zwei identische Hälften)"
-              aria-label="Geteilte Ansicht"
-              aria-pressed={splitViewEnabled}
-            >
-              {splitViewEnabled ? (
-                <Columns2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              ) : (
-                <Square className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              )}
-              <span className="hidden sm:inline">Split</span>
-            </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => {
-              setTemplatesOpen((v) => !v);
-              setClipboardOpen(false);
-            }}
-            className={[
-              "flex min-h-8 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition",
-              templatesOpen
-                ? "border-sky-300 bg-sky-50 text-sky-900"
-                : "border-slate-200/90 bg-slate-50/80 text-slate-700 hover:bg-white hover:text-slate-900",
-            ].join(" ")}
-            title="Vorlagen-Bibliothek"
-            aria-label={`Vorlagen${templateCount ? `, ${templateCount}` : ""}${templatesOpen ? ", geöffnet" : ""}`}
-            aria-pressed={templatesOpen}
-          >
-            <FileStack className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            <span>Vorlagen</span>
-            {templateCount > 0 ? (
-              <span className="rounded-full bg-sky-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                {templateCount}
-              </span>
-            ) : null}
-          </button>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+
+        <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
           <button
             type="button"
             disabled={!canUndo}
             onClick={() => undoBoard()}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
             title="Rückgängig"
             aria-label="Rückgängig"
           >
@@ -1628,37 +1560,50 @@ export function TaskBoard() {
             type="button"
             disabled={!canRedo}
             onClick={() => redoBoard()}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
             title="Wiederholen"
             aria-label="Wiederholen"
           >
             <Redo2 className="h-3.5 w-3.5" aria-hidden />
           </button>
-          <input
-            ref={workingFilePickRef}
-            type="file"
-            accept=".json,application/json,text/json,application/octet-stream"
-            className="hidden"
-            aria-hidden
-            onChange={(e) => void handleWorkingFilePickChange(e)}
-          />
-          <input
-            ref={importFileRef}
-            type="file"
-            accept=".json,application/json,.mm,text/xml,application/xml"
-            className="hidden"
-            aria-hidden
-            onChange={handleImportFileChange}
+
+          <span className="mx-0.5 hidden h-4 w-px bg-slate-200 sm:block" aria-hidden />
+
+          <ClipboardDropTarget
+            count={clipboardRoots.length}
+            open={clipboardOpen}
+            onToggle={() => {
+              setClipboardOpen((v) => !v);
+              setTemplatesOpen(false);
+            }}
           />
           <button
             type="button"
-            onClick={() => setHelpOpen(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
-            title="Kurzanleitung und Tastaturkürzel"
-            aria-label="Hilfe und Tastaturkürzel"
+            onClick={() => {
+              setTemplatesOpen((v) => !v);
+              setClipboardOpen(false);
+            }}
+            className={[
+              "flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition",
+              templatesOpen
+                ? "bg-sky-50 text-sky-900"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+            ].join(" ")}
+            title="Vorlagen"
+            aria-label={`Vorlagen${templateCount ? `, ${templateCount}` : ""}${templatesOpen ? ", geöffnet" : ""}`}
+            aria-pressed={templatesOpen}
           >
-            <CircleHelp className="h-3.5 w-3.5" aria-hidden />
+            <FileStack className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className="hidden sm:inline">Vorlagen</span>
+            {templateCount > 0 ? (
+              <span className="min-w-[1.15rem] rounded-full bg-sky-600 px-1 py-0.5 text-center text-[10px] font-semibold leading-none text-white">
+                {templateCount}
+              </span>
+            ) : null}
           </button>
+
+          <span className="mx-0.5 hidden h-4 w-px bg-slate-200 sm:block" aria-hidden />
+
           <button
             type="button"
             onClick={() => setDataStoragePanelOpen(true)}
@@ -1667,37 +1612,47 @@ export function TaskBoard() {
             aria-label={`Daten und Speicher: ${storageDisplayStatus.primaryLine}`}
           >
             <HardDrive className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            <span className="hidden text-xs font-medium sm:inline">Daten</span>
+            <span className="hidden max-w-[7.5rem] truncate text-xs font-medium sm:inline">
+              {storageDisplayStatus.tone === "no-file" || storageDisplayStatus.tone === "unsupported"
+                ? "Datei"
+                : "Daten"}
+            </span>
           </button>
-          <button
-            type="button"
-            onClick={() => setLevelSetupOpen(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
-            title="Ebenen umbenennen"
-            aria-label="Ebenen umbenennen"
-          >
-            <Settings2 className="h-3.5 w-3.5" aria-hidden />
-          </button>
-          <button
-            type="button"
-            onClick={() => setTagRenameOpen(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
-            title="Tags umbenennen"
-            aria-label="Tags umbenennen"
-          >
-            <Tag className="h-3.5 w-3.5" aria-hidden />
-          </button>
-          <button
-            type="button"
-            onClick={() => setCardFieldsOpen(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900"
-            title="Sichtbare Kartenfelder (außer Titel)"
-            aria-label="Kartenfelder ein-/ausblenden"
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
-          </button>
+
+          <BoardHeaderMoreMenu
+            boardMaxVisibleLevels={boardMaxVisibleLevels}
+            splitAvailable={!isMobileLayout}
+            splitViewEnabled={splitViewEnabled}
+            onSplitViewChange={setSplitViewEnabled}
+            onApplyBoardDepth={(level) => applyBoardDepthInView(level)}
+            onExpandBoardDepth={() => applyBoardDepthInView(null)}
+            onApplyCardDepth={(level) => applyCardDepthInView(level)}
+            onExpandCardDepth={() => applyCardDepthInView(null)}
+            onOpenLevelSetup={() => setLevelSetupOpen(true)}
+            onOpenTagRename={() => setTagRenameOpen(true)}
+            onOpenCardFields={() => setCardFieldsOpen(true)}
+            onOpenHelp={() => setHelpOpen(true)}
+          />
         </div>
       </div>
+
+      <input
+        ref={workingFilePickRef}
+        type="file"
+        accept=".json,application/json,text/json,application/octet-stream"
+        className="hidden"
+        aria-hidden
+        onChange={(e) => void handleWorkingFilePickChange(e)}
+      />
+      <input
+        ref={importFileRef}
+        type="file"
+        accept=".json,application/json,.mm,text/xml,application/xml"
+        className="hidden"
+        aria-hidden
+        onChange={handleImportFileChange}
+      />
+
       <TagFilterBar onOpenResults={() => setFilterResultsOpen(true)} />
     </header>
   );

@@ -12,6 +12,7 @@ export interface ClipboardDropTargetProps {
   onToggle: () => void;
 }
 
+/** Kompakter Zwischenablage-Button (bleibt Drop-Ziel für DnD). */
 export function ClipboardDropTarget({ count, open, onToggle }: ClipboardDropTargetProps) {
   const skipClickRef = useRef(false);
   const { setNodeRef, isOver, active } = useDroppable({
@@ -32,14 +33,12 @@ export function ClipboardDropTarget({ count, open, onToggle }: ClipboardDropTarg
       ref={setNodeRef}
       data-clipboard-drop="header"
       className={[
-        "flex min-h-10 min-w-[9rem] items-center rounded-lg border-2 border-dashed px-1 transition",
+        "relative rounded-lg transition",
         highlighted
-          ? "border-violet-500 bg-violet-100 ring-2 ring-violet-300"
+          ? "ring-2 ring-violet-400 ring-offset-1"
           : dragging
-            ? "border-violet-300 bg-violet-50/70"
-            : open
-              ? "border-violet-300 bg-violet-50/50"
-              : "border-transparent",
+            ? "ring-1 ring-violet-300 ring-offset-1"
+            : "",
       ].join(" ")}
     >
       <button
@@ -52,25 +51,25 @@ export function ClipboardDropTarget({ count, open, onToggle }: ClipboardDropTarg
           onToggle();
         }}
         className={[
-          "flex min-h-8 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition",
+          "relative flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition",
           highlighted
-            ? "text-violet-900"
+            ? "bg-violet-100 text-violet-900"
             : open
-              ? "text-violet-900"
-              : "text-slate-700 hover:bg-white/80 hover:text-slate-900",
+              ? "bg-violet-50 text-violet-900"
+              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
         ].join(" ")}
         title={
           dragging
             ? "Karte hier ablegen — wird mit Unterkarten in die Zwischenablage verschoben"
-            : "Zwischenablage öffnen oder schließen"
+            : "Zwischenablage"
         }
         aria-label={`Zwischenablage${count ? `, ${count} Karten` : ""}${open ? ", geöffnet" : ""}`}
         aria-pressed={open}
       >
         <ClipboardCopy className="h-3.5 w-3.5 shrink-0" aria-hidden />
-        <span>Zwischenablage</span>
+        <span className="hidden sm:inline">Ablage</span>
         {count > 0 ? (
-          <span className="rounded-full bg-violet-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+          <span className="min-w-[1.15rem] rounded-full bg-violet-600 px-1 py-0.5 text-center text-[10px] font-semibold leading-none text-white">
             {count}
           </span>
         ) : null}

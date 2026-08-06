@@ -101,7 +101,7 @@ export function TaskSearch({ onSelectNode }: TaskSearchProps) {
           aria-activedescendant={
             showDropdown && activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined
           }
-          className="h-9 w-full rounded-lg border border-slate-200/90 bg-slate-50/80 py-1.5 pr-3 pl-8 text-sm text-slate-900 outline-none ring-sky-500/30 placeholder:text-slate-400 focus:border-sky-300 focus:bg-white focus:ring-2"
+          className="h-8 w-full rounded-lg border border-slate-200/80 bg-slate-50/60 py-1 pr-3 pl-8 text-sm text-slate-900 outline-none ring-sky-500/30 placeholder:text-slate-400 focus:border-sky-300 focus:bg-white focus:ring-2"
         />
       </div>
       {showDropdown ? (

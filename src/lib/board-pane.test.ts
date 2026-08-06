@@ -60,9 +60,9 @@ describe("dual pane store navigation", () => {
     });
   });
 
-  it("defaults to split on and independent pane contexts", () => {
+  it("defaults to split off and independent pane contexts", () => {
     const s = useTaskTreeStore.getState();
-    expect(s.splitViewEnabled).toBe(true);
+    expect(s.splitViewEnabled).toBe(false);
     expect(s.activePane).toBe("left");
     expect(s.contextByPane).toEqual(DEFAULT_PANE_CONTEXTS);
     expect(BOARD_PANE_IDS).toEqual(["left", "right"]);

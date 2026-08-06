@@ -75,11 +75,17 @@ export function formatStorageStatusTooltip(status: StorageDisplayStatus): string
 }
 
 const DATA_STORAGE_BUTTON_BASE =
-  "flex h-8 items-center gap-1.5 rounded-lg border px-2.5 transition";
+  "flex h-8 items-center gap-1.5 rounded-lg px-2 transition";
 
 export function dataStorageButtonClassName(tone: StorageStatusTone): string {
   if (tone === "saved") {
-    return `${DATA_STORAGE_BUTTON_BASE} border-emerald-200/90 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 hover:text-emerald-900`;
+    return `${DATA_STORAGE_BUTTON_BASE} bg-emerald-50 text-emerald-800 hover:bg-emerald-100 hover:text-emerald-900`;
   }
-  return `${DATA_STORAGE_BUTTON_BASE} border-slate-200/90 bg-slate-50/80 text-slate-600 hover:bg-white hover:text-slate-900`;
+  if (tone === "dirty" || tone === "saving") {
+    return `${DATA_STORAGE_BUTTON_BASE} bg-amber-50 text-amber-900 hover:bg-amber-100`;
+  }
+  if (tone === "no-file" || tone === "unsupported") {
+    return `${DATA_STORAGE_BUTTON_BASE} bg-sky-50 text-sky-900 hover:bg-sky-100`;
+  }
+  return `${DATA_STORAGE_BUTTON_BASE} text-slate-600 hover:bg-slate-100 hover:text-slate-900`;
 }

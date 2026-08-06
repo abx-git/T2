@@ -97,6 +97,7 @@ import {
 import {
   findNodeById,
   pathFromRootToNode,
+  resolveSiblingInsertAfterId,
   rootsForMindmapDisplay,
 } from "@/lib/tree-utils";
 import { getBoardMaxVisibleLevels } from "@/lib/tree-depth-collapse";
@@ -1506,14 +1507,19 @@ export function TaskBoard() {
         }}
         onAddSibling={() => {
           setActivePane(paneId);
-          const id = addCardAfter(ctx);
+          const focusId = keyboardFocusByPane[paneId];
+          const afterId = focusId ? resolveSiblingInsertAfterId(roots, focusId) : null;
+          const id = afterId
+            ? (addCardAfterSibling(afterId) ?? addCardAfter(ctx))
+            : addCardAfter(ctx);
           beginEditingNewCard(id);
         }}
         onAddNote={() => {
           setActivePane(paneId);
           const focusId = keyboardFocusByPane[paneId];
-          const id = focusId
-            ? (addNoteAfterSibling(focusId) ?? addNoteAfter(ctx))
+          const afterId = focusId ? resolveSiblingInsertAfterId(roots, focusId) : null;
+          const id = afterId
+            ? (addNoteAfterSibling(afterId) ?? addNoteAfter(ctx))
             : addNoteAfter(ctx);
           beginEditingNewNote(id);
         }}

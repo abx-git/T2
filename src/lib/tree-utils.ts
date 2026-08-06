@@ -1,5 +1,5 @@
 import { nodeMatchesBoardFilters, type FilterCombineMode, type ScheduleFilterKind } from "@/lib/board-filters";
-import { isNoteNode } from "@/lib/tree-node-kind";
+import { isCardNode, isNoteNode } from "@/lib/tree-node-kind";
 import type { CardColorId } from "@/lib/card-color";
 import { isTaskMarkedDone } from "@/lib/task-tags";
 import type { TaskNode } from "@/types/task-node";
@@ -85,6 +85,37 @@ export function getSiblingsList(roots: TaskNode[], listParentId: string | null):
   if (listParentId === null) return roots;
   const p = findNodeById(roots, listParentId);
   return p?.children ?? [];
+}
+
+/**
+ * Anker für „+ Karte“ / „+ Notiz“: neue Einträge kommen als Geschwister *nach* diesem Knoten.
+ * - Fokus auf Karte → diese Karte
+ * - Fokus auf Notiz → nächste Karte darüber (Geschwister), sonst die Elternkarte, sonst die Notiz selbst
+ */
+export function resolveSiblingInsertAfterId(
+  roots: TaskNode[],
+  focusId: string,
+): string | null {
+  const focused = findNodeById(roots, focusId);
+  if (!focused) return null;
+  if (isCardNode(focused)) return focusId;
+
+  const parentId = findDirectParentId(roots, focusId);
+  if (parentId === undefined) return null;
+
+  const sibs = getSiblingsList(roots, parentId);
+  const idx = sibs.findIndex((n) => n.id === focusId);
+  for (let i = idx - 1; i >= 0; i--) {
+    const prev = sibs[i];
+    if (prev && isCardNode(prev)) return prev.id;
+  }
+
+  if (parentId !== null) {
+    const parent = findNodeById(roots, parentId);
+    if (parent && isCardNode(parent)) return parent.id;
+  }
+
+  return focusId;
 }
 
 /**

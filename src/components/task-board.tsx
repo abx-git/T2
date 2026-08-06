@@ -142,7 +142,7 @@ import type { TaskNode } from "@/types/task-node";
 
 import { BoardHeaderMoreMenu } from "./board-header-more-menu";
 import { TagFilterBar } from "./tag-filter-bar";
-import { BetaRibbon } from "./beta-ribbon";
+import { BetaBadge } from "./beta-badge";
 import { BoardPane } from "./board-pane";
 import { ClipboardDropTarget } from "./clipboard-drop-target";
 import { ClipboardSidebar } from "./clipboard-sidebar";
@@ -1539,7 +1539,10 @@ export function TaskBoard() {
   const appHeader = (
     <header className="shrink-0 border-b border-slate-200/80 bg-white">
       <div className="flex items-center gap-2 px-3 py-2 sm:gap-3 sm:px-4">
-        <h1 className="shrink-0 text-sm font-semibold tracking-tight text-slate-900">T2</h1>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <h1 className="text-sm font-semibold tracking-tight text-slate-900">T2</h1>
+          <BetaBadge />
+        </div>
 
         <div className="min-w-0 flex-1">
           <TaskSearch onSelectNode={handleSearchSelect} />
@@ -1659,7 +1662,6 @@ export function TaskBoard() {
 
   return (
     <div className="relative flex h-screen min-h-0 flex-col overflow-hidden">
-      <BetaRibbon />
       <WorkingFileSync
         onWorkingFileNameChange={setWorkingFileName}
         onDirtyChange={onWorkingFileDirtyChange}

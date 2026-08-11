@@ -23,11 +23,17 @@ import {
 } from "@/components/board-backup-sync";
 import {
   backupBeforeSuspiciousSwitch,
+  backupTitleFromStore,
   boardHasBackupContent,
-  readBackupIntervalMinutes,
-  writeBackupIntervalMinutes,
-  type BackupIntervalMinutes,
+  buildBackupFilename,
+  ensureRollingBackupHandle,
   getLocalBackup,
+  readBackupHistoryMode,
+  readBackupIntervalMinutes,
+  writeBackupHistoryMode,
+  writeBackupIntervalMinutes,
+  type BackupHistoryMode,
+  type BackupIntervalMinutes,
 } from "@/lib/board-backup";
 import { boardCollisionDetection } from "@/lib/board-dnd-collision";
 import {
@@ -301,6 +307,7 @@ export function TaskBoard() {
   const [postImportSaveOpen, setPostImportSaveOpen] = useState(false);
   const [openWorkingFileConfirmOpen, setOpenWorkingFileConfirmOpen] = useState(false);
   const [backupIntervalMinutes, setBackupIntervalMinutes] = useState<BackupIntervalMinutes>(0);
+  const [backupHistoryMode, setBackupHistoryMode] = useState<BackupHistoryMode>("history");
   const [backupLastLabel, setBackupLastLabel] = useState("Noch kein Backup");
   const [helpOpen, setHelpOpen] = useState(false);
   const [clipboardOpen, setClipboardOpen] = useState(false);
@@ -325,6 +332,7 @@ export function TaskBoard() {
     setFsAccessSupportedForUi(isWorkingFileUiAvailable());
     setWorkingFileUiReady(true);
     setBackupIntervalMinutes(readBackupIntervalMinutes());
+    setBackupHistoryMode(readBackupHistoryMode());
     void hydrateTemplatesFromIdb();
   }, []);
 
@@ -409,7 +417,7 @@ export function TaskBoard() {
         // Picker needs user activation — run before any safety-download click.
         const handle = await attachWorkingFileOpen();
         if (!handle) return false;
-        backupBeforeSuspiciousSwitch("file");
+        await backupBeforeSuspiciousSwitch("file");
         const hydrate = await hydrateStoreFromWorkingFile(handle);
         setWorkingFileName(handle.name?.trim() ? handle.name : "Arbeitsdatei");
         setWorkingFileSetupOpen(false);
@@ -446,7 +454,7 @@ export function TaskBoard() {
     async (file: File, preReadText?: string) => {
       setStoragePanelBusy(true);
       try {
-        backupBeforeSuspiciousSwitch("file");
+        await backupBeforeSuspiciousSwitch("file");
         const result = await attachWorkingFileFromBrowserFile(file, preReadText);
         if (result.status === "read_error") {
           window.alert(result.message);
@@ -656,7 +664,7 @@ export function TaskBoard() {
           );
           return;
         }
-        backupBeforeSuspiciousSwitch("file");
+        await backupBeforeSuspiciousSwitch("file");
         const result = await openRecentWorkingFile(handle, { skipPermission: true });
         if (!result) {
           window.alert(
@@ -701,7 +709,7 @@ export function TaskBoard() {
           window.alert("Backup wurde nicht gefunden oder ist leer.");
           return;
         }
-        backupBeforeSuspiciousSwitch("import");
+        await backupBeforeSuspiciousSwitch("import");
         if (!forceApplyBoardJson(record.json)) {
           window.alert("Backup konnte nicht geladen werden.");
           return;
@@ -719,6 +727,15 @@ export function TaskBoard() {
   const handleBackupIntervalChange = useCallback((minutes: BackupIntervalMinutes) => {
     setBackupIntervalMinutes(minutes);
     writeBackupIntervalMinutes(minutes);
+  }, []);
+
+  const handleBackupHistoryModeChange = useCallback((mode: BackupHistoryMode) => {
+    writeBackupHistoryMode(mode);
+    setBackupHistoryMode(mode);
+    if (mode === "rolling" && isWorkingFileSupported()) {
+      const suggested = buildBackupFilename(backupTitleFromStore(), new Date(), "rolling");
+      void ensureRollingBackupHandle(suggested, { allowPick: true });
+    }
   }, []);
 
   const openEditor = (id: string) => {
@@ -1899,10 +1916,12 @@ export function TaskBoard() {
           const snap = pendingBoardImport;
           setPendingBoardImport(null);
           if (!snap) return;
-          backupBeforeSuspiciousSwitch("import");
-          applyBoardPayloadToStore(boardSnapshotToReplacePayload(snap));
-          closeEditor();
-          setPostImportSaveOpen(true);
+          void (async () => {
+            await backupBeforeSuspiciousSwitch("import");
+            applyBoardPayloadToStore(boardSnapshotToReplacePayload(snap));
+            closeEditor();
+            setPostImportSaveOpen(true);
+          })();
         }}
       />
       <PostImportSaveDialog
@@ -1947,9 +1966,11 @@ export function TaskBoard() {
           workingFileDirty || (!workingFileAttached && boardHasBackupContent())
         }
         backupIntervalMinutes={backupIntervalMinutes}
+        backupHistoryMode={backupHistoryMode}
         backupLastLabel={backupLastLabel}
         onBackupIntervalChange={handleBackupIntervalChange}
-        onBackupNow={() => runManualBoardBackup(setBackupLastLabel)}
+        onBackupHistoryModeChange={handleBackupHistoryModeChange}
+        onBackupNow={() => void runManualBoardBackup(setBackupLastLabel)}
         busy={storagePanelBusy}
         onOpenWorkingFile={() => beginAttachWorkingFile(false)}
         onCreateWorkingFile={() => beginAttachWorkingFile(true)}

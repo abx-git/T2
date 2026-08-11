@@ -31,10 +31,12 @@ export function BoardBackupSync({ intervalMinutes, onLastBackupChange }: BoardBa
     const ms = intervalMinutes * 60_000;
     const id = window.setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-      const result = createBoardBackupNow({ onlyIfChanged: true });
-      if (!result.skipped) {
-        onChangeRef.current(formatLastBackupLabel(readLastBackupAt()));
-      }
+      void (async () => {
+        const result = await createBoardBackupNow({ onlyIfChanged: true });
+        if (!result.skipped) {
+          onChangeRef.current(formatLastBackupLabel(readLastBackupAt()));
+        }
+      })();
     }, ms);
     return () => window.clearInterval(id);
   }, [intervalMinutes]);
@@ -42,8 +44,11 @@ export function BoardBackupSync({ intervalMinutes, onLastBackupChange }: BoardBa
   return null;
 }
 
-export function runManualBoardBackup(onDone?: (label: string) => void): void {
-  const result = createBoardBackupNow({ allowEmpty: true });
+export async function runManualBoardBackup(onDone?: (label: string) => void): Promise<void> {
+  const result = await createBoardBackupNow({
+    allowEmpty: true,
+    allowPickRollingFile: true,
+  });
   if (result.skipped) {
     window.alert("Kein Board-Inhalt zum Sichern.");
     return;

@@ -20,6 +20,7 @@ import { formatAppVersionLabel } from "@/lib/app-version";
 import {
   BACKUP_INTERVAL_OPTIONS_MINUTES,
   listLocalBackups,
+  type BackupHistoryMode,
   type BackupIntervalMinutes,
   type LocalBackupListItem,
 } from "@/lib/board-backup";
@@ -37,8 +38,10 @@ export interface DataStoragePanelProps {
   workingFileSaving: boolean;
   mustSaveBeforeOpen?: boolean;
   backupIntervalMinutes: BackupIntervalMinutes;
+  backupHistoryMode: BackupHistoryMode;
   backupLastLabel: string;
   onBackupIntervalChange: (minutes: BackupIntervalMinutes) => void;
+  onBackupHistoryModeChange: (mode: BackupHistoryMode) => void;
   onBackupNow: () => void;
   onOpenWorkingFile: () => void;
   onCreateWorkingFile: () => void;
@@ -105,8 +108,10 @@ export function DataStoragePanel({
   workingFileSaving,
   mustSaveBeforeOpen = false,
   backupIntervalMinutes,
+  backupHistoryMode,
   backupLastLabel,
   onBackupIntervalChange,
+  onBackupHistoryModeChange,
   onBackupNow,
   onOpenWorkingFile,
   onCreateWorkingFile,
@@ -334,7 +339,10 @@ export function DataStoragePanel({
           <Section title="Backup &amp; Import">
             <div className="flex flex-col gap-2">
               <p className="text-xs text-slate-500">
-                Zeitstempel-Kopie (.json), unabhängig von der Arbeitsdatei. {backupLastLabel}.
+                {backupHistoryMode === "rolling"
+                  ? "Ohne Historie: immer dieselbe Backup-Datei überschreiben (bei File-System-API) bzw. fester Dateiname."
+                  : "Mit Historie: zeitgestempelte .json-Kopien."}{" "}
+                Unabhängig von der Arbeitsdatei. {backupLastLabel}.
               </p>
               <ActionButton onClick={onBackupNow} disabled={busy}>
                 <Download className="h-4 w-4 shrink-0" aria-hidden />
@@ -382,6 +390,19 @@ export function DataStoragePanel({
                   </ul>
                 </div>
               ) : null}
+              <label className="flex flex-col gap-1 pt-1 text-xs text-slate-700">
+                <span className="text-slate-500">Historie</span>
+                <select
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                  value={backupHistoryMode}
+                  onChange={(e) =>
+                    onBackupHistoryModeChange(e.target.value as BackupHistoryMode)
+                  }
+                >
+                  <option value="history">Mit Historie (neue Datei je Backup)</option>
+                  <option value="rolling">Ohne Historie (gleiche Datei überschreiben)</option>
+                </select>
+              </label>
               <label className="flex flex-col gap-1 pt-1 text-xs text-slate-700">
                 <span className="text-slate-500">Automatisch alle …</span>
                 <select

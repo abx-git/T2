@@ -9,6 +9,7 @@ import {
   rememberBackupBaselineFromStore,
   resetLastBackupPersistKey,
   slugForBackupFilename,
+  writeBackupHistoryMode,
 } from "@/lib/board-backup";
 import { useTaskTreeStore } from "@/store/task-tree-store";
 import type { TaskNode } from "@/types/task-node";
@@ -30,6 +31,7 @@ function node(id: string, title: string, children: TaskNode[] = []): TaskNode {
 describe("board-backup", () => {
   beforeEach(() => {
     resetLastBackupPersistKey();
+    writeBackupHistoryMode("history");
     useTaskTreeStore.getState().replaceBoardFromImport({
       roots: [],
       pathIds: [],
@@ -37,12 +39,17 @@ describe("board-backup", () => {
     });
   });
 
-  it("builds timestamped filenames", () => {
+  it("builds timestamped filenames for history mode", () => {
     const d = new Date(2026, 6, 23, 7, 5, 9); // month is 0-based
     expect(formatBackupTimestamp(d)).toBe("2026-07-23-070509");
-    expect(buildBackupFilename("Mein Board", d)).toBe(
+    expect(buildBackupFilename("Mein Board", d, "history")).toBe(
       "mein-board-backup-2026-07-23-070509.json",
     );
+  });
+
+  it("builds a stable filename for rolling mode", () => {
+    const d = new Date(2026, 6, 23, 7, 5, 9);
+    expect(buildBackupFilename("Mein Board", d, "rolling")).toBe("mein-board-backup.json");
   });
 
   it("slugs titles safely", () => {
@@ -55,7 +62,7 @@ describe("board-backup", () => {
     expect(formatLastBackupLabel(Date.UTC(2026, 0, 1, 12, 0, 0))).toMatch(/2026/);
   });
 
-  it("skips onlyIfChanged backups when the board is unchanged", () => {
+  it("skips onlyIfChanged backups when the board is unchanged", async () => {
     useTaskTreeStore.getState().replaceBoardFromImport({
       roots: [node("a", "Alpha")],
       pathIds: [],
@@ -64,7 +71,7 @@ describe("board-backup", () => {
     rememberBackupBaselineFromStore();
     expect(getLastBackupPersistKey()).toBeTruthy();
 
-    expect(createBoardBackupNow({ onlyIfChanged: true })).toEqual({
+    expect(await createBoardBackupNow({ onlyIfChanged: true })).toEqual({
       skipped: true,
       reason: "unchanged",
     });
@@ -75,15 +82,15 @@ describe("board-backup", () => {
       columnTitleOverrides: {},
     });
     rememberBackupBaselineFromStore();
-    expect(createBoardBackupNow({ onlyIfChanged: true })).toEqual({
+    expect(await createBoardBackupNow({ onlyIfChanged: true })).toEqual({
       skipped: true,
       reason: "unchanged",
     });
   });
 
-  it("does not skip onlyIfChanged when there is no baseline yet", () => {
+  it("does not skip onlyIfChanged when there is no baseline yet", async () => {
     expect(getLastBackupPersistKey()).toBeNull();
-    expect(createBoardBackupNow({ onlyIfChanged: true })).toEqual({
+    expect(await createBoardBackupNow({ onlyIfChanged: true })).toEqual({
       skipped: true,
       reason: "empty",
     });

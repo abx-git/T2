@@ -21,7 +21,6 @@ import {
 import {
   collectAllTagsFromForest,
   filterTagState,
-  tagChipClass,
   tagsForFilterBar,
   type FilterTagState,
 } from "@/lib/task-tags";
@@ -261,26 +260,36 @@ function TagFilterChip({
   state: FilterTagState;
   onClick: () => void;
 }) {
-  const base = tagChipClass(tag);
   const stateClass =
     state === "include"
-      ? "border-sky-400/90 ring-1 ring-sky-300/80"
+      ? "border-sky-500 bg-sky-100 text-sky-950 shadow-sm ring-2 ring-sky-400/70"
       : state === "exclude"
-        ? "border-rose-400/90 bg-rose-50/80 text-rose-900 line-through opacity-90"
-        : "opacity-70 transition hover:border-sky-400 hover:opacity-100";
+        ? "border-rose-500 bg-rose-100 text-rose-950 shadow-sm ring-2 ring-rose-400/60"
+        : "border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:text-slate-600";
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={[base, stateClass].join(" ")}
+      className={[chipBase, "gap-0.5 transition", stateClass].join(" ")}
       title={tagFilterTitle(tag, state)}
       aria-label={tagFilterTitle(tag, state)}
       aria-pressed={state !== "neutral"}
       data-filter-state={state}
     >
-      {state === "exclude" ? <span aria-hidden>¬</span> : null}
-      {tag}
+      {state === "include" ? (
+        <span className="font-semibold" aria-hidden>
+          +
+        </span>
+      ) : null}
+      {state === "exclude" ? (
+        <span className="font-semibold" aria-hidden>
+          ¬
+        </span>
+      ) : null}
+      <span className={state === "exclude" ? "line-through decoration-rose-700/80" : undefined}>
+        {tag}
+      </span>
     </button>
   );
 }

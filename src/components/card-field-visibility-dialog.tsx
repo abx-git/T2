@@ -20,6 +20,8 @@ export interface CardFieldVisibilityDialogProps {
   value: CardFieldVisibility;
   effortOnTasksEnabled: boolean;
   completedTag: string;
+  /** `true` = erledigte Karten ausblenden; `false` = durchgestrichen anzeigen. */
+  hideCompletedTasks: boolean;
   noteAccentColor: NoteAccentId;
   onClose: () => void;
   onApply: (
@@ -27,6 +29,7 @@ export interface CardFieldVisibilityDialogProps {
     effortOnTasksEnabled: boolean,
     completedTag: string,
     noteAccentColor: NoteAccentId,
+    hideCompletedTasks: boolean,
   ) => void;
 }
 
@@ -35,6 +38,7 @@ export function CardFieldVisibilityDialog({
   value,
   effortOnTasksEnabled,
   completedTag,
+  hideCompletedTasks,
   noteAccentColor,
   onClose,
   onApply,
@@ -44,6 +48,7 @@ export function CardFieldVisibilityDialog({
   const [draft, setDraft] = useState<CardFieldVisibility>(() => mergeCardFieldVisibility(value));
   const [effortOn, setEffortOn] = useState(effortOnTasksEnabled);
   const [doneTag, setDoneTag] = useState(completedTag);
+  const [hideDone, setHideDone] = useState(hideCompletedTasks);
   const [noteAccent, setNoteAccent] = useState<NoteAccentId>(noteAccentColor);
 
   useLayoutEffect(() => {
@@ -51,8 +56,9 @@ export function CardFieldVisibilityDialog({
     setDraft(mergeCardFieldVisibility(value));
     setEffortOn(effortOnTasksEnabled);
     setDoneTag(completedTag);
+    setHideDone(hideCompletedTasks);
     setNoteAccent(noteAccentColor);
-  }, [open, value, effortOnTasksEnabled, completedTag, noteAccentColor]);
+  }, [open, value, effortOnTasksEnabled, completedTag, hideCompletedTasks, noteAccentColor]);
 
   if (!open) return null;
 
@@ -66,6 +72,7 @@ export function CardFieldVisibilityDialog({
       effortOn,
       doneTag.trim() || DEFAULT_COMPLETED_TAG,
       noteAccent || DEFAULT_NOTE_ACCENT,
+      hideDone,
     );
     onClose();
   };
@@ -126,9 +133,62 @@ export function CardFieldVisibilityDialog({
               className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none ring-sky-500/30 focus:ring-2"
             />
             <p className="mt-1 text-[11px] text-slate-500">
-              Karten mit diesem Tag gelten als erledigt (Filter ausblenden, KP, überfällig, Meilenstein-Summen). Groß-/
-              Kleinschreibung beim Tag auf der Karte egal.
+              Karten mit diesem Tag gelten als erledigt (KP, überfällig, Meilenstein-Summen). Groß-/Kleinschreibung egal.
             </p>
+
+            <fieldset className="mt-2.5">
+              <legend className="text-xs font-medium text-slate-600">Erledigte Karten</legend>
+              <div className="mt-1.5 space-y-1.5" role="radiogroup" aria-label="Erledigte Karten">
+                <label
+                  htmlFor={`${baseId}-done-strike`}
+                  className={[
+                    "flex cursor-pointer items-start gap-2 rounded-md border px-2.5 py-2 text-sm transition",
+                    !hideDone
+                      ? "border-sky-300 bg-sky-50/80 text-slate-900"
+                      : "border-transparent bg-white text-slate-700 hover:bg-white",
+                  ].join(" ")}
+                >
+                  <input
+                    id={`${baseId}-done-strike`}
+                    type="radio"
+                    name={`${baseId}-done-mode`}
+                    checked={!hideDone}
+                    onChange={() => setHideDone(false)}
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0 border-slate-300 text-sky-600 focus:ring-sky-500/40"
+                  />
+                  <span>
+                    <span className="font-medium">Durchstreichen</span>
+                    <span className="mt-0.5 block text-[11px] font-normal text-slate-500">
+                      Bleiben in der Kartenliste sichtbar, Titel durchgestrichen.
+                    </span>
+                  </span>
+                </label>
+                <label
+                  htmlFor={`${baseId}-done-hide`}
+                  className={[
+                    "flex cursor-pointer items-start gap-2 rounded-md border px-2.5 py-2 text-sm transition",
+                    hideDone
+                      ? "border-sky-300 bg-sky-50/80 text-slate-900"
+                      : "border-transparent bg-white text-slate-700 hover:bg-white",
+                  ].join(" ")}
+                >
+                  <input
+                    id={`${baseId}-done-hide`}
+                    type="radio"
+                    name={`${baseId}-done-mode`}
+                    checked={hideDone}
+                    onChange={() => setHideDone(true)}
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0 border-slate-300 text-sky-600 focus:ring-sky-500/40"
+                  />
+                  <span>
+                    <span className="font-medium">Ausblenden</span>
+                    <span className="mt-0.5 block text-[11px] font-normal text-slate-500">
+                      Verschwinden aus der Kartenliste; offene Kinder rücken nach oben. In der Struktur bleiben sie sichtbar.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
           </div>
 
           <div className="rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2">

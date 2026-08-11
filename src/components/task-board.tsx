@@ -252,6 +252,7 @@ export function TaskBoard() {
   const filterCombineMode = useTaskTreeStore((s) => s.filterCombineMode);
   const completedTag = useTaskTreeStore((s) => s.completedTag);
   const setCompletedTag = useTaskTreeStore((s) => s.setCompletedTag);
+  const setHideCompletedTasks = useTaskTreeStore((s) => s.setHideCompletedTasks);
   const canUndo = useStore(useTaskTreeStore.temporal, (s) => s.pastStates.length > 0);
   const canRedo = useStore(useTaskTreeStore.temporal, (s) => s.futureStates.length > 0);
 
@@ -2008,13 +2009,15 @@ export function TaskBoard() {
         value={cardFieldVisibility}
         effortOnTasksEnabled={effortOnTasksEnabled}
         completedTag={completedTag}
+        hideCompletedTasks={hideCompletedTasks}
         noteAccentColor={noteAccentColor}
         onClose={() => setCardFieldsOpen(false)}
-        onApply={(next, effortOn, doneTag, noteAccent) => {
+        onApply={(next, effortOn, doneTag, noteAccent, hideDone) => {
           applyCardFieldVisibility(next);
           setEffortOnTasksEnabled(effortOn);
           setCompletedTag(doneTag);
           setNoteAccentColor(noteAccent);
+          setHideCompletedTasks(hideDone);
         }}
       />
       <TaskEditorDialog

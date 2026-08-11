@@ -262,7 +262,7 @@ export function OutlineRail({
         )}
         {hideCompletedTasks ? (
           <p className="px-2 pb-2 pt-1 text-[10px] text-slate-400">
-            Erledigte bleiben in der Struktur sichtbar.
+            Erledigte sind in der Liste ausgeblendet, in der Struktur weiterhin sichtbar.
           </p>
         ) : null}
       </div>

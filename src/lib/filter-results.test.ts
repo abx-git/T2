@@ -107,7 +107,7 @@ describe("collectFilterMatchingCards", () => {
     expect(cards.map((c) => c.nodeId).sort()).toEqual(["a", "a1", "c"]);
   });
 
-  it("Include-Tags sind untereinander ODER", () => {
+  it("AND: mehrere Include-Tags müssen alle vorhanden sein", () => {
     const multi = [
       node({ id: "m1", title: "Both", tags: ["work", "home"] }),
       node({ id: "m2", title: "Work only", tags: ["work"] }),
@@ -117,6 +117,22 @@ describe("collectFilterMatchingCards", () => {
       filterColors: [],
       filterScheduleKinds: [],
       filterCombineMode: "and",
+      completedTag: DEFAULT_COMPLETED_TAG,
+    });
+    expect(cards.map((c) => c.nodeId)).toEqual(["m1"]);
+  });
+
+  it("OR: eines von mehreren Include-Tags reicht", () => {
+    const multi = [
+      node({ id: "m1", title: "Both", tags: ["work", "home"] }),
+      node({ id: "m2", title: "Work only", tags: ["work"] }),
+      node({ id: "m3", title: "Other", tags: ["errands"] }),
+    ];
+    const cards = collectFilterMatchingCards(multi, {
+      filterTags: ["work", "home"],
+      filterColors: [],
+      filterScheduleKinds: [],
+      filterCombineMode: "or",
       completedTag: DEFAULT_COMPLETED_TAG,
     });
     expect(cards.map((c) => c.nodeId).sort()).toEqual(["m1", "m2"]);

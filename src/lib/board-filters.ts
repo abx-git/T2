@@ -142,7 +142,7 @@ export function nodeMatchesAnyScheduleFilter(
 }
 
 /**
- * Tag-Filter: inkludierte Tags sind untereinander ODER,
+ * Tag-Filter: inkludierte Tags einzeln prüfen (Verknüpfung später per combineMode),
  * exkludierte Tags sind NOT (dürfen nicht vorkommen).
  * Neutrale Tags (weder inkl. noch exkl.) zählen nicht.
  */
@@ -150,17 +150,16 @@ export function nodeMatchesTagFilters(
   node: { tags: string[] },
   includeTags: string[],
   excludeTags: string[] = [],
+  combineMode: FilterCombineMode = "and",
 ): boolean {
   if (!includeTags.length && !excludeTags.length) return true;
   const keys = new Set(node.tags.map(tagKey));
-  if (includeTags.length > 0) {
-    const anyInclude = includeTags.some((t) => keys.has(tagKey(t)));
-    if (!anyInclude) return false;
-  }
   for (const t of excludeTags) {
     if (keys.has(tagKey(t))) return false;
   }
-  return true;
+  if (!includeTags.length) return true;
+  const includeHits = includeTags.map((t) => keys.has(tagKey(t)));
+  return combineMode === "or" ? includeHits.some(Boolean) : includeHits.every(Boolean);
 }
 
 /** Aktive Farbfilter: bei genau einer Farbe auf neue Karten übernehmen. */
@@ -172,22 +171,21 @@ export function defaultColorForNewCard(
 
 /**
  * Einzelne Filterkriterien als booleans.
- * Tags bilden eine Gruppe (Inkl. = ODER, Exkl. = NOT).
- * Farben und Terminarten je einzeln; Verknüpfung der Kriterien per filterCombineMode.
+ * Jedes Include-Tag, jede Farbe, jede Terminart; Exclude-Tags sind harte NOT-Bedingungen
+ * (siehe `nodeMatchesBoardFilters`). Verknüpfung der Kriterien per filterCombineMode.
  */
 export function boardFilterCriteriaMatches(
   node: Pick<TaskNode, "tags" | "dueDate" | "reminderDate" | "cardColor">,
   opts: {
     filterTags: string[];
-    filterExcludeTags?: string[];
     filterColors: CardColorId[];
     filterScheduleKinds: ScheduleFilterKind[];
   },
 ): boolean[] {
   const matches: boolean[] = [];
-  const excludeTags = opts.filterExcludeTags ?? [];
-  if (opts.filterTags.length > 0 || excludeTags.length > 0) {
-    matches.push(nodeMatchesTagFilters(node, opts.filterTags, excludeTags));
+  for (const tag of opts.filterTags) {
+    const key = tagKey(tag);
+    matches.push(node.tags.some((t) => tagKey(t) === key));
   }
   for (const color of opts.filterColors) {
     matches.push(node.cardColor === color);
@@ -203,8 +201,9 @@ export function boardFilterCriteriaMatches(
  * Karte passt zu den aktiven Filterkriterien.
  * Notizen haben keine Filter-Facetten — sie matchen nie selbst
  * (Sichtbarkeit steuert `rootsForMindmapDisplay` über die Elternkarte).
- * `and` = alle Kriterien müssen erfüllt sein;
- * `or` = mindestens ein Kriterium reicht.
+ * Exclude-Tags gelten immer als NOT (Karte darf keines davon haben).
+ * `and` = alle übrigen Kriterien müssen erfüllt sein;
+ * `or` = mindestens ein übriges Kriterium reicht.
  */
 export function nodeMatchesBoardFilters(
   node: Pick<TaskNode, "kind" | "tags" | "dueDate" | "reminderDate" | "cardColor">,
@@ -217,6 +216,11 @@ export function nodeMatchesBoardFilters(
   },
 ): boolean {
   if (isNoteNode(node)) return false;
+  const excludeTags = opts.filterExcludeTags ?? [];
+  if (excludeTags.length > 0) {
+    const keys = new Set(node.tags.map(tagKey));
+    if (excludeTags.some((t) => keys.has(tagKey(t)))) return false;
+  }
   const matches = boardFilterCriteriaMatches(node, opts);
   if (matches.length === 0) return true;
   const mode = opts.filterCombineMode ?? "and";

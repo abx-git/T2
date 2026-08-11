@@ -132,9 +132,11 @@ function filterSummaryText(opts: {
 }): string {
   const bits: string[] = [];
   const excludeTags = opts.filterExcludeTags ?? [];
+  const join = (opts.filterCombineMode ?? "and") === "or" ? " ODER " : " UND ";
+  const tagJoin = (opts.filterCombineMode ?? "and") === "or" ? " ∨ " : " ∧ ";
   if (opts.filterTags.length || excludeTags.length) {
     const parts: string[] = [];
-    if (opts.filterTags.length) parts.push(opts.filterTags.join(" ∨ "));
+    if (opts.filterTags.length) parts.push(opts.filterTags.join(tagJoin));
     if (excludeTags.length) parts.push(`nicht ${excludeTags.join(", ")}`);
     bits.push(parts.join("; "));
   }
@@ -145,7 +147,6 @@ function filterSummaryText(opts: {
     bits.push(opts.filterScheduleKinds.map((k) => SCHEDULE_FILTER_LABELS[k]).join(", "));
   }
   if (bits.length <= 1) return bits.join("") || "";
-  const join = (opts.filterCombineMode ?? "and") === "or" ? " ODER " : " UND ";
   return bits.join(join);
 }
 

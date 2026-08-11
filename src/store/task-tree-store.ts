@@ -178,8 +178,8 @@ export interface TaskTreeState {
   setCompletedTag: (tag: string) => void;
 
   /**
-   * Tag-Filter inklusiv (ODER untereinander).
-   * Zusammen mit `filterExcludeTags` eine Tag-Gruppe; neutrale Tags fehlen in beiden Listen.
+   * Tag-Filter inklusiv (jedes Tag ein Kriterium; Verknüpfung per filterCombineMode).
+   * Zusammen mit `filterExcludeTags`; neutrale Tags fehlen in beiden Listen.
    */
   filterTags: string[];
   setFilterTags: (tags: string[]) => void;

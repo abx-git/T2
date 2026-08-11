@@ -243,7 +243,7 @@ export function TagFilterBar({ onOpenResults }: TagFilterBarProps) {
 
 function tagFilterTitle(tag: string, state: FilterTagState): string {
   if (state === "include") {
-    return `„${tag}“ eingeschlossen (ODER) — Klick: ausschließen`;
+    return `„${tag}“ eingeschlossen — Klick: ausschließen`;
   }
   if (state === "exclude") {
     return `„${tag}“ ausgeschlossen (NOT) — Klick: neutral`;

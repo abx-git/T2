@@ -121,7 +121,8 @@ export function resolveSiblingInsertAfterId(
 /**
  * Sichtwald für die Kontext-Liste: erledigte Knoten werden entfernt
  * (Kinder eine Ebene hochgezogen); Filter behält passende Äste
- * (Tags, Farben, Termine — Tag-Gruppe inkl. ODER / exkl. NOT; Verknüpfung per filterCombineMode).
+ * (Tags, Farben, Termine — jedes Include-Tag / Farbe / Termin ein Kriterium;
+ * Exclude-Tags immer NOT; Verknüpfung per filterCombineMode).
  */
 export function rootsForMindmapDisplay(
   roots: TaskNode[],

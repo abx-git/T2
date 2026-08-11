@@ -195,7 +195,7 @@
         "filterTags": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Optional: inklusive Tag-Filter (untereinander ODER)."
+          "description": "Optional: inklusive Tag-Filter (jedes Tag ein Kriterium; Verknüpfung per filterCombineMode)."
         },
         "filterExcludeTags": {
           "type": "array",

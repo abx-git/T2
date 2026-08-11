@@ -101,7 +101,7 @@ export interface BoardSnapshotV1 {
   cardFieldVisibility?: CardFieldVisibility;
   /** Erledigte Karten in der Ansicht ausblenden; optional, Standard false. */
   hideCompletedTasks?: boolean;
-  /** Aktive Tag-Filter (inklusiv / ODER); optional, Standard leer. */
+  /** Aktive Tag-Filter (inklusiv); optional, Standard leer. */
   filterTags?: string[];
   /** Aktive Tag-Ausschlüsse (NOT); optional, Standard leer. */
   filterExcludeTags?: string[];

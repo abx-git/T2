@@ -182,9 +182,11 @@ function formatChecklistCardLine(card: FilterResultCard): string {
 function filterSummaryLine(options: CollectFilterResultsOptions): string {
   const bits: string[] = [];
   const excludeTags = options.filterExcludeTags ?? [];
+  const join = (options.filterCombineMode ?? "and") === "or" ? "ODER" : "UND";
+  const tagJoin = (options.filterCombineMode ?? "and") === "or" ? " ∨ " : " ∧ ";
   if (options.filterTags.length || excludeTags.length) {
     const parts: string[] = [];
-    if (options.filterTags.length) parts.push(options.filterTags.join(" ∨ "));
+    if (options.filterTags.length) parts.push(options.filterTags.join(tagJoin));
     if (excludeTags.length) parts.push(`nicht ${excludeTags.join(", ")}`);
     bits.push(`Tags: ${parts.join("; ")}`);
   }
@@ -196,7 +198,6 @@ function filterSummaryLine(options: CollectFilterResultsOptions): string {
       `Termine: ${options.filterScheduleKinds.map((k) => SCHEDULE_FILTER_LABELS[k]).join(", ")}`,
     );
   }
-  const join = (options.filterCombineMode ?? "and") === "or" ? "ODER" : "UND";
   return bits.length ? `${bits.join(` ${join} `)}` : "Filter";
 }
 

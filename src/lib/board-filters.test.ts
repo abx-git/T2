@@ -55,7 +55,7 @@ describe("board-filters", () => {
     expect(nodeMatchesAnyScheduleFilter(withReminder, ["due", "reminder"])).toBe(true);
   });
 
-  it("AND: Tag-Gruppe, Farben und Termine müssen zusammen passen", () => {
+  it("AND: alle Kriterien müssen erfüllt sein", () => {
     const n = node("a", {
       tags: ["x", "y"],
       cardColor: "sky",
@@ -69,18 +69,9 @@ describe("board-filters", () => {
         filterCombineMode: "and",
       }),
     ).toBe(true);
-    // Include-Tags sind ODER: x reicht trotz z
     expect(
       nodeMatchesBoardFilters(n, {
         filterTags: ["x", "z"],
-        filterColors: [],
-        filterScheduleKinds: [],
-        filterCombineMode: "and",
-      }),
-    ).toBe(true);
-    expect(
-      nodeMatchesBoardFilters(n, {
-        filterTags: ["z"],
         filterColors: [],
         filterScheduleKinds: [],
         filterCombineMode: "and",
@@ -150,6 +141,27 @@ describe("board-filters", () => {
         filterCombineMode: "or",
       }),
     ).toBe(true);
+    expect(
+      nodeMatchesBoardFilters(n, {
+        filterTags: ["x", "z"],
+        filterColors: [],
+        filterScheduleKinds: [],
+        filterCombineMode: "or",
+      }),
+    ).toBe(true);
+  });
+
+  it("Exclude gilt auch im ODER-Modus hart", () => {
+    const n = node("a", { tags: ["x", "blocked"], cardColor: "sky" });
+    expect(
+      nodeMatchesBoardFilters(n, {
+        filterTags: ["x"],
+        filterExcludeTags: ["blocked"],
+        filterColors: ["sky"],
+        filterScheduleKinds: [],
+        filterCombineMode: "or",
+      }),
+    ).toBe(false);
   });
 
   it("übernimmt Farbe nur bei genau einem Farbfilter", () => {

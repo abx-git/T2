@@ -42,6 +42,7 @@ export interface BoardPaneProps {
   onTitleEditCancel: (nodeId: string) => void;
   onRequestExport?: (nodeId: string) => void;
   onRequestInsertTemplate?: (nodeId: string) => void;
+  onRequestConvertToNote?: (nodeId: string) => void;
   onRequestDelete?: (nodeId: string) => void;
 }
 
@@ -78,6 +79,7 @@ export function BoardPane({
   onTitleEditCancel,
   onRequestExport,
   onRequestInsertTemplate,
+  onRequestConvertToNote,
   onRequestDelete,
 }: BoardPaneProps) {
   return (
@@ -137,6 +139,7 @@ export function BoardPane({
           onTitleEditCancel={onTitleEditCancel}
           onRequestExport={onRequestExport}
           onRequestInsertTemplate={onRequestInsertTemplate}
+          onRequestConvertToNote={onRequestConvertToNote}
           onRequestDelete={onRequestDelete}
         />
       </div>

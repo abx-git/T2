@@ -235,6 +235,7 @@ export function TaskBoard() {
   const updateCard = useTaskTreeStore((s) => s.updateCard);
   const updateNote = useTaskTreeStore((s) => s.updateNote);
   const removeCard = useTaskTreeStore((s) => s.removeCard);
+  const convertCardToNote = useTaskTreeStore((s) => s.convertCardToNote);
   const columnTitleOverrides = useTaskTreeStore((s) => s.columnTitleOverrides);
   const importSubtreeRoot = useTaskTreeStore((s) => s.importSubtreeRoot);
   const applyTemplateUnder = useTaskTreeStore((s) => s.applyTemplateUnder);
@@ -1551,6 +1552,7 @@ export function TaskBoard() {
           if (n) setBranchExportNode(n);
         }}
         onRequestInsertTemplate={(nodeId) => setTemplateInsertParentId(nodeId)}
+        onRequestConvertToNote={(nodeId) => convertCardToNote(nodeId)}
         onRequestDelete={handleRequestDelete}
       />
     );

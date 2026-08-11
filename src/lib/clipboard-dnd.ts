@@ -1,6 +1,7 @@
 import type { TaskNode } from "@/types/task-node";
 
 import type { ContextListDrop } from "./context-list-dnd";
+import { applyMergeIntoNote, mergeExternalNodeIntoNote } from "./note-merge";
 import type { OutlineDrop } from "./outline-dnd";
 import {
   detachNodeById,
@@ -96,6 +97,10 @@ export function applyForestDrop(
   const targetId = target.targetId;
   if (targetId === activeId || subtreeContainsId(activeNode, targetId)) return roots;
   if (!findNodeById(roots, targetId)) return roots;
+
+  const merged = applyMergeIntoNote(roots, activeId, targetId);
+  if (merged !== null) return merged;
+
   const { next: r1, detached } = detachNodeById(roots, activeId);
   if (!detached) return roots;
   const clone = structuredClone(detached) as TaskNode;
@@ -123,6 +128,10 @@ export function insertIntoForest(
   if (!findNodeById(roots, targetId) || subtreeContainsId(clone, targetId)) {
     return [...roots, clone];
   }
+
+  const merged = mergeExternalNodeIntoNote(roots, clone, targetId);
+  if (merged !== null) return merged;
+
   const childCount = getSiblingsList(roots, targetId).length;
   return insertUnderParent(roots, targetId, childCount, clone);
 }

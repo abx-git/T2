@@ -37,6 +37,7 @@ import {
   type ContextListDrop,
 } from "@/lib/context-list-dnd";
 import { applyOutlineDrop, insertNodeIntoOutline, type OutlineDrop } from "@/lib/outline-dnd";
+import { convertCardToNoteInForest } from "@/lib/note-merge";
 import { refreshCalculatedEffortsInTree } from "@/lib/task-effort";
 import { collectAllNodeIds, generateUniqueTaskId, generateUniqueTaskIdFromTaken } from "@/lib/task-id";
 import { remapTaskNodeForest, remapTaskNodeIds } from "@/lib/task-tree-json";
@@ -276,6 +277,8 @@ export interface TaskTreeState {
   addNoteAfterSibling: (afterNodeId: string) => string | null;
   updateCard: (nodeId: string, fields: Partial<TaskCardEditableFields>) => void;
   updateNote: (nodeId: string, fields: Partial<NoteEditableFields>) => void;
+  /** Karte in Markdown-Notiz umwandeln (Beschreibung → Markdown). */
+  convertCardToNote: (nodeId: string) => void;
   /** Entfernt die Karte inkl. gesamtem Unterbaum. */
   removeCard: (nodeId: string) => void;
 
@@ -917,6 +920,19 @@ export const useTaskTreeStore = create<TaskTreeState>()(
   updateNote: (nodeId, fields) => {
     set((s) => {
       const nextRoots = updateNodeFields(s.roots, nodeId, fields);
+      return {
+        roots: nextRoots,
+        pathIds: normalizePathIds(nextRoots, s.pathIds),
+      };
+    });
+  },
+
+  convertCardToNote: (nodeId) => {
+    set((s) => {
+      const node = findNodeById(s.roots, nodeId);
+      if (!node || node.kind === "note") return {};
+      const nextRoots = convertCardToNoteInForest(s.roots, nodeId);
+      if (nextRoots === s.roots) return {};
       return {
         roots: nextRoots,
         pathIds: normalizePathIds(nextRoots, s.pathIds),

@@ -11,6 +11,7 @@ import {
   ListPlus,
   MoreHorizontal,
   Pencil,
+  StickyNote,
   Terminal,
   Trash2,
 } from "lucide-react";
@@ -104,6 +105,7 @@ export interface TaskRowProps {
   onOpenDetails: () => void;
   onRequestExport?: () => void;
   onRequestInsertTemplate?: () => void;
+  onRequestConvertToNote?: () => void;
   onRequestDelete?: () => void;
 }
 
@@ -127,6 +129,7 @@ export function TaskRow({
   onOpenDetails,
   onRequestExport,
   onRequestInsertTemplate,
+  onRequestConvertToNote,
   onRequestDelete,
 }: TaskRowProps) {
   const completedTag = useTaskTreeStore((s) => s.completedTag);
@@ -349,6 +352,20 @@ export function TaskRow({
           <Pencil className="h-3.5 w-3.5" aria-hidden />
           Ändern
         </button>
+        {onRequestConvertToNote ? (
+          <button
+            type="button"
+            role="menuitem"
+            className={rowMenuItemClass}
+            onClick={() => {
+              setMenuOpen(false);
+              onRequestConvertToNote();
+            }}
+          >
+            <StickyNote className="h-3.5 w-3.5" aria-hidden />
+            In Notiz umwandeln
+          </button>
+        ) : null}
         {cardLink ? (
           <button
             type="button"

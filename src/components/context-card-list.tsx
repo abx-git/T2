@@ -85,6 +85,7 @@ type CardBranchSharedProps = {
   onTitleEditCancel: (nodeId: string) => void;
   onRequestExport?: (nodeId: string) => void;
   onRequestInsertTemplate?: (nodeId: string) => void;
+  onRequestConvertToNote?: (nodeId: string) => void;
   onRequestDelete?: (nodeId: string) => void;
 };
 
@@ -118,6 +119,7 @@ function TreeEntryRow({
     onTitleEditCancel,
     onRequestExport,
     onRequestInsertTemplate,
+    onRequestConvertToNote,
     onRequestDelete,
     nestDepth,
     isCollapsed,
@@ -154,6 +156,9 @@ function TreeEntryRow({
       isTitleEditing={titleEditNodeId === node.id}
       onTitleSave={(title, meta) => onTitleSave(node.id, title, meta)}
       onTitleEditCancel={() => onTitleEditCancel(node.id)}
+      onRequestConvertToNote={
+        onRequestConvertToNote ? () => onRequestConvertToNote(node.id) : undefined
+      }
       {...common}
     />
   );
@@ -189,6 +194,7 @@ function NestedCardBranch({
     onTitleEditCancel,
     onRequestExport,
     onRequestInsertTemplate,
+    onRequestConvertToNote,
     onRequestDelete,
   } = shared;
 
@@ -254,6 +260,7 @@ export interface ContextCardListProps {
   onTitleEditCancel: (nodeId: string) => void;
   onRequestExport?: (nodeId: string) => void;
   onRequestInsertTemplate?: (nodeId: string) => void;
+  onRequestConvertToNote?: (nodeId: string) => void;
   onRequestDelete?: (nodeId: string) => void;
 }
 
@@ -283,6 +290,7 @@ export function ContextCardList({
   onTitleEditCancel,
   onRequestExport,
   onRequestInsertTemplate,
+  onRequestConvertToNote,
   onRequestDelete,
 }: ContextCardListProps) {
   const noteAccentColor = useTaskTreeStore((s) => s.noteAccentColor);
@@ -317,6 +325,7 @@ export function ContextCardList({
     onTitleEditCancel,
     onRequestExport,
     onRequestInsertTemplate,
+    onRequestConvertToNote,
     onRequestDelete,
   };
 

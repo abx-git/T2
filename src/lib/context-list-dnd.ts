@@ -8,6 +8,7 @@ import {
   withContextPanePrefix,
   type BoardPaneId,
 } from "@/lib/board-pane";
+import { applyMergeIntoNote, mergeExternalNodeIntoNote } from "@/lib/note-merge";
 import {
   detachNodeById,
   findNodeById,
@@ -131,6 +132,9 @@ export function applyContextListDrop(
   if (targetId === activeId || subtreeContainsId(activeNode, targetId)) return roots;
   if (!findNodeById(roots, targetId)) return roots;
 
+  const merged = applyMergeIntoNote(roots, activeId, targetId);
+  if (merged !== null) return merged;
+
   const { next: r1, detached } = detachNodeById(roots, activeId);
   if (!detached) return roots;
   const childCount = getSiblingsList(r1, targetId).length;
@@ -165,6 +169,10 @@ export function insertNodeIntoContextList(
   const targetId = drop.targetId;
   if (targetId === clone.id || subtreeContainsId(clone, targetId)) return roots;
   if (!findNodeById(roots, targetId)) return roots;
+
+  const merged = mergeExternalNodeIntoNote(roots, clone, targetId);
+  if (merged !== null) return merged;
+
   const childCount = getSiblingsList(roots, targetId).length;
   return insertUnderParent(roots, targetId, childCount, clone);
 }

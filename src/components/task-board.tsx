@@ -247,6 +247,7 @@ export function TaskBoard() {
   const setEffortOnTasksEnabled = useTaskTreeStore((s) => s.setEffortOnTasksEnabled);
   const hideCompletedTasks = useTaskTreeStore((s) => s.hideCompletedTasks);
   const filterTags = useTaskTreeStore((s) => s.filterTags);
+  const filterExcludeTags = useTaskTreeStore((s) => s.filterExcludeTags);
   const filterColors = useTaskTreeStore((s) => s.filterColors);
   const filterScheduleKinds = useTaskTreeStore((s) => s.filterScheduleKinds);
   const filterCombineMode = useTaskTreeStore((s) => s.filterCombineMode);
@@ -875,6 +876,7 @@ export function TaskBoard() {
             s.cardInteractionMode,
             s.filterCombineMode,
             s.noteAccentColor,
+            s.filterExcludeTags,
           ),
         );
         setPasteImportOpen(false);
@@ -1053,6 +1055,7 @@ export function TaskBoard() {
         hideCompletedTasks,
         completedTag,
         filterTags,
+        filterExcludeTags,
         filterColors,
         filterScheduleKinds,
         filterCombineMode,
@@ -1062,6 +1065,7 @@ export function TaskBoard() {
       hideCompletedTasks,
       completedTag,
       filterTags,
+      filterExcludeTags,
       filterColors,
       filterScheduleKinds,
       filterCombineMode,
@@ -1373,6 +1377,7 @@ export function TaskBoard() {
         s.cardInteractionMode,
         s.filterCombineMode,
         s.noteAccentColor,
+        s.filterExcludeTags,
       ),
     );
   }, [
@@ -1383,6 +1388,7 @@ export function TaskBoard() {
     hideCompletedTasks,
     effortOnTasksEnabled,
     filterTags,
+    filterExcludeTags,
     filterColors,
     filterScheduleKinds,
     filterCombineMode,

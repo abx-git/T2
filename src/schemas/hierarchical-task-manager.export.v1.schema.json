@@ -195,7 +195,12 @@
         "filterTags": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Optional: aktive Tag-Filter (jedes Tag ein Kriterium)."
+          "description": "Optional: inklusive Tag-Filter (untereinander ODER)."
+        },
+        "filterExcludeTags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional: ausgeschlossene Tags (NOT — Karte darf das Tag nicht haben)."
         },
         "filterColors": {
           "type": "array",
@@ -216,7 +221,7 @@
         "filterCombineMode": {
           "type": "string",
           "enum": ["and", "or"],
-          "description": "Optional: Verknüpfung aller Filterkriterien. and = alle müssen erfüllt sein, or = mindestens eines. Standard and."
+          "description": "Optional: Verknüpfung der Filterkriterien (Tag-Gruppe, Farben, Termine). and = alle müssen erfüllt sein, or = mindestens eines. Standard and."
         },
         "completedTag": {
           "type": "string",

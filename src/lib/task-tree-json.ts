@@ -101,8 +101,10 @@ export interface BoardSnapshotV1 {
   cardFieldVisibility?: CardFieldVisibility;
   /** Erledigte Karten in der Ansicht ausblenden; optional, Standard false. */
   hideCompletedTasks?: boolean;
-  /** Aktive Tag-Filter; optional, Standard leer. */
+  /** Aktive Tag-Filter (inklusiv / ODER); optional, Standard leer. */
   filterTags?: string[];
+  /** Aktive Tag-Ausschlüsse (NOT); optional, Standard leer. */
+  filterExcludeTags?: string[];
   /** Aktive Farbfilter; optional, Standard leer. */
   filterColors?: CardColorId[];
   /** Aktive Terminfilter (Fälligkeit / Erinnerung); optional, Standard leer. */
@@ -475,6 +477,13 @@ export function parseExportedDocument(text: string): ExportedDocumentV1 {
               filterTags: root.filterTags.filter((x): x is string => typeof x === "string"),
             }
           : {}),
+        ...(Array.isArray(root.filterExcludeTags)
+          ? {
+              filterExcludeTags: root.filterExcludeTags.filter(
+                (x): x is string => typeof x === "string",
+              ),
+            }
+          : {}),
         ...(Array.isArray(root.filterColors)
           ? { filterColors: parseFilterColors(root.filterColors) }
           : {}),
@@ -572,6 +581,7 @@ export function buildBoardSnapshot(
   cardInteractionMode: "navigate" | "expand" = "expand",
   filterCombineMode: FilterCombineMode = "and",
   noteAccentColor: NoteAccentId = DEFAULT_NOTE_ACCENT,
+  filterExcludeTags: string[] = [],
 ): BoardSnapshotV1 {
   const co: Record<string, string> = {};
   for (const [k, v] of Object.entries(columnTitleOverrides)) {
@@ -595,6 +605,7 @@ export function buildBoardSnapshot(
     cardFieldVisibility: mergeCardFieldVisibility(cardFieldVisibility),
     ...(hideCompletedTasks ? { hideCompletedTasks: true } : {}),
     ...(filterTags.length ? { filterTags: [...filterTags] } : {}),
+    ...(filterExcludeTags.length ? { filterExcludeTags: [...filterExcludeTags] } : {}),
     ...(colors.length ? { filterColors: [...colors] } : {}),
     ...(schedule.length ? { filterScheduleKinds: [...schedule] } : {}),
     ...(combine !== "and" ? { filterCombineMode: combine } : {}),
@@ -678,6 +689,7 @@ export type BoardImportPayload = {
   cardFieldVisibility?: CardFieldVisibility;
   hideCompletedTasks?: boolean;
   filterTags?: string[];
+  filterExcludeTags?: string[];
   filterColors?: CardColorId[];
   filterScheduleKinds?: ScheduleFilterKind[];
   filterCombineMode?: FilterCombineMode;
@@ -703,6 +715,9 @@ export function boardSnapshotToReplacePayload(snap: BoardSnapshotV1): BoardImpor
     cardFieldVisibility: snap.cardFieldVisibility,
     ...(snap.hideCompletedTasks === true ? { hideCompletedTasks: true } : {}),
     ...(snap.filterTags?.length ? { filterTags: [...snap.filterTags] } : {}),
+    ...(snap.filterExcludeTags?.length
+      ? { filterExcludeTags: [...snap.filterExcludeTags] }
+      : {}),
     ...(snap.filterColors?.length ? { filterColors: [...snap.filterColors] } : {}),
     ...(snap.filterScheduleKinds?.length
       ? { filterScheduleKinds: [...snap.filterScheduleKinds] }
@@ -731,6 +746,9 @@ export function stableBoardStateKey(payload: BoardImportPayload): string {
   const tags = payload.filterTags?.length
     ? [...payload.filterTags].map((t) => t.trim()).filter(Boolean).sort()
     : [];
+  const excludeTags = payload.filterExcludeTags?.length
+    ? [...payload.filterExcludeTags].map((t) => t.trim()).filter(Boolean).sort()
+    : [];
   const colors = payload.filterColors?.length
     ? parseFilterColors(payload.filterColors).slice().sort()
     : [];
@@ -758,6 +776,7 @@ export function stableBoardStateKey(payload: BoardImportPayload): string {
     effortOnTasksEnabled: payload.effortOnTasksEnabled !== false,
     noteAccentColor: parseNoteAccent(payload.noteAccentColor),
     filterTags: tags,
+    filterExcludeTags: excludeTags,
     filterColors: colors,
     filterScheduleKinds: schedule,
     filterCombineMode: parseFilterCombineMode(payload.filterCombineMode),

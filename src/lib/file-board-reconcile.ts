@@ -100,6 +100,7 @@ export function boardJsonFromStoreState(): string {
       s.cardInteractionMode,
       s.filterCombineMode,
       s.noteAccentColor,
+      s.filterExcludeTags,
     ),
   );
 }
@@ -144,6 +145,7 @@ export function boardPersistKeyFromStoreState(): string {
     effortOnTasksEnabled: s.effortOnTasksEnabled,
     noteAccentColor: s.noteAccentColor,
     filterTags: s.filterTags,
+    filterExcludeTags: s.filterExcludeTags,
     filterColors: s.filterColors,
     filterScheduleKinds: s.filterScheduleKinds,
     filterCombineMode: s.filterCombineMode,

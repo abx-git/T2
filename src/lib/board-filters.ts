@@ -141,6 +141,28 @@ export function nodeMatchesAnyScheduleFilter(
   return false;
 }
 
+/**
+ * Tag-Filter: inkludierte Tags sind untereinander ODER,
+ * exkludierte Tags sind NOT (dürfen nicht vorkommen).
+ * Neutrale Tags (weder inkl. noch exkl.) zählen nicht.
+ */
+export function nodeMatchesTagFilters(
+  node: { tags: string[] },
+  includeTags: string[],
+  excludeTags: string[] = [],
+): boolean {
+  if (!includeTags.length && !excludeTags.length) return true;
+  const keys = new Set(node.tags.map(tagKey));
+  if (includeTags.length > 0) {
+    const anyInclude = includeTags.some((t) => keys.has(tagKey(t)));
+    if (!anyInclude) return false;
+  }
+  for (const t of excludeTags) {
+    if (keys.has(tagKey(t))) return false;
+  }
+  return true;
+}
+
 /** Aktive Farbfilter: bei genau einer Farbe auf neue Karten übernehmen. */
 export function defaultColorForNewCard(
   filterColors: readonly CardColorId[],
@@ -149,21 +171,23 @@ export function defaultColorForNewCard(
 }
 
 /**
- * Einzelne Filterkriterien als booleans (jedes Tag, jede Farbe, jede Terminart).
- * Leer = keine Einschränkung.
+ * Einzelne Filterkriterien als booleans.
+ * Tags bilden eine Gruppe (Inkl. = ODER, Exkl. = NOT).
+ * Farben und Terminarten je einzeln; Verknüpfung der Kriterien per filterCombineMode.
  */
 export function boardFilterCriteriaMatches(
   node: Pick<TaskNode, "tags" | "dueDate" | "reminderDate" | "cardColor">,
   opts: {
     filterTags: string[];
+    filterExcludeTags?: string[];
     filterColors: CardColorId[];
     filterScheduleKinds: ScheduleFilterKind[];
   },
 ): boolean[] {
   const matches: boolean[] = [];
-  for (const tag of opts.filterTags) {
-    const key = tagKey(tag);
-    matches.push(node.tags.some((t) => tagKey(t) === key));
+  const excludeTags = opts.filterExcludeTags ?? [];
+  if (opts.filterTags.length > 0 || excludeTags.length > 0) {
+    matches.push(nodeMatchesTagFilters(node, opts.filterTags, excludeTags));
   }
   for (const color of opts.filterColors) {
     matches.push(node.cardColor === color);
@@ -186,6 +210,7 @@ export function nodeMatchesBoardFilters(
   node: Pick<TaskNode, "kind" | "tags" | "dueDate" | "reminderDate" | "cardColor">,
   opts: {
     filterTags: string[];
+    filterExcludeTags?: string[];
     filterColors: CardColorId[];
     filterScheduleKinds: ScheduleFilterKind[];
     filterCombineMode?: FilterCombineMode;

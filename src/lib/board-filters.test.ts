@@ -55,7 +55,7 @@ describe("board-filters", () => {
     expect(nodeMatchesAnyScheduleFilter(withReminder, ["due", "reminder"])).toBe(true);
   });
 
-  it("AND: alle Kriterien müssen erfüllt sein", () => {
+  it("AND: Tag-Gruppe, Farben und Termine müssen zusammen passen", () => {
     const n = node("a", {
       tags: ["x", "y"],
       cardColor: "sky",
@@ -69,9 +69,18 @@ describe("board-filters", () => {
         filterCombineMode: "and",
       }),
     ).toBe(true);
+    // Include-Tags sind ODER: x reicht trotz z
     expect(
       nodeMatchesBoardFilters(n, {
         filterTags: ["x", "z"],
+        filterColors: [],
+        filterScheduleKinds: [],
+        filterCombineMode: "and",
+      }),
+    ).toBe(true);
+    expect(
+      nodeMatchesBoardFilters(n, {
+        filterTags: ["z"],
         filterColors: [],
         filterScheduleKinds: [],
         filterCombineMode: "and",
@@ -83,6 +92,34 @@ describe("board-filters", () => {
         filterColors: ["rose"],
         filterScheduleKinds: [],
         filterCombineMode: "and",
+      }),
+    ).toBe(false);
+  });
+
+  it("Exclude-Tags (NOT) schließen Karten aus", () => {
+    const n = node("a", { tags: ["x", "y"] });
+    expect(
+      nodeMatchesBoardFilters(n, {
+        filterTags: [],
+        filterExcludeTags: ["y"],
+        filterColors: [],
+        filterScheduleKinds: [],
+      }),
+    ).toBe(false);
+    expect(
+      nodeMatchesBoardFilters(n, {
+        filterTags: ["x"],
+        filterExcludeTags: ["z"],
+        filterColors: [],
+        filterScheduleKinds: [],
+      }),
+    ).toBe(true);
+    expect(
+      nodeMatchesBoardFilters(n, {
+        filterTags: ["x"],
+        filterExcludeTags: ["y"],
+        filterColors: [],
+        filterScheduleKinds: [],
       }),
     ).toBe(false);
   });

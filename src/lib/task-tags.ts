@@ -90,9 +90,13 @@ export function collectAllTagsFromForest(roots: { tags: string[]; children: unkn
   return [...byKey.values()].sort((a, b) => a.localeCompare(b, "de"));
 }
 
-/** Filter-Chips: alle Tags außer bereits gewählte (case-insensitiv). */
-export function tagsAvailableForFilter(allTags: string[], selectedTags: string[]): string[] {
-  const selected = new Set(selectedTags.map(tagKey));
+/** Filter-Chips: Tags ohne aktiven Include-/Exclude-Zustand. */
+export function tagsAvailableForFilter(
+  allTags: string[],
+  selectedTags: string[],
+  excludeTags: string[] = [],
+): string[] {
+  const selected = new Set([...selectedTags, ...excludeTags].map(tagKey));
   return allTags.filter((t) => !selected.has(tagKey(t)));
 }
 
@@ -102,9 +106,44 @@ export function nodeHasAnyFilterTag(node: { tags: string[] }, filterTags: string
   return node.tags.some((t) => keys.has(tagKey(t)));
 }
 
-/** Aktive Tag-Filter auf neu angelegte Karten übernehmen (OR-Filter sichtbar halten). */
+/** Aktive Include-Tag-Filter auf neu angelegte Karten übernehmen. */
 export function defaultTagsForNewCard(filterTags: readonly string[]): string[] {
   return filterTags.length ? [...filterTags] : [];
+}
+
+export type FilterTagState = "neutral" | "include" | "exclude";
+
+export function filterTagState(
+  tag: string,
+  includeTags: readonly string[],
+  excludeTags: readonly string[],
+): FilterTagState {
+  const k = tagKey(tag);
+  if (includeTags.some((t) => tagKey(t) === k)) return "include";
+  if (excludeTags.some((t) => tagKey(t) === k)) return "exclude";
+  return "neutral";
+}
+
+export function nextFilterTagState(current: FilterTagState): FilterTagState {
+  if (current === "neutral") return "include";
+  if (current === "include") return "exclude";
+  return "neutral";
+}
+
+/** Alle Tags für die Filterleiste (Board + aktive Filterzustände), sortiert. */
+export function tagsForFilterBar(
+  allTags: string[],
+  includeTags: string[],
+  excludeTags: string[],
+): string[] {
+  const byKey = new Map<string, string>();
+  for (const t of [...allTags, ...includeTags, ...excludeTags]) {
+    const label = normalizeTagLabel(t);
+    if (!label) continue;
+    const k = tagKey(label);
+    if (!byKey.has(k)) byKey.set(k, label);
+  }
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
 }
 
 /** Nur für JSON-Import älterer Dateien mit `status`. */

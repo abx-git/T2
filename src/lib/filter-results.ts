@@ -33,6 +33,7 @@ export interface FilterResultCard {
 
 export interface CollectFilterResultsOptions {
   filterTags: string[];
+  filterExcludeTags?: string[];
   filterColors: CardColorId[];
   filterScheduleKinds: ScheduleFilterKind[];
   filterCombineMode?: FilterCombineMode;
@@ -66,11 +67,13 @@ function nextRelevantDate(card: FilterResultCard): number {
 /** Aktive Facettenfilter gesetzt? */
 export function hasActiveFacetFilters(opts: {
   filterTags: string[];
+  filterExcludeTags?: string[];
   filterColors: CardColorId[];
   filterScheduleKinds: ScheduleFilterKind[];
 }): boolean {
   return (
     opts.filterTags.length > 0 ||
+    (opts.filterExcludeTags?.length ?? 0) > 0 ||
     opts.filterColors.length > 0 ||
     opts.filterScheduleKinds.length > 0
   );
@@ -87,6 +90,7 @@ export function collectFilterMatchingCards(
   const includeDone = options.includeDone !== false;
   const filterOpts = {
     filterTags: options.filterTags,
+    filterExcludeTags: options.filterExcludeTags ?? [],
     filterColors: options.filterColors,
     filterScheduleKinds: options.filterScheduleKinds,
     filterCombineMode: options.filterCombineMode,
@@ -177,7 +181,13 @@ function formatChecklistCardLine(card: FilterResultCard): string {
 
 function filterSummaryLine(options: CollectFilterResultsOptions): string {
   const bits: string[] = [];
-  if (options.filterTags.length) bits.push(`Tags: ${options.filterTags.join(", ")}`);
+  const excludeTags = options.filterExcludeTags ?? [];
+  if (options.filterTags.length || excludeTags.length) {
+    const parts: string[] = [];
+    if (options.filterTags.length) parts.push(options.filterTags.join(" ∨ "));
+    if (excludeTags.length) parts.push(`nicht ${excludeTags.join(", ")}`);
+    bits.push(`Tags: ${parts.join("; ")}`);
+  }
   if (options.filterColors.length) {
     bits.push(`Farben: ${options.filterColors.map(cardColorLabel).join(", ")}`);
   }

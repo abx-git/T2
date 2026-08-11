@@ -125,12 +125,19 @@ function groupAppointments(
 
 function filterSummaryText(opts: {
   filterTags: string[];
+  filterExcludeTags?: string[];
   filterColors: CardColorId[];
   filterScheduleKinds: ScheduleFilterKind[];
   filterCombineMode?: "and" | "or";
 }): string {
   const bits: string[] = [];
-  if (opts.filterTags.length) bits.push(opts.filterTags.join(", "));
+  const excludeTags = opts.filterExcludeTags ?? [];
+  if (opts.filterTags.length || excludeTags.length) {
+    const parts: string[] = [];
+    if (opts.filterTags.length) parts.push(opts.filterTags.join(" ∨ "));
+    if (excludeTags.length) parts.push(`nicht ${excludeTags.join(", ")}`);
+    bits.push(parts.join("; "));
+  }
   if (opts.filterColors.length) {
     bits.push(opts.filterColors.map((c) => cardColorLabel(c)).join(", "));
   }
@@ -156,6 +163,7 @@ export function FilterResultsDialog({ open, onClose, onSelectNode }: FilterResul
   const roots = useTaskTreeStore((s) => s.roots);
   const completedTag = useTaskTreeStore((s) => s.completedTag);
   const filterTags = useTaskTreeStore((s) => s.filterTags);
+  const filterExcludeTags = useTaskTreeStore((s) => s.filterExcludeTags);
   const filterColors = useTaskTreeStore((s) => s.filterColors);
   const filterScheduleKinds = useTaskTreeStore((s) => s.filterScheduleKinds);
   const filterCombineMode = useTaskTreeStore((s) => s.filterCombineMode);
@@ -169,6 +177,7 @@ export function FilterResultsDialog({ open, onClose, onSelectNode }: FilterResul
 
   const filterMode = hasActiveFacetFilters({
     filterTags,
+    filterExcludeTags,
     filterColors,
     filterScheduleKinds,
   });
@@ -176,13 +185,22 @@ export function FilterResultsDialog({ open, onClose, onSelectNode }: FilterResul
   const filterOpts = useMemo(
     () => ({
       filterTags,
+      filterExcludeTags,
       filterColors,
       filterScheduleKinds,
       filterCombineMode,
       completedTag,
       includeDone,
     }),
-    [filterTags, filterColors, filterScheduleKinds, filterCombineMode, completedTag, includeDone],
+    [
+      filterTags,
+      filterExcludeTags,
+      filterColors,
+      filterScheduleKinds,
+      filterCombineMode,
+      completedTag,
+      includeDone,
+    ],
   );
 
   const appointments = useMemo(
@@ -255,7 +273,13 @@ export function FilterResultsDialog({ open, onClose, onSelectNode }: FilterResul
   };
 
   const summary = filterMode
-    ? filterSummaryText({ filterTags, filterColors, filterScheduleKinds, filterCombineMode })
+    ? filterSummaryText({
+        filterTags,
+        filterExcludeTags,
+        filterColors,
+        filterScheduleKinds,
+        filterCombineMode,
+      })
     : null;
 
   return (

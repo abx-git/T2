@@ -81,6 +81,7 @@ export type BoardHistorySlice = {
   hideCompletedTasks: boolean;
   completedTag: string;
   filterTags: string[];
+  filterExcludeTags: string[];
   filterColors: CardColorId[];
   filterScheduleKinds: ScheduleFilterKind[];
   filterCombineMode: FilterCombineMode;
@@ -101,6 +102,7 @@ function partializeBoardHistory(state: TaskTreeState): BoardHistorySlice {
     hideCompletedTasks: state.hideCompletedTasks,
     completedTag: state.completedTag,
     filterTags: state.filterTags,
+    filterExcludeTags: state.filterExcludeTags,
     filterColors: state.filterColors,
     filterScheduleKinds: state.filterScheduleKinds,
     filterCombineMode: state.filterCombineMode,
@@ -122,6 +124,7 @@ function boardHistoryEqual(a: BoardHistorySlice, b: BoardHistorySlice): boolean 
     a.hideCompletedTasks === b.hideCompletedTasks &&
     a.completedTag === b.completedTag &&
     a.filterTags === b.filterTags &&
+    a.filterExcludeTags === b.filterExcludeTags &&
     a.filterColors === b.filterColors &&
     a.filterScheduleKinds === b.filterScheduleKinds &&
     a.filterCombineMode === b.filterCombineMode &&
@@ -130,6 +133,13 @@ function boardHistoryEqual(a: BoardHistorySlice, b: BoardHistorySlice): boolean 
     a.noteAccentColor === b.noteAccentColor &&
     a.columnTitleOverrides === b.columnTitleOverrides
   );
+}
+
+function normalizeFilterTagList(tags: string[]): string[] {
+  return tags
+    .map((t) => normalizeTagLabel(t))
+    .filter(Boolean)
+    .filter((t, i, arr) => arr.findIndex((x) => tagKey(x) === tagKey(t)) === i);
 }
 
 export interface TaskTreeState {
@@ -167,11 +177,21 @@ export interface TaskTreeState {
   completedTag: string;
   setCompletedTag: (tag: string) => void;
 
-  /** Tag-Filter: jedes Tag ist ein eigenes Kriterium. */
+  /**
+   * Tag-Filter inklusiv (ODER untereinander).
+   * Zusammen mit `filterExcludeTags` eine Tag-Gruppe; neutrale Tags fehlen in beiden Listen.
+   */
   filterTags: string[];
   setFilterTags: (tags: string[]) => void;
   addFilterTag: (tag: string) => void;
   removeFilterTag: (tag: string) => void;
+  /** Tag-Filter exklusiv (NOT — Karte darf das Tag nicht haben). */
+  filterExcludeTags: string[];
+  setFilterExcludeTags: (tags: string[]) => void;
+  addFilterExcludeTag: (tag: string) => void;
+  removeFilterExcludeTag: (tag: string) => void;
+  /** Tag-Filterzustand: neutral → inklusiv → exklusiv → neutral. */
+  cycleFilterTag: (tag: string) => void;
   /** Farbfilter: jede Farbe ist ein eigenes Kriterium. */
   filterColors: CardColorId[];
   setFilterColors: (colors: CardColorId[]) => void;
@@ -183,7 +203,7 @@ export interface TaskTreeState {
   addFilterScheduleKind: (kind: ScheduleFilterKind) => void;
   removeFilterScheduleKind: (kind: ScheduleFilterKind) => void;
   /**
-   * Verknüpfung der Filterkriterien (jedes Tag, jede Farbe, jede Terminart).
+   * Verknüpfung der Filterkriterien (Tag-Gruppe, jede Farbe, jede Terminart).
    * `and` = alle Kriterien müssen erfüllt sein; `or` = mindestens eines reicht.
    */
   filterCombineMode: FilterCombineMode;
@@ -270,6 +290,7 @@ export interface TaskTreeState {
     hideCompletedTasks?: boolean;
     completedTag?: string;
     filterTags?: string[];
+    filterExcludeTags?: string[];
     filterColors?: CardColorId[];
     filterScheduleKinds?: ScheduleFilterKind[];
     filterCombineMode?: FilterCombineMode;
@@ -421,22 +442,29 @@ export const useTaskTreeStore = create<TaskTreeState>()(
   },
 
   filterTags: [],
+  filterExcludeTags: [],
 
   setFilterTags: (tags) => {
-    const filterTags = tags
-      .map((t) => normalizeTagLabel(t))
-      .filter(Boolean)
-      .filter((t, i, arr) => arr.findIndex((x) => tagKey(x) === tagKey(t)) === i);
-    set({ filterTags });
+    const filterTags = normalizeFilterTagList(tags);
+    set((s) => {
+      const excludeKeys = new Set(filterTags.map(tagKey));
+      return {
+        filterTags,
+        filterExcludeTags: s.filterExcludeTags.filter((t) => !excludeKeys.has(tagKey(t))),
+      };
+    });
   },
 
   addFilterTag: (tag) => {
     const label = normalizeTagLabel(tag);
     if (!label) return;
     set((s) => {
-      if (s.filterTags.some((t) => tagKey(t) === tagKey(label))) return {};
-      const filterTags = [...s.filterTags, label];
-      return { filterTags };
+      const k = tagKey(label);
+      const filterExcludeTags = s.filterExcludeTags.filter((t) => tagKey(t) !== k);
+      if (s.filterTags.some((t) => tagKey(t) === k)) {
+        return filterExcludeTags === s.filterExcludeTags ? {} : { filterExcludeTags };
+      }
+      return { filterTags: [...s.filterTags, label], filterExcludeTags };
     });
   },
 
@@ -445,6 +473,56 @@ export const useTaskTreeStore = create<TaskTreeState>()(
     set((s) => {
       const filterTags = s.filterTags.filter((t) => tagKey(t) !== k);
       return { filterTags };
+    });
+  },
+
+  setFilterExcludeTags: (tags) => {
+    const filterExcludeTags = normalizeFilterTagList(tags);
+    set((s) => {
+      const excludeKeys = new Set(filterExcludeTags.map(tagKey));
+      return {
+        filterExcludeTags,
+        filterTags: s.filterTags.filter((t) => !excludeKeys.has(tagKey(t))),
+      };
+    });
+  },
+
+  addFilterExcludeTag: (tag) => {
+    const label = normalizeTagLabel(tag);
+    if (!label) return;
+    set((s) => {
+      const k = tagKey(label);
+      const filterTags = s.filterTags.filter((t) => tagKey(t) !== k);
+      if (s.filterExcludeTags.some((t) => tagKey(t) === k)) {
+        return filterTags === s.filterTags ? {} : { filterTags };
+      }
+      return { filterExcludeTags: [...s.filterExcludeTags, label], filterTags };
+    });
+  },
+
+  removeFilterExcludeTag: (tag) => {
+    const k = tagKey(tag);
+    set((s) => ({
+      filterExcludeTags: s.filterExcludeTags.filter((t) => tagKey(t) !== k),
+    }));
+  },
+
+  cycleFilterTag: (tag) => {
+    const label = normalizeTagLabel(tag);
+    if (!label) return;
+    const k = tagKey(label);
+    set((s) => {
+      const included = s.filterTags.some((t) => tagKey(t) === k);
+      const excluded = s.filterExcludeTags.some((t) => tagKey(t) === k);
+      const withoutInclude = s.filterTags.filter((t) => tagKey(t) !== k);
+      const withoutExclude = s.filterExcludeTags.filter((t) => tagKey(t) !== k);
+      if (!included && !excluded) {
+        return { filterTags: [...withoutInclude, label], filterExcludeTags: withoutExclude };
+      }
+      if (included) {
+        return { filterTags: withoutInclude, filterExcludeTags: [...withoutExclude, label] };
+      }
+      return { filterTags: withoutInclude, filterExcludeTags: withoutExclude };
     });
   },
 
@@ -493,7 +571,12 @@ export const useTaskTreeStore = create<TaskTreeState>()(
   },
 
   clearBoardFilters: () => {
-    set({ filterTags: [], filterColors: [], filterScheduleKinds: [] });
+    set({
+      filterTags: [],
+      filterExcludeTags: [],
+      filterColors: [],
+      filterScheduleKinds: [],
+    });
   },
 
   renameTagGlobally: (from, to) => {
@@ -511,10 +594,13 @@ export const useTaskTreeStore = create<TaskTreeState>()(
       );
       const completedTag =
         tagKey(s.completedTag) === fromKey ? normalizeCompletedTag(toLabel) : s.completedTag;
-      const filterTags = s.filterTags
-        .map((t) => (tagKey(t) === fromKey ? toLabel : t))
-        .filter((t, i, arr) => arr.findIndex((x) => tagKey(x) === tagKey(t)) === i);
-      return { roots, clipboardRoots, completedTag, filterTags };
+      const filterTags = normalizeFilterTagList(
+        s.filterTags.map((t) => (tagKey(t) === fromKey ? toLabel : t)),
+      );
+      const filterExcludeTags = normalizeFilterTagList(
+        s.filterExcludeTags.map((t) => (tagKey(t) === fromKey ? toLabel : t)),
+      ).filter((t) => !filterTags.some((inc) => tagKey(inc) === tagKey(t)));
+      return { roots, clipboardRoots, completedTag, filterTags, filterExcludeTags };
     });
   },
 
@@ -865,6 +951,7 @@ export const useTaskTreeStore = create<TaskTreeState>()(
       hideCompletedTasks: incomingHideDone,
       completedTag: incomingCompletedTag,
       filterTags: incomingFilterTags,
+      filterExcludeTags: incomingFilterExcludeTags,
       filterColors: incomingFilterColors,
       filterScheduleKinds: incomingFilterSchedule,
       filterCombineMode: incomingFilterCombine,
@@ -899,10 +986,12 @@ export const useTaskTreeStore = create<TaskTreeState>()(
         : {}),
       ...(incomingFilterTags !== undefined
         ? {
-            filterTags: incomingFilterTags
-              .map((t) => normalizeTagLabel(t))
-              .filter(Boolean)
-              .filter((t, i, arr) => arr.findIndex((x) => tagKey(x) === tagKey(t)) === i),
+            filterTags: normalizeFilterTagList(incomingFilterTags),
+          }
+        : {}),
+      ...(incomingFilterExcludeTags !== undefined
+        ? {
+            filterExcludeTags: normalizeFilterTagList(incomingFilterExcludeTags),
           }
         : {}),
       ...(incomingFilterColors !== undefined

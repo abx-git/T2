@@ -18,7 +18,13 @@ import {
   collectFilterMatchingCards,
   hasActiveFacetFilters,
 } from "@/lib/filter-results";
-import { collectAllTagsFromForest, tagChipClass, tagsAvailableForFilter } from "@/lib/task-tags";
+import {
+  collectAllTagsFromForest,
+  filterTagState,
+  tagChipClass,
+  tagsForFilterBar,
+  type FilterTagState,
+} from "@/lib/task-tags";
 import { useTaskTreeStore } from "@/store/task-tree-store";
 
 type TagFilterBarProps = {
@@ -32,8 +38,8 @@ export function TagFilterBar({ onOpenResults }: TagFilterBarProps) {
   const roots = useTaskTreeStore((s) => s.roots);
   const completedTag = useTaskTreeStore((s) => s.completedTag);
   const filterTags = useTaskTreeStore((s) => s.filterTags);
-  const addFilterTag = useTaskTreeStore((s) => s.addFilterTag);
-  const removeFilterTag = useTaskTreeStore((s) => s.removeFilterTag);
+  const filterExcludeTags = useTaskTreeStore((s) => s.filterExcludeTags);
+  const cycleFilterTag = useTaskTreeStore((s) => s.cycleFilterTag);
   const filterColors = useTaskTreeStore((s) => s.filterColors);
   const addFilterColor = useTaskTreeStore((s) => s.addFilterColor);
   const removeFilterColor = useTaskTreeStore((s) => s.removeFilterColor);
@@ -45,9 +51,9 @@ export function TagFilterBar({ onOpenResults }: TagFilterBarProps) {
   const clearBoardFilters = useTaskTreeStore((s) => s.clearBoardFilters);
 
   const allTags = useMemo(() => collectAllTagsFromForest(roots), [roots]);
-  const availableTags = useMemo(
-    () => tagsAvailableForFilter(allTags, filterTags),
-    [allTags, filterTags],
+  const displayTags = useMemo(
+    () => tagsForFilterBar(allTags, filterTags, filterExcludeTags),
+    [allTags, filterTags, filterExcludeTags],
   );
 
   const allColors = useMemo(() => collectColorsFromForest(roots), [roots]);
@@ -62,11 +68,12 @@ export function TagFilterBar({ onOpenResults }: TagFilterBarProps) {
     [allScheduleKinds, filterScheduleKinds],
   );
 
-  const hasTagFilters = allTags.length > 0 || filterTags.length > 0;
+  const hasTagFilters = displayTags.length > 0;
   const hasColorFilters = allColors.length > 0 || filterColors.length > 0;
   const hasScheduleFilters = allScheduleKinds.length > 0 || filterScheduleKinds.length > 0;
   const hasAnyActiveFilter = hasActiveFacetFilters({
     filterTags,
+    filterExcludeTags,
     filterColors,
     filterScheduleKinds,
   });
@@ -75,6 +82,7 @@ export function TagFilterBar({ onOpenResults }: TagFilterBarProps) {
     if (!hasAnyActiveFilter) return 0;
     return collectFilterMatchingCards(roots, {
       filterTags,
+      filterExcludeTags,
       filterColors,
       filterScheduleKinds,
       filterCombineMode,
@@ -85,6 +93,7 @@ export function TagFilterBar({ onOpenResults }: TagFilterBarProps) {
     hasAnyActiveFilter,
     roots,
     filterTags,
+    filterExcludeTags,
     filterColors,
     filterScheduleKinds,
     filterCombineMode,
@@ -206,35 +215,17 @@ export function TagFilterBar({ onOpenResults }: TagFilterBarProps) {
             <Tag className="h-3 w-3" aria-hidden />
             Tags
           </span>
-          {filterTags.map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => removeFilterTag(t)}
-              className={[
-                "inline-flex items-center gap-0.5",
-                tagChipClass(t),
-                "border-sky-400/90",
-              ].join(" ")}
-              title="Filter entfernen"
-              aria-label={`Filter „${t}“ entfernen`}
-            >
-              {t}
-              <X className="h-3 w-3 opacity-70" aria-hidden />
-            </button>
-          ))}
-          {availableTags.map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => addFilterTag(t)}
-              className={[tagChipClass(t), "transition hover:border-sky-400"].join(" ")}
-              title="Nach diesem Tag filtern"
-              aria-label={`Nach Tag „${t}“ filtern`}
-            >
-              {t}
-            </button>
-          ))}
+          {displayTags.map((t) => {
+            const state = filterTagState(t, filterTags, filterExcludeTags);
+            return (
+              <TagFilterChip
+                key={t}
+                tag={t}
+                state={state}
+                onClick={() => cycleFilterTag(t)}
+              />
+            );
+          })}
         </>
       ) : null}
 
@@ -248,6 +239,49 @@ export function TagFilterBar({ onOpenResults }: TagFilterBarProps) {
         </button>
       ) : null}
     </div>
+  );
+}
+
+function tagFilterTitle(tag: string, state: FilterTagState): string {
+  if (state === "include") {
+    return `„${tag}“ eingeschlossen (ODER) — Klick: ausschließen`;
+  }
+  if (state === "exclude") {
+    return `„${tag}“ ausgeschlossen (NOT) — Klick: neutral`;
+  }
+  return `„${tag}“ nicht berücksichtigt — Klick: einschließen`;
+}
+
+function TagFilterChip({
+  tag,
+  state,
+  onClick,
+}: {
+  tag: string;
+  state: FilterTagState;
+  onClick: () => void;
+}) {
+  const base = tagChipClass(tag);
+  const stateClass =
+    state === "include"
+      ? "border-sky-400/90 ring-1 ring-sky-300/80"
+      : state === "exclude"
+        ? "border-rose-400/90 bg-rose-50/80 text-rose-900 line-through opacity-90"
+        : "opacity-70 transition hover:border-sky-400 hover:opacity-100";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[base, stateClass].join(" ")}
+      title={tagFilterTitle(tag, state)}
+      aria-label={tagFilterTitle(tag, state)}
+      aria-pressed={state !== "neutral"}
+      data-filter-state={state}
+    >
+      {state === "exclude" ? <span aria-hidden>¬</span> : null}
+      {tag}
+    </button>
   );
 }
 

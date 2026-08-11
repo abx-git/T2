@@ -121,7 +121,7 @@ export function resolveSiblingInsertAfterId(
 /**
  * Sichtwald für die Kontext-Liste: erledigte Knoten werden entfernt
  * (Kinder eine Ebene hochgezogen); Filter behält passende Äste
- * (Tags, Farben, Termine — jedes Kriterium einzeln; Verknüpfung per filterCombineMode).
+ * (Tags, Farben, Termine — Tag-Gruppe inkl. ODER / exkl. NOT; Verknüpfung per filterCombineMode).
  */
 export function rootsForMindmapDisplay(
   roots: TaskNode[],
@@ -129,6 +129,7 @@ export function rootsForMindmapDisplay(
     hideCompletedTasks: boolean;
     completedTag: string;
     filterTags: string[];
+    filterExcludeTags?: string[];
     filterColors?: CardColorId[];
     filterScheduleKinds?: ScheduleFilterKind[];
     filterCombineMode?: FilterCombineMode;
@@ -136,9 +137,13 @@ export function rootsForMindmapDisplay(
 ): TaskNode[] {
   const filterColors = opts.filterColors ?? [];
   const filterScheduleKinds = opts.filterScheduleKinds ?? [];
+  const filterExcludeTags = opts.filterExcludeTags ?? [];
   const filterCombineMode = opts.filterCombineMode ?? "and";
   const hasFacetFilters =
-    opts.filterTags.length > 0 || filterColors.length > 0 || filterScheduleKinds.length > 0;
+    opts.filterTags.length > 0 ||
+    filterExcludeTags.length > 0 ||
+    filterColors.length > 0 ||
+    filterScheduleKinds.length > 0;
 
   if (!opts.hideCompletedTasks && !hasFacetFilters) return roots;
 
@@ -166,6 +171,7 @@ export function rootsForMindmapDisplay(
   if (hasFacetFilters) {
     const filterOpts = {
       filterTags: opts.filterTags,
+      filterExcludeTags,
       filterColors,
       filterScheduleKinds,
       filterCombineMode,

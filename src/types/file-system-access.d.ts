@@ -32,6 +32,16 @@ interface FileSystemFileHandle {
   createWritable(options?: FileSystemCreateWritableOptions): Promise<FileSystemWritableFileStream>;
   queryPermission(descriptor: { mode: "read" | "readwrite" }): Promise<PermissionState>;
   requestPermission(descriptor: { mode: "read" | "readwrite" }): Promise<PermissionState>;
+  isSameEntry?(other: FileSystemHandle): Promise<boolean>;
+  /** Chromium: rename in place (or move into a directory). */
+  move?(name: string): Promise<void>;
+  move?(directory: FileSystemDirectoryHandle, name?: string): Promise<void>;
+}
+
+interface FileSystemHandle {
+  readonly kind: "file" | "directory";
+  readonly name: string;
+  isSameEntry?(other: FileSystemHandle): Promise<boolean>;
 }
 
 interface Window {

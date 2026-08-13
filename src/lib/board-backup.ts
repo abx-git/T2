@@ -7,7 +7,11 @@ import {
   boardJsonFromStoreState,
   boardPersistKeyFromStoreState,
 } from "@/lib/file-board-reconcile";
-import { getWorkingFileLabel } from "@/lib/working-file";
+import {
+  getWorkingFileLabel,
+  isWorkingFileAttached,
+  isWorkingFileDirty,
+} from "@/lib/working-file";
 import { useTaskTreeStore } from "@/store/task-tree-store";
 
 export const BACKUP_INTERVAL_OPTIONS_MINUTES = [0, 5, 10, 15, 30] as const;
@@ -380,7 +384,17 @@ export function resetLastBackupPersistKey(): void {
 
 export type CreateBoardBackupResult =
   | { filename: string; skipped: false }
-  | { skipped: true; reason: "empty" | "unchanged" };
+  | { skipped: true; reason: "empty" | "unchanged" | "already_saved" };
+
+/**
+ * True when a safety backup is warranted: board has content and is not synced
+ * to the Arbeitsdatei (dirty or no Sync-Ziel yet).
+ */
+export function boardNeedsSafetyBackup(): boolean {
+  if (!boardHasBackupContent()) return false;
+  if (isWorkingFileAttached()) return isWorkingFileDirty();
+  return true;
+}
 
 /** Create a backup of the current editor board (history or rolling per setting). */
 export async function createBoardBackupNow(options?: {
@@ -418,10 +432,14 @@ const LAST_SWITCH_BACKUP_AT: Partial<Record<SuspiciousSwitchKind | "any", number
  */
 export async function backupBeforeSuspiciousSwitch(
   kind: SuspiciousSwitchKind,
-  options?: { allowEmpty?: boolean; debounceMs?: number },
+  options?: { allowEmpty?: boolean; debounceMs?: number; force?: boolean },
 ): Promise<
-  { filename: string; skipped: false } | { skipped: true; reason: "empty" | "debounced" | "unchanged" }
+  | { filename: string; skipped: false }
+  | { skipped: true; reason: "empty" | "debounced" | "unchanged" | "already_saved" }
 > {
+  if (!options?.force && !boardNeedsSafetyBackup()) {
+    return { skipped: true, reason: "already_saved" };
+  }
   const debounceMs = options?.debounceMs ?? 2000;
   const now = Date.now();
   const lastKind = LAST_SWITCH_BACKUP_AT[kind] ?? 0;

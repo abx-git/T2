@@ -10,6 +10,13 @@ export interface FileConflictDialogProps {
   fileName: string | null;
   busy?: boolean;
   onChoose: (choice: FileConflictChoice) => void;
+  /** Override default copy for import/paste conflicts. */
+  title?: string;
+  description?: string;
+  keepLocalLabel?: string;
+  loadFileLabel?: string;
+  /** When false, only keep-editor is offered. Default true. */
+  allowLoadFile?: boolean;
 }
 
 export function FileConflictDialog({
@@ -17,6 +24,11 @@ export function FileConflictDialog({
   fileName,
   busy,
   onChoose,
+  title,
+  description,
+  keepLocalLabel,
+  loadFileLabel,
+  allowLoadFile = true,
 }: FileConflictDialogProps) {
   const titleId = useId();
   if (!open) return null;
@@ -36,16 +48,12 @@ export function FileConflictDialog({
         onPointerDown={(e) => e.stopPropagation()}
       >
         <h2 id={titleId} className="text-base font-semibold text-slate-900">
-          Datei und T2 wurden gleichzeitig geändert
+          {title ?? "Datei und T2 wurden gleichzeitig geändert"}
         </h2>
         <p className="mt-3 text-sm leading-relaxed text-slate-600">
-          {label} wurde von einem anderen Programm geändert, während Sie in T2 ebenfalls
-          ungespeicherte Änderungen haben.
+          {description ??
+            `${label} wurde extern geändert, während Sie in T2 ungespeicherte Änderungen haben.`}
         </p>
-        <ul className="mt-3 space-y-1.5 text-xs leading-relaxed text-slate-500">
-          <li>• <span className="text-slate-700">T2 → Datei:</span> Was Sie jetzt sehen, wird in die Datei geschrieben.</li>
-          <li>• <span className="text-slate-700">Datei → T2:</span> Der Datei-Inhalt ersetzt die Anzeige in T2.</li>
-        </ul>
         <div className="mt-5 flex flex-col gap-2">
           <button
             type="button"
@@ -53,16 +61,18 @@ export function FileConflictDialog({
             onClick={() => onChoose("keep_local")}
             className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2.5 text-left text-sm font-medium text-sky-950 hover:bg-sky-100 disabled:opacity-60"
           >
-            T2-Stand in die Datei schreiben
+            {keepLocalLabel ?? "Editor behalten (Datei-Kopie laden)"}
           </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onChoose("load_file")}
-            className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-60"
-          >
-            Datei in T2 laden
-          </button>
+          {allowLoadFile && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onChoose("load_file")}
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+            >
+              {loadFileLabel ?? "Datei in T2 laden"}
+            </button>
+          )}
         </div>
       </div>
     </div>

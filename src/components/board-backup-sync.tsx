@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 import {
   type BackupIntervalMinutes,
+  boardNeedsSafetyBackup,
   createBoardBackupNow,
   formatLastBackupLabel,
   readLastBackupAt,
@@ -31,6 +32,8 @@ export function BoardBackupSync({ intervalMinutes, onLastBackupChange }: BoardBa
     const ms = intervalMinutes * 60_000;
     const id = window.setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      // Timed backups only while the editor stand is not synced to the Arbeitsdatei.
+      if (!boardNeedsSafetyBackup()) return;
       void (async () => {
         const result = await createBoardBackupNow({ onlyIfChanged: true });
         if (!result.skipped) {

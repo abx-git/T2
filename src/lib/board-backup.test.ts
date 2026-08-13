@@ -1,6 +1,8 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  backupBeforeSuspiciousSwitch,
+  boardNeedsSafetyBackup,
   buildBackupFilename,
   createBoardBackupNow,
   formatBackupTimestamp,
@@ -8,11 +10,26 @@ import {
   getLastBackupPersistKey,
   rememberBackupBaselineFromStore,
   resetLastBackupPersistKey,
+  resetSuspiciousSwitchBackupDebounce,
   slugForBackupFilename,
   writeBackupHistoryMode,
 } from "@/lib/board-backup";
 import { useTaskTreeStore } from "@/store/task-tree-store";
 import type { TaskNode } from "@/types/task-node";
+
+vi.mock("@/lib/working-file", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/working-file")>();
+  return {
+    ...actual,
+    isWorkingFileAttached: vi.fn(() => false),
+    isWorkingFileDirty: vi.fn(() => false),
+  };
+});
+
+import { isWorkingFileAttached, isWorkingFileDirty } from "@/lib/working-file";
+
+const mockAttached = vi.mocked(isWorkingFileAttached);
+const mockDirty = vi.mocked(isWorkingFileDirty);
 
 function node(id: string, title: string, children: TaskNode[] = []): TaskNode {
   return {
@@ -31,6 +48,9 @@ function node(id: string, title: string, children: TaskNode[] = []): TaskNode {
 describe("board-backup", () => {
   beforeEach(() => {
     resetLastBackupPersistKey();
+    resetSuspiciousSwitchBackupDebounce();
+    mockAttached.mockReturnValue(false);
+    mockDirty.mockReturnValue(false);
     writeBackupHistoryMode("history");
     useTaskTreeStore.getState().replaceBoardFromImport({
       roots: [],
@@ -60,6 +80,42 @@ describe("board-backup", () => {
   it("formats last-backup label", () => {
     expect(formatLastBackupLabel(null)).toBe("Noch kein Backup");
     expect(formatLastBackupLabel(Date.UTC(2026, 0, 1, 12, 0, 0))).toMatch(/2026/);
+  });
+
+  it("needs safety backup only when unsaved content exists", () => {
+    expect(boardNeedsSafetyBackup()).toBe(false);
+
+    useTaskTreeStore.getState().replaceBoardFromImport({
+      roots: [node("a", "Alpha")],
+      pathIds: [],
+      columnTitleOverrides: {},
+    });
+    expect(boardNeedsSafetyBackup()).toBe(true);
+
+    mockAttached.mockReturnValue(true);
+    mockDirty.mockReturnValue(false);
+    expect(boardNeedsSafetyBackup()).toBe(false);
+
+    mockDirty.mockReturnValue(true);
+    expect(boardNeedsSafetyBackup()).toBe(true);
+  });
+
+  it("skips switch backup when already saved", async () => {
+    useTaskTreeStore.getState().replaceBoardFromImport({
+      roots: [node("a", "Alpha")],
+      pathIds: [],
+      columnTitleOverrides: {},
+    });
+    mockAttached.mockReturnValue(true);
+    mockDirty.mockReturnValue(false);
+    expect(await backupBeforeSuspiciousSwitch("file")).toEqual({
+      skipped: true,
+      reason: "already_saved",
+    });
+    expect(await backupBeforeSuspiciousSwitch("import")).toEqual({
+      skipped: true,
+      reason: "already_saved",
+    });
   });
 
   it("skips onlyIfChanged backups when the board is unchanged", async () => {

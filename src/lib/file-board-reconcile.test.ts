@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_CARD_FIELD_VISIBILITY } from "@/lib/card-field-visibility";
 import {
   planFileReconcile,
   type BoardImportPayload,
@@ -40,7 +41,7 @@ function jsonFromPayload(payload: BoardImportPayload): string {
       payload.roots,
       payload.pathIds,
       payload.columnTitleOverrides,
-      {},
+      DEFAULT_CARD_FIELD_VISIBILITY,
       false,
       true,
       payload.filterTags ?? [],

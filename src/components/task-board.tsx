@@ -80,11 +80,12 @@ import {
   detachWorkingFile,
   fileSystemAccessUnavailableMessage,
   fileSystemAccessUnavailableTooltip,
-  forceApplyBoardJson,
+  loadForeignBoardIntoEditor,
   getWorkingFileHandle,
   getRememberedWorkingFileName,
   getWorkingFileLabel,
   hydrateStoreFromWorkingFile,
+  endWorkingFileSwitch,
   isMobileWorkingFileMode,
   isWorkingFileAttached,
   isWorkingFileDirty,
@@ -426,22 +427,19 @@ export function TaskBoard() {
         setWorkingFileSetupOpen(false);
         if (hydrate.status === "conflict") {
           const loadFile = window.confirm(
-            "Die gewählte Datei unterscheidet sich von Ihrer aktuellen Ansicht.\n\nOK = Inhalt der Datei laden\nAbbrechen = Verknüpfung aufheben",
+            "Die gewählte Datei konnte nicht gelesen werden oder weicht stark ab.\n\nOK = Dateiinhalt laden\nAbbrechen = Verknüpfung aufheben",
           );
           if (loadFile) {
             applyBoardJsonToStore(hydrate.fileText);
             markWorkingFileSynced(hydrate.fileText, hydrate.fileLastModified);
             markWorkingFileSessionHydrated();
+            endWorkingFileSwitch();
             setWorkingFileDirty(false);
           } else {
             await detachWorkingFile();
             setWorkingFileName(null);
             return false;
           }
-        } else if (hydrate.status === "pushed_local") {
-          const result = await persistWorkingFileJson(boardSnapshotTextFromStore());
-          if (!result.ok) window.alert("Speichern in die neue Arbeitsdatei ist fehlgeschlagen.");
-          else setWorkingFileDirty(false);
         }
         return true;
       } catch (err) {
@@ -677,20 +675,18 @@ export function TaskBoard() {
         }
         if (result.hydrate.status === "conflict") {
           const loadFile = window.confirm(
-            "Die gewählte Datei unterscheidet sich von Ihrer aktuellen Ansicht.\n\nOK = Inhalt der Datei laden\nAbbrechen = Abbrechen",
+            "Die gewählte Datei konnte nicht gelesen werden oder weicht stark ab.\n\nOK = Dateiinhalt laden\nAbbrechen = Abbrechen",
           );
           if (loadFile) {
             applyBoardJsonToStore(result.hydrate.fileText);
             markWorkingFileSynced(result.hydrate.fileText, result.hydrate.fileLastModified);
             markWorkingFileSessionHydrated();
+            endWorkingFileSwitch();
             setWorkingFileDirty(false);
           } else {
+            endWorkingFileSwitch({ keepPaused: true, pauseReason: "open_keep_local" });
             return;
           }
-        } else if (result.hydrate.status === "pushed_local") {
-          const saved = await persistWorkingFileJson(boardSnapshotTextFromStore());
-          if (!saved.ok) window.alert("Speichern in die Arbeitsdatei ist fehlgeschlagen.");
-          else setWorkingFileDirty(false);
         }
         setWorkingFileName(getWorkingFileLabel());
         setWorkingFileSetupOpen(false);
@@ -713,11 +709,11 @@ export function TaskBoard() {
           return;
         }
         await backupBeforeSuspiciousSwitch("import");
-        if (!forceApplyBoardJson(record.json)) {
+        if (!loadForeignBoardIntoEditor(record.json, { reason: "backup" })) {
           window.alert("Backup konnte nicht geladen werden.");
           return;
         }
-        setWorkingFileDirty(isWorkingFileAttached());
+        setWorkingFileDirty(false);
         setDataStoragePanelOpen(false);
         setPostImportSaveOpen(true);
       } finally {

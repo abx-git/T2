@@ -13,62 +13,99 @@ import {
   boardStatesEquivalent,
 } from "@/lib/file-board-reconcile";
 import {
+  downloadWorkingFileSafetyCopy,
+  EXTERNAL_WORKING_FILE_POLL_MS,
   getWorkingFileHandle,
   getWorkingFileLabel,
+  getActiveWorkingFileId,
+  getLastSyncedBoardJson,
   isKnownFileRevision,
+  isMobileWorkingFileMode,
   isWorkingFileAttached,
   isWorkingFileDirty,
+  isWorkingFileMultiTabUnsafe,
+  isWorkingFilePersistPaused,
+  isWorkingFileSwitchInProgress,
   markWorkingFileSessionHydrated,
   markWorkingFileSynced,
+  peekWorkingFileLastModified,
+  persistWorkingFileJson,
   readWorkingFileSnapshot,
   restoreWorkingFileFromDisk,
   shouldSuppressExternalFilePoll,
   wasWorkingFileSessionHydrated,
-  writeWorkingFileJson,
-  persistWorkingFileJson,
-  isMobileWorkingFileMode,
-  getLastSyncedBoardJson,
+  WORKING_FILE_ATTACHED_EVENT,
+  WORKING_FILE_DETACHED_EVENT,
+  WORKING_FILE_PERSIST_PAUSED_EVENT,
+  setWorkingFilePersistPaused,
 } from "@/lib/working-file";
+import { mayAutoRestoreWorkingFileFromStorage } from "@/lib/working-file-safety";
+import {
+  bindTabWorkingFile,
+  getOrCreateTabSessionId,
+  resolvePreferredWorkingFileId,
+  resolvePreferredWorkingFileName,
+} from "@/lib/working-file-tab-context";
+import {
+  ensureWorkingFileWriter,
+  isWorkingFileWriterLeader,
+  onWorkingFileWriterRoleChange,
+  stopWorkingFileWriter,
+} from "@/lib/working-file-writer";
 import { useTaskTreeStore } from "@/store/task-tree-store";
+
+function ensureWriterForAttachedFile(): void {
+  const wf = getActiveWorkingFileId();
+  const label = getWorkingFileLabel();
+  if (wf && isWorkingFileAttached()) {
+    ensureWorkingFileWriter(wf);
+  } else if (label && isWorkingFileAttached()) {
+    ensureWorkingFileWriter(label);
+  } else {
+    stopWorkingFileWriter();
+  }
+}
 
 export interface WorkingFileSyncProps {
   onWorkingFileNameChange: (fileName: string | null) => void;
   onDirtyChange?: (dirty: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
   onNeedsFileSetup?: () => void;
+  onPersistPausedChange?: (paused: boolean) => void;
+  onMultiTabUnsafeChange?: (unsafe: boolean) => void;
 }
 
-type WorkingFileSyncCallbacks = Pick<
-  WorkingFileSyncProps,
-  "onWorkingFileNameChange" | "onDirtyChange" | "onSavingChange" | "onNeedsFileSetup"
->;
-
 /**
- * Arbeitsdatei-Sync pro Tab:
- * - Einmal beim Start aus Datei laden
- * - Bei Board-Änderungen sofort speichern (eventbasiert)
- * - Externe Änderungen nur bei neuem Datei-Zeitstempel; eigene Speicherungen ignorieren
+ * Autosave with content+mtime CAS.
+ * External file edits: poll while visible and adopt disk into the editor.
+ * If the editor was dirty, download an editor safety copy first — disk wins.
  */
 export function WorkingFileSync({
   onWorkingFileNameChange,
   onDirtyChange,
   onSavingChange,
   onNeedsFileSetup,
+  onPersistPausedChange,
+  onMultiTabUnsafeChange,
 }: WorkingFileSyncProps) {
   const [conflictOpen, setConflictOpen] = useState(false);
   const [conflictBusy, setConflictBusy] = useState(false);
 
-  const callbacksRef = useRef<WorkingFileSyncCallbacks>({
+  const callbacksRef = useRef({
     onWorkingFileNameChange,
     onDirtyChange,
     onSavingChange,
     onNeedsFileSetup,
+    onPersistPausedChange,
+    onMultiTabUnsafeChange,
   });
   callbacksRef.current = {
     onWorkingFileNameChange,
     onDirtyChange,
     onSavingChange,
     onNeedsFileSetup,
+    onPersistPausedChange,
+    onMultiTabUnsafeChange,
   };
 
   const mountedRef = useRef(true);
@@ -79,69 +116,79 @@ export function WorkingFileSync({
   const lastPersistKeyRef = useRef<string | null>(null);
 
   const syncFileLabel = () => {
-    const name = getWorkingFileLabel();
-    callbacksRef.current.onWorkingFileNameChange(name);
+    callbacksRef.current.onWorkingFileNameChange(getWorkingFileLabel());
   };
 
   const syncDirty = () => {
     callbacksRef.current.onDirtyChange?.(isWorkingFileDirty());
   };
 
-  const handleConflictChoice = useCallback(async (choice: FileConflictChoice) => {
-    if (conflictBusy) return;
-    const handle = getWorkingFileHandle();
-    if (!handle) return;
+  const syncPaused = () => {
+    callbacksRef.current.onPersistPausedChange?.(isWorkingFilePersistPaused());
+  };
 
-    setConflictBusy(true);
-    suspendAutoPersistRef.current = true;
-    setConflictOpen(false);
+  const handleConflictChoice = useCallback(
+    async (choice: FileConflictChoice) => {
+      if (conflictBusy) return;
+      const handle = getWorkingFileHandle();
+      if (!handle && !isMobileWorkingFileMode()) return;
 
-    try {
-      const snap = await readWorkingFileSnapshot(handle);
-      if (!snap) return;
+      setConflictBusy(true);
+      suspendAutoPersistRef.current = true;
+      setConflictOpen(false);
 
-      if (choice === "load_file") {
-        if (snap.text.trim()) {
-          const loaded = applyBoardJsonToStore(snap.text);
-          if (!loaded) {
-            window.alert(
-              "Die Arbeitsdatei konnte nicht gelesen werden (ungültiges JSON). Lokaler Stand bleibt erhalten.",
-            );
-            return;
+      try {
+        if (choice === "load_file" && handle) {
+          const snap = await readWorkingFileSnapshot(handle);
+          if (!snap) return;
+          setWorkingFilePersistPaused(false);
+          if (snap.text.trim()) {
+            const loaded = applyBoardJsonToStore(snap.text);
+            if (!loaded) {
+              window.alert(
+                "Die Arbeitsdatei konnte nicht gelesen werden (ungültiges JSON). Lokaler Stand bleibt erhalten.",
+              );
+              return;
+            }
           }
           markWorkingFileSynced(snap.text, snap.lastModified);
+          lastPersistKeyRef.current = boardPersistKeyFromStoreState();
+          syncDirty();
+          syncPaused();
+          return;
         }
-        lastPersistKeyRef.current = boardPersistKeyFromStoreState();
-        syncDirty();
-        return;
-      }
 
-      const json = boardJsonFromStoreState();
-      const result = isMobileWorkingFileMode()
-        ? await persistWorkingFileJson(json)
-        : await writeWorkingFileJson(json, handle);
-      if (!result.ok) {
-        window.alert("Speichern ist fehlgeschlagen. Bitte erneut versuchen.");
-        setConflictOpen(true);
-        return;
+        // Keep editor → Speichern unter path: pause + safety download of disk
+        if (handle) {
+          const snap = await readWorkingFileSnapshot(handle);
+          if (snap?.text) downloadWorkingFileSafetyCopy(snap.text, "disk");
+        }
+        setWorkingFilePersistPaused(true, "external_conflict");
+        syncPaused();
+        syncDirty();
+      } finally {
+        conflictActiveRef.current = false;
+        suspendAutoPersistRef.current = false;
+        setConflictBusy(false);
       }
-      lastPersistKeyRef.current = boardPersistKeyFromStoreState();
-      syncDirty();
-    } finally {
-      conflictActiveRef.current = false;
-      suspendAutoPersistRef.current = false;
-      setConflictBusy(false);
-    }
-  }, [conflictBusy]);
+    },
+    [conflictBusy],
+  );
 
   useEffect(() => {
     mountedRef.current = true;
     let storeUnsub: (() => void) | undefined;
-    const externalListeners: Array<{ target: EventTarget; type: string; listener: () => void }> = [];
+    let roleUnsub: (() => void) | undefined;
+    let pollId: number | null = null;
+    const externalListeners: Array<{ target: EventTarget; type: string; listener: () => void }> =
+      [];
 
     const flushPersist = async (): Promise<boolean> => {
       if (
         !isWorkingFileAttached() ||
+        isWorkingFilePersistPaused() ||
+        isWorkingFileSwitchInProgress() ||
+        !isWorkingFileWriterLeader() ||
         saveInFlightRef.current ||
         conflictActiveRef.current ||
         suspendAutoPersistRef.current
@@ -152,6 +199,7 @@ export function WorkingFileSync({
         syncDirty();
         return true;
       }
+
       saveInFlightRef.current = true;
       callbacksRef.current.onSavingChange?.(true);
       try {
@@ -162,7 +210,37 @@ export function WorkingFileSync({
           syncDirty();
           return true;
         }
-        console.error("Speichern in Arbeitsdatei fehlgeschlagen:", result.reason);
+        if (
+          result.reason === "conflict" ||
+          result.reason === "content_cas_mismatch" ||
+          result.reason === "empty_over_nonempty" ||
+          result.reason === "unknown_disk_baseline"
+        ) {
+          const handle = getWorkingFileHandle();
+          const snap = handle
+            ? await readWorkingFileSnapshot(handle)
+            : result.diskJson != null
+              ? { text: result.diskJson, lastModified: Date.now() }
+              : null;
+          if (snap) {
+            if (isWorkingFileDirty()) {
+              const editorJson = boardJsonFromStoreState();
+              if (editorJson.trim() && !boardStatesEquivalent(editorJson, snap.text)) {
+                downloadWorkingFileSafetyCopy(editorJson, "editor");
+              }
+            }
+            suspendAutoPersistRef.current = true;
+            try {
+              if (snap.text.trim()) applyBoardJsonToStore(snap.text);
+              markWorkingFileSynced(snap.text, snap.lastModified);
+              lastPersistKeyRef.current = boardPersistKeyFromStoreState();
+            } finally {
+              suspendAutoPersistRef.current = false;
+            }
+          }
+          syncDirty();
+          return false;
+        }
         syncDirty();
         return false;
       } finally {
@@ -172,7 +250,14 @@ export function WorkingFileSync({
     };
 
     const schedulePersistOnChange = () => {
-      if (!isWorkingFileAttached() || conflictActiveRef.current || suspendAutoPersistRef.current) {
+      if (
+        !isWorkingFileAttached() ||
+        isWorkingFilePersistPaused() ||
+        isWorkingFileSwitchInProgress() ||
+        !isWorkingFileWriterLeader() ||
+        conflictActiveRef.current ||
+        suspendAutoPersistRef.current
+      ) {
         return;
       }
       if (saveQueuedRef.current) return;
@@ -185,6 +270,10 @@ export function WorkingFileSync({
 
     const onPersistedBoardChanged = () => {
       if (suspendAutoPersistRef.current) return;
+      if (isWorkingFilePersistPaused()) {
+        syncDirty();
+        return;
+      }
       const key = boardPersistKeyFromStoreState();
       if (key === lastPersistKeyRef.current) return;
       lastPersistKeyRef.current = key;
@@ -192,13 +281,11 @@ export function WorkingFileSync({
       schedulePersistOnChange();
     };
 
-    /**
-     * Externe Änderung = neuer Datei-Zeitstempel (nicht von T2 geschrieben).
-     * Lokale Bearbeitungen ohne Datei-Änderung werden ignoriert.
-     */
     const applyExternalFileIfNeeded = async () => {
       if (isMobileWorkingFileMode()) return;
       if (
+        isWorkingFilePersistPaused() ||
+        isWorkingFileSwitchInProgress() ||
         conflictActiveRef.current ||
         suspendAutoPersistRef.current ||
         saveInFlightRef.current ||
@@ -210,10 +297,12 @@ export function WorkingFileSync({
       const handle = getWorkingFileHandle();
       if (!handle) return;
 
+      const mtime = await peekWorkingFileLastModified(handle);
+      if (mtime == null || !mountedRef.current) return;
+      if (isKnownFileRevision(mtime)) return;
+
       const snap = await readWorkingFileSnapshot(handle);
       if (!snap || !mountedRef.current) return;
-
-      if (isKnownFileRevision(snap.lastModified)) return;
 
       const localJson = boardJsonFromStoreState();
       if (boardStatesEquivalent(snap.text, localJson)) {
@@ -222,24 +311,20 @@ export function WorkingFileSync({
         return;
       }
 
-      if (!isWorkingFileDirty()) {
-        suspendAutoPersistRef.current = true;
-        try {
-          if (snap.text.trim()) {
-            const loaded = applyBoardJsonToStore(snap.text);
-            if (!loaded) return;
-            markWorkingFileSynced(snap.text, snap.lastModified);
-            lastPersistKeyRef.current = boardPersistKeyFromStoreState();
-          }
-        } finally {
-          suspendAutoPersistRef.current = false;
+      if (isWorkingFileDirty()) {
+        if (localJson.trim() && !boardStatesEquivalent(localJson, snap.text)) {
+          downloadWorkingFileSafetyCopy(localJson, "editor");
         }
-        syncDirty();
-        return;
       }
-
-      conflictActiveRef.current = true;
-      setConflictOpen(true);
+      suspendAutoPersistRef.current = true;
+      try {
+        if (snap.text.trim()) applyBoardJsonToStore(snap.text);
+        markWorkingFileSynced(snap.text, snap.lastModified);
+        lastPersistKeyRef.current = boardPersistKeyFromStoreState();
+      } finally {
+        suspendAutoPersistRef.current = false;
+      }
+      syncDirty();
     };
 
     const hydrateFromWorkingFileOnce = async (): Promise<void> => {
@@ -249,6 +334,7 @@ export function WorkingFileSync({
       if (handle) {
         const snap = await readWorkingFileSnapshot(handle);
         if (!snap || !mountedRef.current) return;
+        markWorkingFileSessionHydrated();
 
         suspendAutoPersistRef.current = true;
         try {
@@ -264,9 +350,7 @@ export function WorkingFileSync({
             markWorkingFileSynced(snap.text, snap.lastModified);
           } else {
             markWorkingFileSynced(boardJsonFromStoreState(), snap.lastModified);
-            await flushPersist();
           }
-          markWorkingFileSessionHydrated();
         } finally {
           suspendAutoPersistRef.current = false;
         }
@@ -279,6 +363,7 @@ export function WorkingFileSync({
           callbacksRef.current.onNeedsFileSetup?.();
           return;
         }
+        markWorkingFileSessionHydrated();
         suspendAutoPersistRef.current = true;
         try {
           const loaded = applyBoardJsonToStore(synced);
@@ -287,7 +372,6 @@ export function WorkingFileSync({
             callbacksRef.current.onNeedsFileSetup?.();
             return;
           }
-          markWorkingFileSessionHydrated();
         } finally {
           suspendAutoPersistRef.current = false;
         }
@@ -303,58 +387,98 @@ export function WorkingFileSync({
     };
 
     void (async () => {
-      await restoreWorkingFileFromDisk();
+      getOrCreateTabSessionId();
+      callbacksRef.current.onMultiTabUnsafeChange?.(isWorkingFileMultiTabUnsafe());
+      const preferred = resolvePreferredWorkingFileName();
+      const preferredWf = resolvePreferredWorkingFileId();
+      if (mayAutoRestoreWorkingFileFromStorage() || preferred || preferredWf) {
+        await restoreWorkingFileFromDisk(preferred, preferredWf);
+      }
       if (!mountedRef.current) return;
-
+      ensureWriterForAttachedFile();
       await hydrateFromWorkingFileOnce();
       if (!mountedRef.current) return;
 
-      if (wasWorkingFileSessionHydrated()) {
-        lastPersistKeyRef.current = boardPersistKeyFromStoreState();
-      }
+      lastPersistKeyRef.current = boardPersistKeyFromStoreState();
       syncFileLabel();
       syncDirty();
+      syncPaused();
 
       storeUnsub = useTaskTreeStore.subscribe(onPersistedBoardChanged);
+      roleUnsub = onWorkingFileWriterRoleChange((role) => {
+        if (role !== "leader") return;
+        void (async () => {
+          await applyExternalFileIfNeeded();
+          if (conflictActiveRef.current || isWorkingFilePersistPaused()) return;
+          void flushPersist();
+        })();
+      });
 
-      const runExternalCheck = () => void applyExternalFileIfNeeded();
+      const reflectSlotInUrl = () => {
+        const wf = getActiveWorkingFileId();
+        if (!wf || !isWorkingFileAttached()) return;
+        bindTabWorkingFile(wf, getWorkingFileLabel());
+      };
+      const runExternalCheck = () => {
+        reflectSlotInUrl();
+        void applyExternalFileIfNeeded();
+      };
       addExternalListener(window, "focus", runExternalCheck);
       addExternalListener(window, "pageshow", runExternalCheck);
       addExternalListener(document, "visibilitychange", () => {
         if (document.visibilityState === "visible") runExternalCheck();
       });
 
-      const onPageHide = () => void flushPersist();
+      pollId = window.setInterval(() => {
+        if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+        void applyExternalFileIfNeeded();
+      }, EXTERNAL_WORKING_FILE_POLL_MS);
+
+      const onPageHide = () => {
+        if (conflictActiveRef.current || isWorkingFilePersistPaused()) return;
+        void flushPersist();
+      };
       window.addEventListener("pagehide", onPageHide);
       externalListeners.push({ target: window, type: "pagehide", listener: onPageHide });
 
-      const onVisibilityHidden = () => {
-        if (document.visibilityState === "hidden") void flushPersist();
+      const onWorkingFileAttached = () => {
+        ensureWriterForAttachedFile();
+        lastPersistKeyRef.current = boardPersistKeyFromStoreState();
+        syncFileLabel();
+        syncDirty();
+        syncPaused();
+        void applyExternalFileIfNeeded();
       };
-      document.addEventListener("visibilitychange", onVisibilityHidden);
-      externalListeners.push({
-        target: document,
-        type: "visibilitychange",
-        listener: onVisibilityHidden,
+      addExternalListener(window, WORKING_FILE_ATTACHED_EVENT, onWorkingFileAttached);
+      addExternalListener(window, WORKING_FILE_DETACHED_EVENT, onWorkingFileAttached);
+      addExternalListener(window, WORKING_FILE_PERSIST_PAUSED_EVENT, () => {
+        syncPaused();
+        syncDirty();
+        syncFileLabel();
       });
     })();
 
     return () => {
       mountedRef.current = false;
+      if (pollId != null) window.clearInterval(pollId);
       storeUnsub?.();
+      roleUnsub?.();
+      stopWorkingFileWriter();
       for (const { target, type, listener } of externalListeners) {
         target.removeEventListener(type, listener);
       }
     };
   }, []);
 
-  const workingFileLabel = getWorkingFileLabel();
-
   return (
     <FileConflictDialog
       open={conflictOpen}
-      fileName={workingFileLabel}
+      fileName={getWorkingFileLabel()}
       busy={conflictBusy}
+      title="Datei wurde extern geändert"
+      description="Dein Editor-Stand bleibt erhalten. Du kannst die Datei laden oder den Editor behalten und später unter neuem Namen speichern."
+      keepLocalLabel="Editor behalten (Datei-Kopie laden)"
+      loadFileLabel="Datei in T2 laden"
       onChoose={(choice) => void handleConflictChoice(choice)}
     />
   );

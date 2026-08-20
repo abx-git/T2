@@ -93,8 +93,25 @@ export function KeyboardShortcutsHelpDialog({ open, onClose }: KeyboardShortcuts
       ],
     },
     {
+      title: "Light-Modus",
+      hint: "Nur die Baumstruktur — Seitenpanels und Karten-Panes sind ausgeblendet.",
+      items: [
+        { keys: `${mod} + Shift + L`, description: "Light-Modus ein-/ausschalten" },
+        { keys: "?", description: "Diese Hilfe öffnen" },
+        { keys: "↑ ↓", description: "Zwischen sichtbaren Einträgen wechseln" },
+        { keys: "→", description: "Ast aufklappen / erstes Kind" },
+        { keys: "←", description: "Ast zuklappen / zum Parent" },
+        { keys: "Enter", description: "Geschwisterkarte anlegen (leer: erste Wurzelkarte)" },
+        { keys: "Tab", description: "Unterkarte anlegen" },
+        { keys: "Shift + Enter", description: "Geschwisternotiz anlegen" },
+        { keys: "Shift + Tab", description: "Unternotiz anlegen" },
+        { keys: "F2", description: "Details der fokussierten Karte/Notiz" },
+        { keys: "Entf / Rücktaste", description: "Eintrag löschen (mit Bestätigung)" },
+      ],
+    },
+    {
       title: "Karten (Drill-down)",
-      hint: "Karte zuerst per Klick oder Pfeiltasten fokussieren (blauer Ring).",
+      hint: "Karte zuerst per Klick oder Pfeiltasten fokussieren (blauer Ring). Nicht im Light-Modus.",
       items: [
         { keys: "↑ ↓", description: "Zwischen Karten in der aktuellen Ebene wechseln" },
         { keys: "→", description: "Navigieren: hinein · Aufklappen: Ast öffnen / erstes Kind" },

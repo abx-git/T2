@@ -57,6 +57,7 @@ describe("dual pane store navigation", () => {
         columnTitleOverrides: {},
         clipboardRoots: [],
       });
+      useTaskTreeStore.getState().setLightModeEnabled(false);
     });
   });
 
@@ -110,5 +111,15 @@ describe("dual pane store navigation", () => {
     expect(useTaskTreeStore.getState().contextByPane.left).toBe(id);
     useTaskTreeStore.getState().setSplitViewEnabled(true);
     expect(useTaskTreeStore.getState().splitViewEnabled).toBe(true);
+  });
+
+  it("toggles light mode independently of split", () => {
+    expect(useTaskTreeStore.getState().lightModeEnabled).toBe(false);
+    useTaskTreeStore.getState().setLightModeEnabled(true);
+    expect(useTaskTreeStore.getState().lightModeEnabled).toBe(true);
+    useTaskTreeStore.getState().setLightModeEnabled(true);
+    expect(useTaskTreeStore.getState().lightModeEnabled).toBe(true);
+    useTaskTreeStore.getState().setLightModeEnabled(false);
+    expect(useTaskTreeStore.getState().lightModeEnabled).toBe(false);
   });
 });

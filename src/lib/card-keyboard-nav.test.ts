@@ -5,6 +5,7 @@ import {
   focusTargetAfterRemoving,
   navigateContextCard,
   navigateExpandedCard,
+  navigateOutlineTree,
 } from "@/lib/card-keyboard-nav";
 import { flattenVisibleCards } from "@/lib/card-expand";
 import type { TaskNode } from "@/types/task-node";
@@ -83,6 +84,26 @@ describe("navigateExpandedCard", () => {
     expect(navigateExpandedCard(open, new Set(["a"]), "b", "left")).toEqual({
       nextId: null,
       shouldDrillUp: true,
+    });
+  });
+});
+
+describe("navigateOutlineTree", () => {
+  const roots = [
+    node("a", "A", [node("a1", "A1")]),
+    node("b", "B"),
+  ];
+
+  it("navigiert sichtbar und klappt auf, ohne Drill-up", () => {
+    const open = flattenVisibleCards(roots, new Set());
+    expect(navigateOutlineTree(open, new Set(), "a", "down").nextId).toBe("a1");
+    expect(navigateOutlineTree(open, new Set(), "a1", "left").nextId).toBe("a");
+    expect(navigateOutlineTree(open, new Set(), "a", "left")).toEqual({
+      nextId: "a",
+      shouldCollapse: true,
+    });
+    expect(navigateOutlineTree(flattenVisibleCards(roots, new Set(["a"])), new Set(["a"]), "b", "left")).toEqual({
+      nextId: null,
     });
   });
 });

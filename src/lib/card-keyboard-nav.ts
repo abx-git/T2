@@ -99,6 +99,21 @@ export function navigateExpandedCard(
   return { nextId: null, shouldDrillUp: true };
 }
 
+/**
+ * Navigation in der vollen Baumstruktur (Light-Modus).
+ * Wie Expand-Karten, aber ohne Drill-up — der Baum hat keine übergeordnete Ebene.
+ */
+export function navigateOutlineTree(
+  visible: ReadonlyArray<VisibleCardEntry>,
+  collapsedIds: ReadonlySet<string>,
+  currentId: string,
+  direction: CardNavDirection,
+): CardNavResult {
+  const result = navigateExpandedCard(visible, collapsedIds, currentId, direction);
+  if (result.shouldDrillUp) return { nextId: null };
+  return result;
+}
+
 export function focusTargetAfterRemoving(
   roots: TaskNode[],
   removedId: string,

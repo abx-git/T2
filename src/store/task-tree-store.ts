@@ -70,6 +70,7 @@ import {
 } from "@/lib/task-tags";
 import type { NoteEditableFields, TaskCardEditableFields, TaskNode } from "@/types/task-node";
 import { createBlankCardNode, createBlankNoteNode } from "@/lib/tree-node-kind";
+import { writeLightModeEnabled } from "@/lib/light-mode";
 
 /** Felder, die in der Undo-/Redo-Historie liegen (persistierter Board-Stand, ohne Drill-Kontext). */
 export type BoardHistorySlice = {
@@ -249,6 +250,12 @@ export interface TaskTreeState {
   /** Geteilte Hauptansicht (zwei identische Panes); Standard an. */
   splitViewEnabled: boolean;
   setSplitViewEnabled: (on: boolean) => void;
+  /**
+   * Light-Modus: nur Baumstruktur, ohne Karten-Panes und Seitenleisten.
+   * UI-Präferenz (localStorage), nicht Teil des Board-JSON.
+   */
+  lightModeEnabled: boolean;
+  setLightModeEnabled: (on: boolean) => void;
   setContextNodeId: (nodeId: string | null, pane?: BoardPaneId) => void;
   /** In diese Karte hinein (Kontext = nodeId). */
   drillIntoNode: (nodeId: string, pane?: BoardPaneId) => void;
@@ -430,6 +437,7 @@ export const useTaskTreeStore = create<TaskTreeState>()(
   contextByPane: { ...DEFAULT_PANE_CONTEXTS },
   activePane: "left",
   splitViewEnabled: false,
+  lightModeEnabled: false,
 
   hideCompletedTasks: false,
 
@@ -730,6 +738,14 @@ export const useTaskTreeStore = create<TaskTreeState>()(
         return { splitViewEnabled: false, ...syncActiveContext(s.contextByPane, s.activePane) };
       }
       return { splitViewEnabled: true };
+    });
+  },
+
+  setLightModeEnabled: (on) => {
+    set((s) => {
+      if (s.lightModeEnabled === on) return {};
+      writeLightModeEnabled(on);
+      return { lightModeEnabled: on };
     });
   },
 

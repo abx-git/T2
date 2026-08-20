@@ -3,6 +3,7 @@
 import {
   CircleHelp,
   Columns2,
+  ListTree,
   MoreHorizontal,
   SlidersHorizontal,
   Square,
@@ -17,6 +18,8 @@ export interface BoardHeaderMoreMenuProps {
   splitAvailable: boolean;
   splitViewEnabled: boolean;
   onSplitViewChange: (on: boolean) => void;
+  lightModeEnabled: boolean;
+  onLightModeChange: (on: boolean) => void;
   onApplyBoardDepth: (level: number) => void;
   onExpandBoardDepth: () => void;
   onApplyCardDepth: (level: number) => void;
@@ -35,6 +38,8 @@ export function BoardHeaderMoreMenu({
   splitAvailable,
   splitViewEnabled,
   onSplitViewChange,
+  lightModeEnabled,
+  onLightModeChange,
   onApplyBoardDepth,
   onExpandBoardDepth,
   onApplyCardDepth,
@@ -92,7 +97,27 @@ export function BoardHeaderMoreMenu({
           role="menu"
           className="absolute right-0 z-40 mt-1.5 w-64 origin-top-right rounded-xl border border-slate-200/90 bg-white p-1.5 shadow-lg shadow-slate-900/10"
         >
-          {splitAvailable ? (
+          <button
+            type="button"
+            role="menuitemcheckbox"
+            aria-checked={lightModeEnabled}
+            className={itemClass}
+            onClick={() => onLightModeChange(!lightModeEnabled)}
+          >
+            <ListTree
+              className={[
+                "h-3.5 w-3.5 shrink-0",
+                lightModeEnabled ? "text-sky-600" : "",
+              ].join(" ")}
+              aria-hidden
+            />
+            <span className="flex-1">Light-Modus</span>
+            <span className="text-[10px] font-normal text-slate-400">
+              {lightModeEnabled ? "an" : "aus"}
+            </span>
+          </button>
+
+          {splitAvailable && !lightModeEnabled ? (
             <button
               type="button"
               role="menuitemcheckbox"
@@ -124,35 +149,41 @@ export function BoardHeaderMoreMenu({
                 onExpandAll={onExpandBoardDepth}
                 className="w-full justify-between border-0 bg-slate-50 px-1"
               />
-              <DepthLevelsControl
-                label="Karten"
-                maxLevel={boardMaxVisibleLevels}
-                onApplyLevel={onApplyCardDepth}
-                onExpandAll={onExpandCardDepth}
-                className="w-full justify-between border-0 bg-slate-50 px-1"
-              />
+              {!lightModeEnabled ? (
+                <DepthLevelsControl
+                  label="Karten"
+                  maxLevel={boardMaxVisibleLevels}
+                  onApplyLevel={onApplyCardDepth}
+                  onExpandAll={onExpandCardDepth}
+                  className="w-full justify-between border-0 bg-slate-50 px-1"
+                />
+              ) : null}
             </div>
           ) : null}
 
           <div className="mt-1 border-t border-slate-100 pt-1">
-            <button
-              type="button"
-              role="menuitem"
-              className={itemClass}
-              onClick={() => closeAnd(onOpenTagRename)}
-            >
-              <Tag className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              Tags umbenennen
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className={itemClass}
-              onClick={() => closeAnd(onOpenCardFields)}
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              Kartenfelder
-            </button>
+            {!lightModeEnabled ? (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={itemClass}
+                  onClick={() => closeAnd(onOpenTagRename)}
+                >
+                  <Tag className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  Tags umbenennen
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={itemClass}
+                  onClick={() => closeAnd(onOpenCardFields)}
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  Kartenfelder
+                </button>
+              </>
+            ) : null}
             <button
               type="button"
               role="menuitem"

@@ -74,6 +74,18 @@ export function formatStorageStatusTooltip(status: StorageDisplayStatus): string
   return lines.join("\n");
 }
 
+/** Footer save icon is red unless the working file is currently saved. */
+export function footerSaveIconIsUnsaved(tone: StorageStatusTone): boolean {
+  return tone === "dirty" || tone === "no-file";
+}
+
+export function formatFooterSaveButtonTitle(status: StorageDisplayStatus): string {
+  if (status.tone === "saving") return "Speichert …";
+  if (status.tone === "dirty") return "Ungespeichert — klicken zum Speichern";
+  if (status.tone === "saved") return "Gespeichert — klicken zum Speichern";
+  return `${status.primaryLine} — klicken zum Speichern unter…`;
+}
+
 const DATA_STORAGE_BUTTON_BASE =
   "flex h-8 items-center gap-1.5 rounded-lg px-2 transition";
 

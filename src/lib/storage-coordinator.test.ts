@@ -3,19 +3,21 @@ import { describe, expect, it } from "vitest";
 import {
   deriveStorageDisplayStatus,
   formatStorageStatusTooltip,
+  formatFooterSaveButtonTitle,
+  footerSaveIconIsUnsaved,
   hasUnsavedWorkingFile,
   dataStorageButtonClassName,
 } from "./storage-coordinator";
 
-describe("deriveStorageDisplayStatus", () => {
-  const base = {
-    workingFileLabel: null,
-    workingFileAttached: false,
-    workingFileDirty: false,
-    workingFileSaving: false,
-    fsAccessSupported: true,
-  };
+const base = {
+  workingFileLabel: null,
+  workingFileAttached: false,
+  workingFileDirty: false,
+  workingFileSaving: false,
+  fsAccessSupported: true,
+};
 
+describe("deriveStorageDisplayStatus", () => {
   it("shows no-file when nothing attached", () => {
     const s = deriveStorageDisplayStatus(base);
     expect(s.tone).toBe("no-file");
@@ -68,5 +70,26 @@ describe("formatStorageStatusTooltip", () => {
 describe("dataStorageButtonClassName", () => {
   it("uses emerald styling when saved", () => {
     expect(dataStorageButtonClassName("saved")).toContain("bg-emerald-50");
+  });
+});
+
+describe("footerSaveIconIsUnsaved", () => {
+  it("is unsaved when dirty or no file", () => {
+    expect(footerSaveIconIsUnsaved("dirty")).toBe(true);
+    expect(footerSaveIconIsUnsaved("no-file")).toBe(true);
+    expect(footerSaveIconIsUnsaved("saved")).toBe(false);
+    expect(footerSaveIconIsUnsaved("saving")).toBe(false);
+  });
+});
+
+describe("formatFooterSaveButtonTitle", () => {
+  it("tells the user to click to save", () => {
+    const dirty = deriveStorageDisplayStatus({
+      ...base,
+      workingFileAttached: true,
+      workingFileLabel: "board.json",
+      workingFileDirty: true,
+    });
+    expect(formatFooterSaveButtonTitle(dirty)).toContain("klicken zum Speichern");
   });
 });

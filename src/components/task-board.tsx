@@ -13,7 +13,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { FileStack, HardDrive, Redo2, Undo2 } from "lucide-react";
+import { FileStack, HardDrive, Loader2, Redo2, Save, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent } from "react";
 import { useStore } from "zustand";
 
@@ -141,6 +141,8 @@ import { isNoteNode, nodeDisplayTitle } from "@/lib/tree-node-kind";
 import {
   dataStorageButtonClassName,
   deriveStorageDisplayStatus,
+  footerSaveIconIsUnsaved,
+  formatFooterSaveButtonTitle,
   formatStorageStatusTooltip,
   hasUnsavedWorkingFile,
 } from "@/lib/storage-coordinator";
@@ -652,6 +654,25 @@ export function TaskBoard() {
     if (!result.ok) window.alert("Speichern in die Arbeitsdatei ist fehlgeschlagen.");
     else setWorkingFileDirty(false);
   }, [boardSnapshotTextFromStore, handleSaveWorkingFileAs]);
+
+  const handleSaveFromFooter = useCallback(async () => {
+    if (workingFileSaving) return;
+    if (!isWorkingFileAttached()) {
+      await handleSaveWorkingFileAs();
+      return;
+    }
+    setWorkingFileSaving(true);
+    try {
+      const result = await persistWorkingFileJson(boardSnapshotTextFromStore());
+      if (!result.ok) {
+        window.alert(result.message ?? "Speichern in die Arbeitsdatei ist fehlgeschlagen.");
+        return;
+      }
+      setWorkingFileDirty(false);
+    } finally {
+      setWorkingFileSaving(false);
+    }
+  }, [boardSnapshotTextFromStore, handleSaveWorkingFileAs, workingFileSaving]);
 
   const handleOpenRecentWorkingFile = useCallback(
     async (handle: FileSystemFileHandle) => {
@@ -1427,6 +1448,12 @@ export function TaskBoard() {
     [storageDisplayStatus],
   );
 
+  const footerSaveTitle = useMemo(
+    () => formatFooterSaveButtonTitle(storageDisplayStatus),
+    [storageDisplayStatus],
+  );
+  const footerSaveUnsaved = footerSaveIconIsUnsaved(storageDisplayStatus.tone);
+
   /** Drill-in ohne Fokus-Override (z. B. wenn danach beginEditingNewCard folgt). */
   const drillIntoOnly = useCallback(
     (nodeId: string, pane: BoardPaneId = activePane) => {
@@ -1756,13 +1783,36 @@ export function TaskBoard() {
       </div>
 
       <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-200/80 bg-white px-4 py-1.5 text-[0.72rem] text-slate-500">
-        <span className="min-w-0 truncate">
-          {workingFileName
-            ? `Arbeitsdatei: ${workingFileName}${workingFileDirty ? " · ungespeichert" : workingFileSaving ? " · speichert …" : " · gespeichert"}`
-            : workingFileAttached
-              ? "Arbeitsdatei verknüpft"
-              : "Keine Arbeitsdatei"}
-        </span>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => void handleSaveFromFooter()}
+            disabled={workingFileSaving}
+            className={[
+              "flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition",
+              workingFileSaving
+                ? "cursor-wait text-slate-400"
+                : footerSaveUnsaved
+                  ? "text-red-600 hover:bg-red-50 hover:text-red-700"
+                  : "text-slate-400 hover:bg-slate-100 hover:text-slate-700",
+            ].join(" ")}
+            title={footerSaveTitle}
+            aria-label={footerSaveTitle}
+          >
+            {workingFileSaving ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : (
+              <Save className="h-3.5 w-3.5" aria-hidden />
+            )}
+          </button>
+          <span className="min-w-0 truncate">
+            {workingFileName
+              ? `Arbeitsdatei: ${workingFileName}`
+              : workingFileAttached
+                ? "Arbeitsdatei verknüpft"
+                : "Keine Arbeitsdatei"}
+          </span>
+        </div>
         <span className="hidden shrink-0 sm:inline">T2 · © A. Bergmann</span>
         <span className="shrink-0 sm:hidden">© A. Bergmann</span>
       </footer>
